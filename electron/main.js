@@ -1,7 +1,7 @@
 // デスクトップ版（Electron）。中身はブラウザ版と同じファイルを app:// で読み込む。
-const { app, BrowserWindow, protocol, net, shell, Menu } = require('electron');
+const { app, BrowserWindow, protocol, shell, Menu } = require('electron');
 const path = require('path');
-const { pathToFileURL } = require('url');
+const fs = require('fs');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -37,7 +37,13 @@ app.whenReady().then(() => {
     if (rel === '/' || rel === '') rel = '/index.html';
     const file = path.normalize(path.join(ROOT, rel));
     if (!file.startsWith(ROOT)) return new Response('Forbidden', { status: 403 });
-    return net.fetch(pathToFileURL(file).toString());
+    // .mjs（pdf.js）を JavaScript として読ませるため、種類を明示して返す
+    const ext = path.extname(file).toLowerCase();
+    const type = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
+      '.svg': 'image/svg+xml', '.png': 'image/png', '.json': 'application/json' }[ext] || 'application/octet-stream';
+    return fs.promises.readFile(file)
+      .then(data => new Response(data, { headers: { 'content-type': type } }))
+      .catch(() => new Response('Not found', { status: 404 }));
   });
 
   if (process.platform !== 'darwin') Menu.setApplicationMenu(null);

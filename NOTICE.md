@@ -3,6 +3,7 @@
 | 名前 | 用途 | ライセンス |
 |---|---|---|
 | [kuromoji.js](https://github.com/takuyaa/kuromoji.js) 0.1.2（`vendor/kuromoji.js`、`dict/`） | 漢字かな交じり文の形態素解析（読みがなと品詞） | Apache License 2.0（`vendor/kuromoji-LICENSE.txt`）。辞書は mecab-ipadic に基づきます |
+| [pdf.js](https://github.com/mozilla/pdf.js) 4.2.67（`vendor/pdfjs/`） | PDF の文字の取り出し | Apache License 2.0（`vendor/pdfjs/LICENSE.txt`） |
 | [JSZip](https://github.com/Stuk/jszip) 3.10.1（`vendor/jszip.min.js`） | Word（.docx）の読み書き | MIT / GPLv3 のデュアルライセンス（`vendor/jszip-LICENSE.md`） |
 
 # 参考にしたもの

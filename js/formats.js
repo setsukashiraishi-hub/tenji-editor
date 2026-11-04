@@ -1,11 +1,14 @@
 /*
  * 点字データ形式の読み書き
- *  読み込み: TXT / Word(.docx) / BSE / BRL / BRF / PEF / BES(.bes .besx)
+ *  読み込み: TXT / Word(.docx) / Excel(.xlsx) / PDF / BSE / BRL / BRF / PEF / BES(.bes .besx)
+ *  Word・Excel・PDF は、見出し・表・枠・区切り線・画像を「行の種類」として取り出す
  *  書き出し: BSE / BRL / BRF / PEF / BES(試験的) / TXT / Word(.docx)
  */
 (function (root) {
   'use strict';
   const E = (typeof module !== 'undefined' && module.exports) ? require('./engine.js') : root.TenjiEngine;
+  // このファイルの場所（pdf.js などを相対で読み込むため）
+  const SCRIPT_BASE = (typeof document !== 'undefined' && document.currentScript) ? document.currentScript.src : '';
   const getJSZip = () => (typeof module !== 'undefined' && module.exports) ? require('../vendor/jszip.min.js') : root.JSZip;
 
   const PAGE_MARK = '［改ページ］';
@@ -35,6 +38,8 @@
   // ---------- 形式の判定 ----------
   const KINDS = {
     txt: { label: 'テキスト', read: true },
+    xlsx: { label: 'Excel', read: true },
+    pdf: { label: 'PDF', read: true },
     docx: { label: 'Word', read: true },
     bse: { label: 'BSE（BASE形式）', read: true },
     brl: { label: 'BRL（NABCC）', read: true },
@@ -45,7 +50,7 @@
   };
   const UNSUPPORTED = {
     bls: 'ブレイルスター（初期）', ble: 'ブレイルスターII', bs: 'ブレイルスターIII / for Windows',
-    bmt: 'ブレイルメモ', nab: 'コータクン', bet: 'ないーぶネット旧形式', doc: '旧Word（.doc）'
+    bmt: 'ブレイルメモ', nab: 'コータクン', bet: 'ないーぶネット旧形式', doc: '旧Word（.doc）', xls: '旧Excel（.xls）'
   };
   function extOf(name) { const m = /\.([^.]+)$/.exec(name || ''); return m ? m[1].toLowerCase() : ''; }
 
@@ -85,18 +90,247 @@
 
   // ---------- 読み込み ----------
   // 戻り値: { kind, mode:'sumiji'|'braille', raw, rawKind:'text'|'nabcc'|'unicode', rows?, note? }
-  async function readFile(name, buf) {
+  async function readFile(name, buf, opt) {
     const ext = extOf(name);
     const u8 = new Uint8Array(buf);
     if (UNSUPPORTED[ext]) throw new Error(`${UNSUPPORTED[ext]}の形式（.${ext}）は仕様が公開されていないため読み込めません。元のソフトでBSEやBRLに書き出してから読み込んでください。`);
     if (ext === 'bes' || ext === 'besx') return readBES(u8, ext);
     if (ext === 'pef') return readPEF(decodeText(buf));
     if (ext === 'bse' || ext === 'brl' || ext === 'brf' || ext === 'brt' || ext === 'txn') return readNABCC(u8, ext);
-    if (ext === 'docx') {
-      const text = await readDocxText(buf);
-      return fromPlainText(text, 'docx');
-    }
+    if (ext === 'docx') return readDocxStructured(buf, opt || {});
+    if (ext === 'xlsx' || ext === 'xlsm') return readXlsx(buf);
+    if (ext === 'pdf') return readPDF(buf);
     return fromPlainText(decodeText(buf), 'txt');
+  }
+
+  // ---------- Word（見出し・表・枠・区切り線・画像） ----------
+  const FRAME_TOP = '┌────────────┐';
+  const FRAME_BOTTOM = '└────────────┘';
+  const RULE_LINE = '────────────';
+
+  function paraText(p) {
+    let t = '';
+    const re = /<w:t\b[^>]*>([\s\S]*?)<\/w:t>|<w:tab\b[^>]*\/>|<w:br\b[^>]*\/>|<w:cr\b[^>]*\/>/g;
+    let m;
+    while ((m = re.exec(p))) {
+      if (m[1] !== undefined) t += xmlUnescape(m[1]);
+      else if (m[0].startsWith('<w:tab')) t += ' ';
+      else t += '\n';
+    }
+    return t;
+  }
+
+  async function readDocxStructured(buf, opt) {
+    const JSZip = getJSZip();
+    const zip = await JSZip.loadAsync(buf);
+    const docFile = zip.file('word/document.xml');
+    if (!docFile) throw new Error('Wordファイルの本文が見つかりません。');
+    const xml = (await docFile.async('string')).replace(/<w:del\b[\s\S]*?<\/w:del>/g, '');
+    // スタイル名（見出し 1 など）と、画像のファイル名
+    const styleName = {};
+    const stylesFile = zip.file('word/styles.xml');
+    if (stylesFile) {
+      const sx = await stylesFile.async('string');
+      for (const m of sx.matchAll(/<w:style\b[^>]*w:styleId="([^"]+)"[^>]*>([\s\S]*?)<\/w:style>/g)) {
+        const n = /<w:name w:val="([^"]+)"/.exec(m[2]);
+        const lvl = /<w:outlineLvl w:val="(\d)"/.exec(m[2]);
+        styleName[m[1]] = { name: n ? n[1] : m[1], outline: lvl ? +lvl[1] : null };
+      }
+    }
+    const rels = {};
+    const relFile = zip.file('word/_rels/document.xml.rels');
+    if (relFile) {
+      const rx = await relFile.async('string');
+      for (const m of rx.matchAll(/<Relationship\b[^>]*Id="([^"]+)"[^>]*Target="([^"]+)"/g)) rels[m[1]] = m[2];
+      for (const m of rx.matchAll(/<Relationship\b[^>]*Target="([^"]+)"[^>]*Id="([^"]+)"/g)) rels[m[2]] = m[1];
+    }
+    const headingLevel = p => {
+      const st = /<w:pStyle w:val="([^"]+)"/.exec(p);
+      const own = /<w:outlineLvl w:val="(\d)"/.exec(p);
+      let lvl = own ? +own[1] : null;
+      if (st) {
+        const info = styleName[st[1]] || { name: st[1], outline: null };
+        const n = info.name.toLowerCase();
+        if (n === 'title' || n === '表題') return 1;
+        const m = /(?:heading|見出し)\s*(\d)/.exec(n);
+        if (m) return +m[1];
+        if (lvl === null) lvl = info.outline;
+      }
+      return lvl !== null && lvl < 9 ? lvl + 1 : 0;
+    };
+
+    const lines = [], types = [], figures = [];
+    let figNo = 0, inBox = false;
+    const push = (text, type) => { lines.push(text); if (type) types.push([text, type]); };
+    const closeBox = () => { if (inBox) { push(FRAME_BOTTOM); inBox = false; } };
+    const body = /<w:body>([\s\S]*)<\/w:body>/.exec(xml);
+    const blocks = (body ? body[1] : xml).match(/<w:tbl>[\s\S]*?<\/w:tbl>|<w:p\b[\s\S]*?<\/w:p>|<w:p\b[^>]*\/>/g) || [];
+    for (const blk of blocks) {
+      if (blk.startsWith('<w:tbl')) {
+        // 表：枠で囲み、セルはタブで区切る（点字ではセルの間を2マスあける）
+        closeBox();
+        push(FRAME_TOP);
+        for (const tr of blk.match(/<w:tr\b[\s\S]*?<\/w:tr>/g) || []) {
+          const cells = (tr.match(/<w:tc\b[\s\S]*?<\/w:tc>/g) || []).map(tc =>
+            (tc.match(/<w:p\b[\s\S]*?<\/w:p>/g) || []).map(paraText).join(' ').replace(/\s+/g, ' ').trim());
+          push(cells.join('\t'));
+        }
+        push(FRAME_BOTTOM);
+        continue;
+      }
+      const text = paraText(blk).replace(/\n+$/, '');
+      // 画像
+      const imgs = [...blk.matchAll(/<a:blip\b[^>]*r:embed="([^"]+)"|<v:imagedata\b[^>]*r:id="([^"]+)"/g)];
+      // 段落の罫線：上下左右に線があれば枠、下（上）だけなら区切り線
+      const bdr = /<w:pBdr>([\s\S]*?)<\/w:pBdr>/.exec(blk);
+      const has = side => bdr && new RegExp('<w:' + side + '\\b(?![^>]*w:val="(?:nil|none)")').test(bdr[1]);
+      const boxed = bdr && has('left') && has('right');
+      if (boxed && !inBox) { push(FRAME_TOP); inBox = true; }
+      if (!boxed) closeBox();
+      if (bdr && !boxed && !text.trim() && (has('bottom') || has('top'))) { push(RULE_LINE); continue; }
+      if (text.trim()) {
+        const lvl = headingLevel(blk);
+        for (const t of text.split('\n')) push(t, lvl ? 'h' + Math.min(3, lvl) : null);
+      } else if (!imgs.length) push('');
+      for (const im of imgs) {
+        const target = rels[im[1] || im[2]];
+        if (!target) continue;
+        figNo++;
+        const label = `図${figNo}`;
+        push(`［図：${label}］`);
+        const f = zip.file('word/' + target.replace(/^\.?\//, '')) || zip.file(target.replace(/^\//, ''));
+        if (f && root.TenjiFigure && typeof Blob !== 'undefined') {
+          try {
+            const blob = new Blob([await f.async('uint8array')]);
+            const linesOfDots = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
+            figures.push([label, { lines: linesOfDots.map(l => '⠀⠀' + l), alt: target.split('/').pop() }]);
+          } catch (e) { /* 読めない画像（EMF など）は点図にしない */ }
+        }
+      }
+    }
+    closeBox();
+    const note = figNo ? `画像が${figNo}点ありました。右側で点図に変えています（線画向き。写真は形が崩れることがあります）。` : '';
+    return { kind: 'docx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures, note };
+  }
+
+  // ---------- Excel（シートごとに見出し＋表） ----------
+  async function readXlsx(buf) {
+    const JSZip = getJSZip();
+    const zip = await JSZip.loadAsync(buf);
+    const wb = zip.file('xl/workbook.xml');
+    if (!wb) throw new Error('Excelファイルの中身が見つかりません。');
+    const wbx = await wb.async('string');
+    const relx = zip.file('xl/_rels/workbook.xml.rels') ? await zip.file('xl/_rels/workbook.xml.rels').async('string') : '';
+    const rels = {};
+    for (const m of relx.matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+      const id = /Id="([^"]+)"/.exec(m[1]), tg = /Target="([^"]+)"/.exec(m[1]);
+      if (id && tg) rels[id[1]] = tg[1];
+    }
+    const shared = [];
+    const ss = zip.file('xl/sharedStrings.xml');
+    if (ss) {
+      const sx = await ss.async('string');
+      for (const si of sx.match(/<si>[\s\S]*?<\/si>/g) || []) {
+        shared.push((si.match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) || []).map(t => xmlUnescape(t.replace(/<[^>]+>/g, ''))).join(''));
+      }
+    }
+    const colIndex = ref => { let n = 0; for (const ch of ref.replace(/\d+$/, '')) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
+    const lines = [], types = [];
+    for (const m of wbx.matchAll(/<sheet\b([^>]*)\/?>/g)) {
+      const name = xmlUnescape((/name="([^"]*)"/.exec(m[1]) || [])[1] || 'シート');
+      const rid = (/r:id="([^"]+)"/.exec(m[1]) || [])[1];
+      let target = rels[rid] || '';
+      target = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
+      const f = zip.file(target);
+      if (!f) continue;
+      const sx = await f.async('string');
+      const rows = [];
+      for (const r of sx.match(/<row\b[\s\S]*?<\/row>/g) || []) {
+        const cells = [];
+        for (const c of r.match(/<c\b[^>]*\/>|<c\b[\s\S]*?<\/c>/g) || []) {
+          const ref = (/r="([A-Z]+\d+)"/.exec(c) || [])[1];
+          const t = (/\bt="([^"]+)"/.exec(c) || [])[1];
+          const v = (/<v>([\s\S]*?)<\/v>/.exec(c) || [])[1];
+          let val = '';
+          if (t === 's' && v !== undefined) val = shared[+v] || '';
+          else if (t === 'inlineStr') val = xmlUnescape(((/<t\b[^>]*>([\s\S]*?)<\/t>/.exec(c)) || [])[1] || '');
+          else if (v !== undefined) val = xmlUnescape(v);
+          const idx = ref ? colIndex(ref) : cells.length;
+          cells[idx] = val;
+        }
+        const arr = Array.from(cells, x => x || '');
+        if (arr.some(x => x.trim())) rows.push(arr);
+      }
+      if (!rows.length) continue;
+      if (lines.length) lines.push('');
+      lines.push(name); types.push([name, 'h2']);
+      lines.push(FRAME_TOP);
+      for (const r of rows) lines.push(r.join('\t').replace(/\t+$/, ''));
+      lines.push(FRAME_BOTTOM);
+    }
+    if (!lines.length) throw new Error('Excelファイルに文字の入ったセルがありません。');
+    return { kind: 'xlsx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures: [],
+      note: '各シートを中見出しにして、表を枠で囲みました。セルの間は点字で2マスあけます。' };
+  }
+
+  // ---------- PDF（文字を取り出す。原本のページ番号つき） ----------
+  async function readPDF(buf) {
+    if (!SCRIPT_BASE) throw new Error('PDFはブラウザ版・デスクトップ版でだけ読み込めます。');
+    const pdfjs = await import(new URL('../vendor/pdfjs/pdf.mjs', SCRIPT_BASE).href);
+    pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.mjs', SCRIPT_BASE).href;
+    const doc = await pdfjs.getDocument({
+      data: new Uint8Array(buf),
+      cMapUrl: new URL('../vendor/pdfjs/cmaps/', SCRIPT_BASE).href,
+      cMapPacked: true
+    }).promise;
+    const lines = [], types = [];
+    let imageCount = 0, textChars = 0;
+    for (let p = 1; p <= doc.numPages; p++) {
+      const page = await doc.getPage(p);
+      const tc = await page.getTextContent();
+      // 同じ高さの文字を1行にまとめる
+      const items = tc.items.filter(it => it.str !== undefined);
+      const rowsOfPage = [];
+      for (const it of items) {
+        const y = it.transform[5], x = it.transform[4], h = Math.abs(it.transform[3]) || it.height || 10;
+        let row = rowsOfPage.find(r => Math.abs(r.y - y) < h * 0.5);
+        if (!row) { row = { y, h, parts: [] }; rowsOfPage.push(row); }
+        row.parts.push({ x, str: it.str, w: it.width || 0 });
+        row.h = Math.max(row.h, h);
+      }
+      rowsOfPage.sort((a, b) => b.y - a.y);
+      const texts = rowsOfPage.map(r => {
+        r.parts.sort((a, b) => a.x - b.x);
+        let s = '', end = null;
+        for (const pt of r.parts) {
+          if (end !== null && pt.x - end > r.h * 0.6 && /[A-Za-z0-9]$/.test(s)) s += ' ';
+          s += pt.str; end = pt.x + pt.w;
+        }
+        return { text: s.trim(), h: r.h, y: r.y };
+      }).filter(r => r.text);
+      textChars += texts.reduce((a, r) => a + r.text.length, 0);
+      const ops = await page.getOperatorList();
+      for (const fn of ops.fnArray) if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject) imageCount++;
+      lines.push(`［原本 ${p}］`);
+      const hs = texts.map(r => r.h).sort((a, b) => a - b);
+      const median = hs.length ? hs[Math.floor(hs.length / 2)] : 10;
+      // 見た目の改行はつなげて段落にする（文の終わり・大きい文字・行間があいたところで区切る）
+      let para = '', prev = null;
+      const flush = () => { if (para) { lines.push(para); para = ''; } };
+      for (const r of texts) {
+        const big = r.h > median * 1.25;
+        const gap = prev && (prev.y - r.y) > Math.max(prev.h, r.h) * 1.8;
+        if (big) { flush(); lines.push(r.text); types.push([r.text, r.h > median * 1.6 ? 'h1' : 'h2']); prev = r; continue; }
+        if (gap || (prev && prev.big)) flush();
+        para += (para && /[A-Za-z0-9]$/.test(para) && /^[A-Za-z0-9]/.test(r.text) ? ' ' : '') + r.text;
+        if (/[。．！？!?」』]$/.test(r.text)) flush();
+        prev = { ...r, big };
+      }
+      flush();
+    }
+    if (!textChars) throw new Error('このPDFには文字の情報がありません（画像だけのPDF・スキャンしたPDFは読み込めません）。');
+    const note = '原本のページの区切りを「［原本 ○］」として残しています。' + (imageCount ? `PDFの中の画像（${imageCount}点）は読み込んでいません。必要ならWordから読み込むか、図の説明を書き足してください。` : '');
+    return { kind: 'pdf', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures: [], note };
   }
 
   function fromPlainText(text, kind) {
@@ -304,7 +538,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
   const textFile = text => enc(withBOM(text.replace(/\r?\n/g, '\r\n')) + '\r\n');
   const docxFromText = text => docxFile(text.replace(/\r/g, '').split('\n'));
 
-  const api = { readFile, parseRaw, exportFile, textFile, docxFromText, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
+  const api = { readFile, parseRaw, exportFile, textFile, docxFromText, readXlsx, readDocxStructured, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiFormats = api;
 })(typeof self !== 'undefined' ? self : this);

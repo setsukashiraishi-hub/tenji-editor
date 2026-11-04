@@ -93,6 +93,7 @@
     if (FRAME_TOP_RE.test(src)) return 'frame-start';
     if (FRAME_BOTTOM_RE.test(src)) return 'frame-end';
     if (RULE_RE.test(src)) return 'rule';
+    if (src.includes('\t')) return 'table';
     return 'body';
   }
 
@@ -120,7 +121,16 @@
       if (type === 'figure') {
         const m = FIGURE_RE.exec(src.trim());
         const fig = m && state.figures.get(m[1]);
-        return { ...base, figure: fig ? fig.lines : null, alt: m ? m[1] : '', ...(!fig ? convertLine('⦅ズ⦆') : {}) };
+        // 点図にできない（しない）ときのために「⦅図⦆」の点字も用意しておく
+        return { ...base, figure: fig ? fig.lines : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
+      }
+      if (type === 'table') {
+        // 表の行：セルごとに点訳して、セルの間を2マスあける
+        const parts = src.split('\t').map(c => c.trim() ? convertLine(c.trim()) : { kana: '', unresolved: [], checks: [] });
+        const kana = parts.map(p => p.kana).join('  ').replace(/ +$/, '');
+        const b = E.kanaToBraille(kana);
+        return { ...base, kana, cells: b.cells, unknown: b.unknown, bad: b.bad,
+          unresolved: parts.flatMap(p => p.unresolved), checks: parts.flatMap(p => p.checks) };
       }
       return { ...base, ...convertLine(src.replace(FRAME_SIDE_RE, '')) };
     });
@@ -213,6 +223,15 @@
       meta.appendChild(chipEl(`${n}マス` + (wrapped > 1 ? `・${wrapped}行に折り返し` : '')));
     }
     if (E.HEAD_INDENT[row.type]) meta.appendChild(chipEl(`${E.HEAD_INDENT[row.type] + 1}マス目から`));
+    if (row.type === 'figure' && row.figure && state.mode === 'sumiji') {
+      const lab = document.createElement('label');
+      lab.className = 'check mini';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.checked = !row.noFigure;
+      cb.addEventListener('change', () => { row.noFigure = !cb.checked; onChange(); });
+      lab.append(cb, document.createTextNode(' 点図として入れる（外すと「⦅図⦆」とだけ書く）'));
+      meta.appendChild(lab);
+    }
     const miss = [...new Set([...(row.unknown || []), ...(row.unresolved || [])])].filter(x => x !== '〓');
     if (miss.length) meta.appendChild(chipEl('辞書にない語：' + miss.join(' '), 'warn'));
     if (row.unresolved && row.unresolved.includes('〓')) meta.appendChild(chipEl('読めない点字があります', 'warn'));
@@ -281,9 +300,10 @@
       el.classList.add('figure-view');
       const cap = document.createElement('div');
       cap.className = 'fig-cap';
-      cap.textContent = row.figure ? `図${row.alt ? '：' + row.alt : ''}（点図 ${row.figure.length}行）` : `図${row.alt ? '：' + row.alt : ''}（点図なし。「⦅図⦆」と書きます）`;
+      const useFig = row.figure && !row.noFigure;
+      cap.textContent = useFig ? `図${row.alt ? '：' + row.alt : ''}（点図 ${row.figure.length}行）` : `図${row.alt ? '：' + row.alt : ''}（点図にせず「⦅図⦆」と書きます）`;
       el.appendChild(cap);
-      for (const line of (row.figure || [row.cells || ''])) {
+      for (const line of (useFig ? row.figure : [row.cells || ''])) {
         const ln = document.createElement('div');
         ln.className = 'fig-line';
         Array.from(line).forEach(c => ln.appendChild(cellBox(c, c === '⠀' ? 'blank' : '')));
@@ -547,7 +567,8 @@
   async function openFile(file) {
     try {
       const buf = await file.arrayBuffer();
-      const res = await F.readFile(file.name, buf);
+      if (/\.pdf$/i.test(file.name)) toast('PDFを読み込んでいます…');
+      const res = await F.readFile(file.name, buf, layoutOpt());
       state.rows = [];
       state.fileBase = file.name.replace(/\.[^.]+$/, '') || '点訳';
       els.fileName.textContent = file.name;

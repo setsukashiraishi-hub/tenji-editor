@@ -284,3 +284,5 @@ body.braille .c { height: 32px; font-size: 22px; }
 .nav-check { display: inline-flex; gap: 6px; }
 /* 区切り線・枠の行は折り返さずに1行で見せる */
 .row.type-rule .align, .row.type-frame-start .align, .row.type-frame-end .align { flex-wrap: nowrap; overflow-x: auto; }
+
+.check.mini { font-size: 11px; }
