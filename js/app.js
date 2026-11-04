@@ -140,10 +140,14 @@
       for (const u of b.units) {
         const unit = document.createElement('span');
         const isSp = /^[ \u3000]+$/.test(u.text);
-        unit.className = 'u' + (isSp ? ' sp' : '');
+        const n = u.cells.length;
+        unit.className = 'u' + (isSp ? ' sp' : '') + (n > 1 ? ' multi' : '');
+        unit.style.setProperty('--n', n);
         const k = document.createElement('span');
-        k.className = 'u-k';
-        k.textContent = isSp ? SPACE_MARK : displayKana(u.text);
+        const label = isSp ? SPACE_MARK : displayKana(u.text);
+        // マスの幅に収まらないときは文字を小さくする（1マスに2文字など）
+        k.className = 'u-k' + (Array.from(label).length > n ? ' tight' : '');
+        k.textContent = label;
         const c = document.createElement('span');
         c.className = 'u-c';
         for (const cell of u.cells) {

@@ -150,27 +150,39 @@ textarea#src.nabcc { font-family: var(--font-mono); font-size: 14px; }
 .row-no { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: right; padding-top: 4px; font-variant-numeric: tabular-nums; }
 .row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .align {
+  --cw: 24px;   /* 1マスの幅 */
+  --cg: 3px;    /* マスとマスの間 */
   display: flex; flex-wrap: wrap; align-items: flex-start;
-  row-gap: 8px; column-gap: 0;
-  padding: 4px 6px; margin-left: -7px;
+  gap: 10px var(--cg);
+  padding: 6px; margin-left: -7px;
   border: 1px solid transparent; border-radius: 6px;
-  cursor: text; min-height: 3.4em;
+  cursor: text; min-height: 3.6em;
 }
 .align:hover { border-color: var(--line); }
-.u { display: inline-flex; flex-direction: column; align-items: center; }
+/* 点字のマス数で幅を決め、その上に対応するかなを置く */
+.u {
+  display: grid; grid-template-rows: auto auto; row-gap: 3px;
+  width: calc(var(--n) * var(--cw) + (var(--n) - 1) * var(--cg));
+}
 .u-k {
-  font: 14px/1.5 var(--font-ui); color: var(--ink);
-  white-space: nowrap; padding: 0 1px; min-height: 1.5em;
+  font: 13px/1.4 var(--font-ui); color: var(--ink);
+  text-align: center; white-space: nowrap; min-height: 1.4em;
+  overflow: visible;
 }
-.u.sp .u-k { color: var(--muted); opacity: .7; }
-.u-c { display: flex; }
+.u.multi .u-k { border-bottom: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 1px; }
+.u-k.tight { font-size: 10px; letter-spacing: -.02em; }
+.u.sp .u-k { color: var(--muted); opacity: .75; }
+.u-c { display: flex; gap: var(--cg); }
 .c {
-  display: inline-block; width: 20px; text-align: center;
-  font: 22px/1.25 var(--font-cells); color: var(--cells);
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  box-sizing: border-box;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--cw); height: 34px;
+  font: 24px/1 var(--font-cells); color: var(--cells);
+  border: 1px solid var(--line); border-radius: 4px;
+  background: var(--surface);
 }
-.u.sp .c { border-bottom-style: dotted; }
-.c.bad { color: var(--warn); background: var(--warn-soft); border-radius: 3px; }
+.u.sp .c { border-style: dashed; background: transparent; }
+.c.bad { color: var(--warn); background: var(--warn-soft); border-color: var(--warn); }
 .align.plain { flex-direction: column; flex-wrap: nowrap; row-gap: 2px; }
 .plain-k { font: 14px/1.6 var(--font-ui); white-space: pre-wrap; word-break: break-all; }
 .plain-c { font: 22px/1.4 var(--font-cells); color: var(--cells); white-space: pre-wrap; word-break: break-all; }
