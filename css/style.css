@@ -71,7 +71,7 @@ body {
 }
 .btn:hover { border-color: var(--accent); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-.btn:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .kana:focus-visible {
+.btn:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-visible, .align:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 .field { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
@@ -125,9 +125,6 @@ body {
 .pane-head h2 { margin: 0; font-size: 13px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
 .file-name { font-family: var(--font-mono); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .legend { display: flex; gap: 12px; font-size: 12px; color: var(--muted); }
-.legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-.lg-kana::before { background: var(--line); }
-.lg-cells::before { background: var(--accent); }
 .note { padding: 8px 14px; font-size: 12px; background: var(--accent-soft); color: var(--ink); border-bottom: 1px solid var(--line); }
 .note.warn { background: var(--warn-soft); }
 
@@ -152,30 +149,42 @@ textarea#src.nabcc { font-family: var(--font-mono); font-size: 14px; }
 .row:hover, .row:focus-within { background: color-mix(in srgb, var(--accent-soft) 45%, transparent); }
 .row-no { font-family: var(--font-mono); font-size: 11px; color: var(--muted); text-align: right; padding-top: 4px; font-variant-numeric: tabular-nums; }
 .row-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.kana {
-  font: 15px/1.7 var(--font-ui);
-  color: var(--ink);
-  border: 1px solid transparent; border-radius: 4px;
-  padding: 1px 6px; margin-left: -7px;
-  white-space: pre-wrap; word-break: break-all;
-  min-height: 1.7em;
+.align {
+  display: flex; flex-wrap: wrap; align-items: flex-start;
+  row-gap: 8px; column-gap: 0;
+  padding: 4px 6px; margin-left: -7px;
+  border: 1px solid transparent; border-radius: 6px;
+  cursor: text; min-height: 3.4em;
 }
-.kana:hover { border-color: var(--line); }
-.kana[contenteditable="true"]:focus { border-color: var(--accent); background: var(--surface); outline: none; }
-.cells {
-  font: 22px/1.45 var(--font-cells);
-  color: var(--cells);
-  white-space: pre-wrap; word-break: break-all;
-  letter-spacing: 1px;
+.align:hover { border-color: var(--line); }
+.u { display: inline-flex; flex-direction: column; align-items: center; }
+.u-k {
+  font: 14px/1.5 var(--font-ui); color: var(--ink);
+  white-space: nowrap; padding: 0 1px; min-height: 1.5em;
 }
-.cells .bad { color: var(--warn); background: var(--warn-soft); border-radius: 3px; }
+.u.sp .u-k { color: var(--muted); opacity: .7; }
+.u-c { display: flex; }
+.c {
+  display: inline-block; width: 20px; text-align: center;
+  font: 22px/1.25 var(--font-cells); color: var(--cells);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+}
+.u.sp .c { border-bottom-style: dotted; }
+.c.bad { color: var(--warn); background: var(--warn-soft); border-radius: 3px; }
+.align.plain { flex-direction: column; flex-wrap: nowrap; row-gap: 2px; }
+.plain-k { font: 14px/1.6 var(--font-ui); white-space: pre-wrap; word-break: break-all; }
+.plain-c { font: 22px/1.4 var(--font-cells); color: var(--cells); white-space: pre-wrap; word-break: break-all; }
+.kana-edit {
+  font: 15px/1.6 var(--font-ui); color: var(--ink); background: var(--surface);
+  border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; width: 100%;
+}
 .meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--muted); }
 .chip { padding: 0 7px; border-radius: 999px; background: var(--bg); font-variant-numeric: tabular-nums; }
 .chip.warn { background: var(--warn-soft); color: var(--warn); }
 .chip.edited { background: var(--accent-soft); color: var(--accent); }
 .row.pagebreak { grid-template-columns: 1fr; padding: 4px 14px; }
 .row.pagebreak .pb { text-align: center; font-size: 11px; letter-spacing: .3em; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 4px; }
-.row.empty .cells { min-height: 0; }
+.row.empty .align { min-height: 1.5em; }
 
 /* 状態表示 */
 .status {

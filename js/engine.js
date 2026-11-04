@@ -121,8 +121,16 @@
     let out = '';
     const unknown = [];
     const bad = []; // 変換できなかった文字の、点字列での位置
-    let inNum = false, inLatin = false;
+    let inNum = false, inLatin = false, latinCapAll = false;
+    // 表示用：かなの1単位（1文字、拗音なら2文字）と、それに対応する点字のマスの組
+    const units = [];
+    let ui = 0, uo = 0;
+    const flush = upto => {
+      if (upto > ui) units.push({ text: s.slice(ui, upto).join(''), cells: out.slice(uo) });
+      ui = upto; uo = out.length;
+    };
     for (let i = 0; i < s.length; i++) {
+      flush(i);
       const c = s[i];
       const next = s[i + 1];
       if (isSpace(c)) { out += SIGN.BLANK; inNum = false; inLatin = false; continue; }
@@ -138,18 +146,17 @@
       }
       if (c === '・' && inNum && next && isDigit(next)) { inNum = false; continue; } // 2・3 → 数2数3
       if (isLatin(c)) {
-        let j = i;
-        while (j < s.length && isLatin(s[j])) j++;
-        const run = s.slice(i, j).join('');
-        if (!inLatin) out += SIGN.FOREIGN;
-        inLatin = true; inNum = false;
-        if (run.length > 1 && run === run.toUpperCase()) {
-          out += SIGN.CAP + SIGN.CAP + run.toLowerCase().split('').map(ch => LETTER[ch]).join('');
-        } else {
-          for (const ch of run) out += (ch !== ch.toLowerCase() ? SIGN.CAP : '') + LETTER[ch.toLowerCase()];
+        if (!inLatin) {
+          let j = i;
+          while (j < s.length && isLatin(s[j])) j++;
+          const run = s.slice(i, j).join('');
+          latinCapAll = run.length > 1 && run === run.toUpperCase();
+          out += SIGN.FOREIGN + (latinCapAll ? SIGN.CAP + SIGN.CAP : '');
         }
-        i = j - 1;
-        if (s[j] && isKana(s[j])) out += SIGN.TSUNAGI; // 英字と仮名の間はつなぎ符
+        inLatin = true; inNum = false;
+        const upper = c !== c.toLowerCase();
+        out += (upper && !latinCapAll ? SIGN.CAP : '') + LETTER[c.toLowerCase()];
+        if (next && !isLatin(next) && isKana(next)) out += SIGN.TSUNAGI; // 英字と仮名の間はつなぎ符
         continue;
       }
       if (isKana(c)) {
@@ -185,7 +192,8 @@
       bad.push(Array.from(out).length);
       out += SIGN.UNKNOWN;
     }
-    return { cells: out, unknown: unknown.map(i => s[i]), bad };
+    flush(s.length);
+    return { cells: out, unknown: unknown.map(i => s[i]), bad, units };
   }
 
   // ---------- 点字 → かな ----------

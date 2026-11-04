@@ -109,18 +109,6 @@
   const displayKana = k => els.hira.checked ? E.toHiragana(k) : k;
   const cellLen = s => Array.from(s || '').length;
 
-  function cellsHTML(row) {
-    const arr = Array.from(row.cells || '');
-    if (!row.bad || !row.bad.length) return null;
-    const bad = new Set(row.bad);
-    const frag = document.createDocumentFragment();
-    arr.forEach((c, i) => {
-      if (bad.has(i)) { const s = document.createElement('span'); s.className = 'bad'; s.textContent = c; frag.appendChild(s); }
-      else frag.appendChild(document.createTextNode(c));
-    });
-    return frag;
-  }
-
   function fillMeta(meta, row) {
     meta.textContent = '';
     const opt = layoutOpt();
@@ -136,6 +124,51 @@
     if (row.edited) chip('かなを手直し済み', 'edited');
   }
 
+  // 表示用のマスあけ記号（書き出すデータには入らない）
+  const SPACE_MARK = '□';
+  const showSpaces = t => t.replace(/[ \u3000]/g, SPACE_MARK);
+  const hideSpaces = t => t.replace(/□/g, ' ');
+
+  // かなの1単位と点字のマスを縦にそろえて描く
+  function paintAlign(el, row) {
+    el.textContent = '';
+    el.classList.remove('plain');
+    const b = row.kana ? E.kanaToBraille(row.kana) : null;
+    const bad = new Set(row.bad || []);
+    if (b && b.cells === row.cells) {
+      let pos = 0;
+      for (const u of b.units) {
+        const unit = document.createElement('span');
+        const isSp = /^[ \u3000]+$/.test(u.text);
+        unit.className = 'u' + (isSp ? ' sp' : '');
+        const k = document.createElement('span');
+        k.className = 'u-k';
+        k.textContent = isSp ? SPACE_MARK : displayKana(u.text);
+        const c = document.createElement('span');
+        c.className = 'u-c';
+        for (const cell of u.cells) {
+          const d = document.createElement('span');
+          d.className = 'c' + (bad.has(pos) ? ' bad' : '');
+          d.textContent = cell;
+          c.appendChild(d);
+          pos++;
+        }
+        unit.append(k, c);
+        el.appendChild(unit);
+      }
+      return;
+    }
+    // かなと点字が1対1に対応しないとき（読めない点字が混じるなど）は2段で並べる
+    const k = document.createElement('div');
+    k.className = 'plain-k';
+    k.textContent = showSpaces(displayKana(row.kana || ''));
+    const c = document.createElement('div');
+    c.className = 'plain-c';
+    c.textContent = row.cells || ' ';
+    el.classList.add('plain');
+    el.append(k, c);
+  }
+
   function buildRow(row, idx) {
     const li = document.createElement('li');
     if (row.pagebreak) {
@@ -149,37 +182,52 @@
     no.textContent = idx + 1;
     const body = document.createElement('div');
     body.className = 'row-body';
-    const kana = document.createElement('div');
-    kana.className = 'kana';
-    kana.setAttribute('role', 'textbox');
-    kana.setAttribute('aria-label', `${idx + 1}行目のかな`);
-    try { kana.contentEditable = 'plaintext-only'; } catch (e) { kana.contentEditable = 'true'; }
-    if (kana.contentEditable !== 'plaintext-only') kana.contentEditable = 'true';
-    kana.textContent = displayKana(row.kana);
-    kana.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); kana.blur(); } });
-    kana.addEventListener('input', () => {
-      row.kana = E.toKatakana(kana.textContent.replace(/\n/g, ''));
-      const b = E.kanaToBraille(row.kana);
-      row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true;
-      paintCells(cells, row);
-      fillMeta(meta, row);
-      updateStatus();
-    });
-    const cells = document.createElement('div');
-    cells.className = 'cells';
-    cells.setAttribute('aria-label', `${idx + 1}行目の点字`);
-    paintCells(cells, row);
+
+    const align = document.createElement('div');
+    align.className = 'align';
+    align.tabIndex = 0;
+    align.setAttribute('role', 'button');
+    align.setAttribute('aria-label', `${idx + 1}行目：${row.kana || '空行'}。押すとかなを直せます`);
+    align.title = 'クリックでかなを直す';
+    paintAlign(align, row);
+
+    const edit = document.createElement('input');
+    edit.type = 'text';
+    edit.className = 'kana-edit';
+    edit.id = 'kana-' + idx;
+    edit.hidden = true;
+    edit.setAttribute('aria-label', `${idx + 1}行目のかな（□はマスあけ）`);
+    edit.spellcheck = false;
+
     const meta = document.createElement('div');
     meta.className = 'meta';
     fillMeta(meta, row);
-    body.append(kana, cells, meta);
+
+    const openEdit = () => {
+      edit.value = showSpaces(displayKana(row.kana || ''));
+      edit.hidden = false;
+      edit.focus();
+    };
+    align.addEventListener('click', openEdit);
+    align.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEdit(); } });
+    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); edit.blur(); } });
+    edit.addEventListener('blur', () => { edit.hidden = true; });
+    edit.addEventListener('input', () => {
+      // 入力したスペースはその場で□にする（カーソル位置は保つ）
+      const pos = edit.selectionStart;
+      const v = showSpaces(edit.value);
+      if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
+      row.kana = E.toKatakana(hideSpaces(v));
+      const b = E.kanaToBraille(row.kana);
+      row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true;
+      paintAlign(align, row);
+      fillMeta(meta, row);
+      updateStatus();
+    });
+
+    body.append(align, edit, meta);
     li.append(no, body);
     return li;
-  }
-  function paintCells(el, row) {
-    const frag = cellsHTML(row);
-    if (frag) { el.textContent = ''; el.appendChild(frag); }
-    else el.textContent = row.cells || ' ';
   }
 
   function render() {
