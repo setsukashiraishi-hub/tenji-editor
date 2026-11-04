@@ -87,6 +87,7 @@ body {
 .menu-pop {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
   width: min(380px, calc(100vw - 32px));
+  max-height: min(70vh, 640px); overflow-y: auto; overscroll-behavior: contain;
   background: var(--surface); border: 1px solid var(--line); border-radius: 8px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, .16);
   padding: 6px;
@@ -244,6 +245,21 @@ body.braille .pane-out { order: -1; }
   .pane-src textarea#src, textarea#sumiji { min-height: 220px; }
   .pane-out .rows { max-height: none; }
   .bar-group.end { margin-left: 0; }
+  /* スマホ：書き出しメニューは画面の下から出す（ボタンの位置に関係なく、はみ出さない） */
+  .menu-pop {
+    position: fixed; top: auto; right: 0; left: 0; bottom: 0; z-index: 45;
+    width: auto; max-height: 75vh; border-radius: 14px 14px 0 0;
+    padding: 8px max(10px, env(safe-area-inset-right, 0px)) calc(10px + env(safe-area-inset-bottom, 0px)) max(10px, env(safe-area-inset-left, 0px));
+    box-shadow: 0 -8px 30px rgba(0, 0, 0, .25);
+  }
+  .menu-close-row { display: flex !important; }
+  .menu-item { padding: 12px 10px; }
+  .toast { bottom: calc(16px + env(safe-area-inset-bottom, 0px)); }
+}
+.menu-close-row {
+  display: none; justify-content: space-between; align-items: center; gap: 8px;
+  position: sticky; top: -8px; z-index: 1; background: var(--surface); padding: 8px 10px; margin: -8px -2px 0;
+  border-bottom: 1px solid var(--line);
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 

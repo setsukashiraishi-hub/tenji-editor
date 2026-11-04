@@ -832,6 +832,15 @@
   // ---------- 書き出しメニュー ----------
   function buildMenu() {
     els.exportPop.textContent = '';
+    // スマホで下から出したときに閉じるボタン
+    const closeRow = document.createElement('div');
+    closeRow.className = 'menu-close-row';
+    const ttl = document.createElement('strong'); ttl.textContent = '書き出す形式を選ぶ';
+    const cb = document.createElement('button');
+    cb.type = 'button'; cb.className = 'btn small-btn'; cb.textContent = '閉じる';
+    cb.addEventListener('click', () => closeMenu(true));
+    closeRow.append(ttl, cb);
+    els.exportPop.appendChild(closeRow);
     let group = '';
     for (const fmt of F.EXPORTS) {
       if (fmt.group !== group) {

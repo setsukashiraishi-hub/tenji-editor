@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>点訳エディタの使い方・仕様</title>
+  <meta name="description" content="点訳エディタの基本的な使い方、対応している形式、キー操作、注意点">
+  <link rel="stylesheet" href="css/style.css">
+  <style>
+    body.help { display: block; height: auto; }
+    .help-wrap {
+      max-width: 860px; margin: 0 auto;
+      padding-block: 24px 64px;
+      padding-left: max(16px, env(safe-area-inset-left, 0px));
+      padding-right: max(16px, env(safe-area-inset-right, 0px));
+    }
+    .help-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+    .help-top a.btn { text-decoration: none; display: inline-block; }
+    .help h1 { font-size: 26px; margin: 8px 0 4px; letter-spacing: .02em; text-wrap: balance; }
+    .help .lead { color: var(--muted); margin: 0 0 20px; }
+    .help h2 {
+      font-size: 19px; margin: 36px 0 10px; padding-top: 14px; border-top: 1px solid var(--line);
+      text-wrap: balance;
+    }
+    .help h3 { font-size: 15px; margin: 20px 0 6px; }
+    .help p, .help li { line-height: 1.85; max-width: 68ch; }
+    .help ul, .help ol { padding-left: 1.4em; }
+    .help kbd {
+      font: 13px var(--font-mono); padding: 1px 6px; border: 1px solid var(--line); border-bottom-width: 2px;
+      border-radius: 4px; background: var(--surface); white-space: nowrap;
+    }
+    .help .toc { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; }
+    .help .toc ol { margin: 6px 0 0; columns: 2 16em; column-gap: 24px; }
+    .help .toc a { color: var(--accent); }
+    .help .note {
+      background: var(--warn-soft); border-left: 4px solid var(--warn); border-radius: 6px;
+      padding: 10px 14px; margin: 12px 0;
+    }
+    .help .note strong { color: var(--warn); }
+    .help .tip { background: var(--accent-soft); border-left: 4px solid var(--accent); border-radius: 6px; padding: 10px 14px; margin: 12px 0; }
+    .table-wrap { overflow-x: auto; margin: 10px 0; }
+    .help table { border-collapse: collapse; min-width: 100%; font-size: 14px; }
+    .help caption { text-align: left; font-weight: 700; padding-bottom: 6px; }
+    .help th, .help td { border: 1px solid var(--line); padding: 7px 10px; text-align: left; vertical-align: top; }
+    .help thead th { background: var(--bg); white-space: nowrap; }
+    .help td.mark { text-align: center; white-space: nowrap; }
+    .help code { font: 13px var(--font-mono); background: var(--bg); padding: 0 4px; border-radius: 3px; }
+    .help .cells { font-family: var(--font-cells); font-size: 18px; }
+    .help .version { color: var(--muted); font-size: 13px; margin-top: 40px; }
+  </style>
+</head>
+<body class="help">
+  <a class="skip" href="#main">本文へ移動</a>
+  <div class="help-wrap">
+    <div class="help-top">
+      <span class="brand"><span class="brand-cells" aria-hidden="true">⠟⠴⠐⠳</span><span class="brand-name">点訳エディタ</span></span>
+      <a class="btn" href="index.html">アプリを開く</a>
+    </div>
+
+    <main id="main" tabindex="-1">
+      <h1>使い方と仕様</h1>
+      <p class="lead">墨字（テキスト・Word・Excel・PDF）を点字データに、点字データを墨字に変換するエディタです。ブラウザ版とデスクトップ版の中身は同じです。</p>
+
+      <nav class="toc" aria-label="目次">
+        <strong>目次</strong>
+        <ol>
+          <li><a href="#basics">基本の使い方</a></li>
+          <li><a href="#screen">画面の見かた</a></li>
+          <li><a href="#formats">読み込める形式・書き出せる形式</a></li>
+          <li><a href="#save">保存のしかたと保存先（Ctrl+S）</a></li>
+          <li><a href="#rows">行の種類と点訳の書式</a></li>
+          <li><a href="#proof">校正（読みの確認）</a></li>
+          <li><a href="#figure">点図</a></li>
+          <li><a href="#sixdot">6点入力</a></li>
+          <li><a href="#sr">スクリーンリーダーとキー操作</a></li>
+          <li><a href="#caution">注意点・制限</a></li>
+          <li><a href="#env">動作環境・プライバシー</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="basics">1. 基本の使い方</h2>
+      <h3>墨字を点字にする</h3>
+      <ol>
+        <li>「ファイルを開く」でテキスト・Word・Excel・PDFを選ぶか、画面にファイルをドラッグします。左の欄に直接入力・貼り付けもできます。</li>
+        <li>画面下に「辞書 準備完了」と出るまで待ちます（初回は数秒〜十数秒）。漢字が自動でかなになり、分かち書きされます。</li>
+        <li>右側（変換データ）で、1行ずつ「かな」と「6点」を確認します。かなを押すと書き直せて、点字もすぐ変わります。</li>
+        <li>「校正箇所の一覧」で、読みが割れる語や辞書にない語を確認します。</li>
+        <li>「書き出す」から形式を選んで保存します。</li>
+      </ol>
+      <h3>点字を墨字にする</h3>
+      <ol>
+        <li>BES・BSE・BRL・BRF・PEFなどの点字ファイルを開きます。</li>
+        <li>左に点字（枠つきの6点と読み）、右に墨字に起こした文章が出ます。</li>
+        <li>右上の「テキストで保存」か「Wordで保存」で保存します。漢字には戻せないので、ひらがな（またはカタカナ）の文章になります。</li>
+      </ol>
+
+      <h2 id="screen">2. 画面の見かた</h2>
+      <ul>
+        <li><strong>上の帯</strong>：ファイルを開く、新規、校正箇所の一覧、変換の向き、マス数・行数などの設定、書き出す。</li>
+        <li><strong>変換データ</strong>：上段がかな、下段が6点です。かな1文字の真下に、その点字のマスが並びます。濁音や数字のように2マスで1文字になるところは、かなの下に線が付きます。</li>
+        <li><strong>□</strong>：マスあけの印です。画面に出るだけで、書き出すファイルには入りません。</li>
+        <li><strong>行の下の小さな表示</strong>：行の種類、マス数、折り返しの行数、要確認の内容。</li>
+        <li><strong>画面下</strong>：辞書の状態、行数・ページ数、要確認の件数と「前／次」ボタン。</li>
+      </ul>
+
+      <h2 id="formats">3. 読み込める形式・書き出せる形式</h2>
+      <div class="table-wrap">
+        <table>
+          <caption>対応している形式</caption>
+          <thead><tr><th scope="col">形式</th><th scope="col">読み込み</th><th scope="col">書き出し</th><th scope="col">内容</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">BSE（BASE形式）</th><td class="mark">○</td><td class="mark">○</td><td>NABCCのテキスト型。T・エディタ、ういんびー、点字ディスプレイなど。Ctrl+Sで保存される形式です</td></tr>
+            <tr><th scope="row">BRL（NABCC）</th><td class="mark">○</td><td class="mark">○</td><td>多くの点字ソフト・点字ディスプレイ・点字プリンタで読めます</td></tr>
+            <tr><th scope="row">BRF</th><td class="mark">○</td><td class="mark">○</td><td>英語圏の標準形式</td></tr>
+            <tr><th scope="row">PEF</th><td class="mark">○</td><td class="mark">○</td><td>XMLの国際規格（ページ・行の情報つき）</td></tr>
+            <tr><th scope="row">BES（点字編集システム）</th><td class="mark">○</td><td class="mark">○</td><td>実物のBESを解析して作りました。BESXは点字本文だけ読み込みます</td></tr>
+            <tr><th scope="row">エーデル（.edl）</th><td class="mark">○</td><td class="mark">○</td><td>点図。点図ダイアログから書き出します</td></tr>
+            <tr><th scope="row">テキスト（.txt）</th><td class="mark">○</td><td class="mark">○</td><td>UTF-8・Shift_JISを自動判別。点字（Unicode）・かな・対照表で書き出せます</td></tr>
+            <tr><th scope="row">Word（.docx）</th><td class="mark">○</td><td class="mark">○</td><td>見出し・表・枠・区切り線・画像を読み込みます</td></tr>
+            <tr><th scope="row">Excel（.xlsx）</th><td class="mark">○</td><td class="mark">－</td><td>シートごとに見出し＋表にします</td></tr>
+            <tr><th scope="row">PDF</th><td class="mark">○</td><td class="mark">○</td><td>読み込みは文字だけ。書き出しは点図（点図プリンタ用・立体コピー用）</td></tr>
+            <tr><th scope="row">画像（PNG・JPEGなど）</th><td class="mark">○</td><td class="mark">－</td><td>点図にします</td></tr>
+            <tr><th scope="row">SVG</th><td class="mark">－</td><td class="mark">○</td><td>点図</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>ブレイルスター（BLS・BLE・BS）、ブレイルメモ（BMT）、コータクン（NAB）、ないーぶネットの旧形式（BET）、旧Word（.doc）、旧Excel（.xls）は読み込めません。元のソフトでBSEやBRLに書き出してから開いてください。</p>
+
+      <h2 id="save">4. 保存のしかたと保存先（Ctrl+S）</h2>
+      <div class="note"><strong>Ctrl+S（Macは ⌘+S）はBSE形式だけです。</strong> BSE以外の形式で保存したいときは、「書き出す」ボタンから形式を選んでください。</div>
+      <ul>
+        <li><strong>保存先</strong>：
+          <ul>
+            <li>Windows・MacのChrome／Edge、デスクトップ版では「名前を付けて保存」の画面が出て、選んだ場所に保存されます。</li>
+            <li>Safari・Firefox・iPhone／iPadでは「ダウンロード」フォルダに保存されます（iPhone／iPadは「ファイル」アプリの「ダウンロード」）。</li>
+          </ul>
+        </li>
+        <li><strong>ファイル名</strong>：読み込んだファイルの名前＋拡張子（例：<code>資料.bse</code>）。新しく打ち込んだときは <code>点訳.bse</code>。墨字の保存は <code>資料_墨字.txt</code> のようになります。</li>
+        <li><strong>保存されるもの</strong>：書き出したデータだけです。かなの手直しや校正の状態など、作業の途中経過は保存されません。アプリを閉じると消えます。</li>
+        <li><strong>校正が残っているとき</strong>：書き出す前に確認の画面が出ます（<a href="#proof">校正</a>を参照）。</li>
+      </ul>
+
+      <h2 id="rows">5. 行の種類と点訳の書式</h2>
+      <p>変換データの各行で「行の種類」を選べます。Wordの見出しや表、罫線は自動で種類が付きます。</p>
+      <div class="table-wrap">
+        <table>
+          <caption>行の種類</caption>
+          <thead><tr><th scope="col">種類</th><th scope="col">点字での書き方</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">本文</th><td>段落の頭を2マスあけて、32マスで語の途中で切らずに折り返します</td></tr>
+            <tr><th scope="row">大・中・小見出し</th><td>7・5・3マス目から書き出し、前を1行あけます。ページの最後に見出しだけが残らないようにします</td></tr>
+            <tr><th scope="row">区切り線</th><td>左右2マスあけて棒線（<span class="cells">⠒</span>）を引きます</td></tr>
+            <tr><th scope="row">枠の始まり・終わり</th><td>第1種の枠線（<span class="cells">⠖⠒⠲</span>／<span class="cells">⠓⠒⠚</span>）</td></tr>
+            <tr><th scope="row">表の行</th><td>セルの間を2マスあけます</td></tr>
+            <tr><th scope="row">図</th><td>点図を入れます。点図にしない設定なら「⦅図⦆」と書きます</td></tr>
+            <tr><th scope="row">空行</th><td>1行あけます</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <ul>
+        <li><strong>マス数・行数</strong>：既定は32マス×18行（両面）。上の帯で変えられます。</li>
+        <li><strong>ページ番号</strong>：「ページ番号を付ける」で、各ページの1行目（ページ行）の28マス目から書きます。「原本ページも書く」で、ページ行の行頭に原本のページ番号を書きます（PDFのページ区切りや「［原本 12］」と書いた行から取ります）。</li>
+        <li><strong>点訳者注</strong>：かなを直すときの「点訳者注 ⦅ ⦆」ボタンで、点訳者挿入符（<span class="cells">⠠⠶</span> … <span class="cells">⠶⠄</span>）を入れられます。</li>
+        <li><strong>BESの書き出し</strong>：BESは1行目がページ行なので、ページ番号を付けない設定でも空のページ行が入ります。</li>
+      </ul>
+
+      <h2 id="proof">6. 校正（読みの確認）</h2>
+      <ul>
+        <li><strong>要確認になるもの</strong>：「その後」「日本」「一日」などの読みが割れる語、数字＋「日」（ニチ／カ）、辞書にない語、点字にできない文字、読めない点字。</li>
+        <li><strong>読みの候補</strong>：行の下に候補の読みが並びます。押すとその読みに差し替わります。今の読みでよければ「確認した」を押します。</li>
+        <li><strong>校正箇所の一覧</strong>：上の「校正箇所の一覧」ボタン（<kbd>F7</kbd>）で、要確認の箇所をまとめて見られます。項目を選ぶとその行へ移動します。</li>
+        <li><strong>順に移動</strong>：画面下の「‹ 前／次 ›」（<kbd>F8</kbd>／<kbd>Shift</kbd>+<kbd>F8</kbd>）。</li>
+        <li><strong>書き出す前の確認</strong>：校正されていない箇所が残ったまま書き出そうとすると、確認の画面が出ます。
+          <ul>
+            <li><kbd>Enter</kbd>：続ける（そのまま書き出す）</li>
+            <li><kbd>Esc</kbd>：戻る（書き出さない）</li>
+            <li><kbd>スペース</kbd>：校正箇所の一覧へ移動</li>
+          </ul>
+          同じ名前のボタンもあります。
+        </li>
+      </ul>
+
+      <h2 id="figure">7. 点図</h2>
+      <ul>
+        <li><strong>本文に入れる点図</strong>：Wordの画像や画像ファイルを、点字のマス（1マス＝横2点×縦3点）で描いた図にして、本文の点字ファイルに入れます。</li>
+        <li><strong>点図ファイル</strong>：図の行の「点図ファイルに書き出す…」で、マス目に縛られない点図を作れます。
+          <ul>
+            <li>点図プリンタ用（PDF・SVG）：用紙全体に等間隔（既定2.5mm）で点を打ちます。ViewPlus Tigerなど、PDFを点図として打ち出せるプリンタ向け。</li>
+            <li>立体コピー用（PDF・SVG）：黒い部分を塗りつぶします。カプセルペーパー向け。</li>
+            <li>エーデル（.edl）：8×10インチの点字用紙に、点で打つ形で書き出します。</li>
+          </ul>
+          点の間隔・大きさ（大・中・小）、用紙サイズ・向き、点字の見出しを選べます。</li>
+        <li><strong>点字ファイルの中の飾り</strong>：区切り線・枠線・点図・ページ行は、かなとして読まずに、墨字では「────」「┌──┐」や点の形のままの図にします。</li>
+      </ul>
+
+      <h2 id="sixdot">8. 6点入力</h2>
+      <p>「変換の向き」を点字→墨字にして「6点入力」をオンにすると、キーボードで点字を直接打てます。</p>
+      <div class="table-wrap">
+        <table>
+          <caption>6点入力のキー</caption>
+          <thead><tr><th scope="col">キー</th><th scope="col"><kbd>F</kbd></th><th scope="col"><kbd>D</kbd></th><th scope="col"><kbd>S</kbd></th><th scope="col"><kbd>J</kbd></th><th scope="col"><kbd>K</kbd></th><th scope="col"><kbd>L</kbd></th><th scope="col"><kbd>スペース</kbd></th></tr></thead>
+          <tbody><tr><th scope="row">点</th><td>1の点</td><td>2の点</td><td>3の点</td><td>4の点</td><td>5の点</td><td>6の点</td><td>マスあけ</td></tr></tbody>
+        </table>
+      </div>
+      <p>同時に押して離すと1マス入ります。<kbd>Enter</kbd>で改行、<kbd>BackSpace</kbd>で1マス消します。入れた文字は読み上げでもお知らせします。</p>
+
+      <h2 id="sr">9. スクリーンリーダーとキー操作</h2>
+      <p>VoiceOver、PC-Talker、NVDA、JAWS、ナレーターなどで使えるように作っています。変換データの行は「3行目、かな、点字38マス、要確認」のようにまとめて読みます。「点字の読み上げ」を「点の番号も読む」にすると、「1 2 4の点、マスあけ…」と点字の中身も読みます。</p>
+      <div class="table-wrap">
+        <table>
+          <caption>キー操作の一覧</caption>
+          <thead><tr><th scope="col">キー</th><th scope="col">はたらき</th></tr></thead>
+          <tbody>
+            <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>O</kbd></th><td>ファイルを開く</td></tr>
+            <tr><th scope="row"><kbd>Ctrl</kbd>+<kbd>S</kbd></th><td>BSE形式で保存（BSEだけ）</td></tr>
+            <tr><th scope="row"><kbd>F7</kbd></th><td>校正箇所の一覧を開く</td></tr>
+            <tr><th scope="row"><kbd>F8</kbd>／<kbd>Shift</kbd>+<kbd>F8</kbd></th><td>次／前の要確認の行へ移動</td></tr>
+            <tr><th scope="row"><kbd>↑</kbd> <kbd>↓</kbd></th><td>変換データの行を移動（一覧やメニューの中では項目を移動）</td></tr>
+            <tr><th scope="row"><kbd>Home</kbd>／<kbd>End</kbd></th><td>最初／最後の行</td></tr>
+            <tr><th scope="row"><kbd>PageUp</kbd>／<kbd>PageDown</kbd></th><td>10行ずつ移動</td></tr>
+            <tr><th scope="row"><kbd>Enter</kbd></th><td>行のかなを直し始める／確定する</td></tr>
+            <tr><th scope="row"><kbd>Esc</kbd></th><td>かなの修正を終える、メニューや一覧を閉じる</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>Macでは <kbd>Ctrl</kbd> の代わりに <kbd>⌘</kbd> を使います。ページの先頭の「変換データへ移動」リンクや、見出しでも移動できます。NVDAは文字入力欄に入ると自動でフォーカスモードになります。</p>
+
+      <h2 id="caution">10. 注意点・制限</h2>
+      <div class="note"><strong>自動点訳には限界があります。</strong> 書き出す前に、必ず右側のかなと校正箇所を確認してください。</div>
+      <ul>
+        <li>同じ漢字で読みが変わる語や、固有名詞の読みは間違えることがあります。「4日（ヨッカ）」のような数字の読み分け、「関東一円」のような慣用句も自動では判断しません。</li>
+        <li>点字から墨字にしたときは、漢字には戻せません。</li>
+        <li>作業の途中経過は保存されません。閉じる前に必要な形式で書き出してください。</li>
+        <li>点図は画像を白黒にしたものです。線画や簡単な図に向いていて、写真は形が崩れます。</li>
+        <li>PDFは文字だけを読み込みます。画像、スキャンしただけのPDF、縦書きのPDFは正しく読めません。</li>
+        <li>BESXは、校正情報・下調べ情報を読み込まず、点字本文だけを扱います。</li>
+        <li>BESの書き出しは実物のファイルを解析して作りました。点字編集システムで開けないときは、BSEかBRLで書き出して点字編集システムで読み込み、BESで保存し直してください。</li>
+        <li>エーデル形式の点の種類（1〜4）と大きさの対応、1目盛りの長さ（横約0.4mm・縦約0.34mm）は推定です。</li>
+        <li>途中で文字コードを変換されて壊れたBESは読み込めません（開くとお知らせします）。</li>
+      </ul>
+
+      <h2 id="env">11. 動作環境・プライバシー</h2>
+      <ul>
+        <li><strong>ブラウザ版</strong>：Chrome・Edge・Safari・Firefoxの新しい版。パソコン・スマホ・タブレットで動きます。初回だけ辞書（約17MB）を読み込みます。</li>
+        <li><strong>デスクトップ版</strong>：Windows・Mac・Linux。インターネットにつながっていなくても動きます。署名をしていないため、初回起動時に警告が出ることがあります（Windowsは「詳細情報 → 実行」、Macは右クリック →「開く」）。</li>
+        <li><strong>プライバシー</strong>：読み込んだファイルの変換は、すべてお使いの端末の中で行います。ファイルの中身が外部に送られることはありません。</li>
+        <li><strong>料金</strong>：無料です。</li>
+      </ul>
+
+      <p class="version">ソースコード：<a href="https://github.com/setsukashiraishi-hub/tenji-editor">github.com/setsukashiraishi-hub/tenji-editor</a>（MIT License）</p>
+    </main>
+  </div>
+</body>
+</html>

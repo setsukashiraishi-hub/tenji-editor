@@ -22,6 +22,8 @@ function createWindow() {
   win.loadURL('app://local/index.html');
   // 外部リンクは既定のブラウザで開く
   win.webContents.setWindowOpenHandler(({ url }) => {
+    // アプリの中のページ（使い方など）は新しいウィンドウで開く
+    if (url.startsWith('app://')) return { action: 'allow', overrideBrowserWindowOptions: { width: 900, height: 900, title: '点訳エディタの使い方' } };
     if (/^https?:/.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });

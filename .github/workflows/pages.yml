@@ -40,7 +40,7 @@ jobs:
       - name: 公開するファイルをまとめる
         run: |
           mkdir _site
-          cp -r index.html css js vendor dict _site/
+          cp -r index.html help.html css js vendor dict _site/
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
