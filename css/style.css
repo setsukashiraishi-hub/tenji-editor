@@ -378,3 +378,6 @@ dialog.confirm { width: min(520px, calc(100vw - 32px)); border-top: 4px solid va
 .check-item .ci-why { color: var(--warn); font-size: 13px; }
 .check-item .ci-text { grid-column: 2; font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
 .check-empty { color: var(--muted); }
+
+.empty-state { padding: 28px 20px; color: var(--muted); line-height: 1.8; max-width: 52ch; }
+textarea::placeholder { color: var(--muted); opacity: .8; }

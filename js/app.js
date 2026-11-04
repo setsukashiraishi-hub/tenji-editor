@@ -5,22 +5,12 @@
   const F = window.TenjiFormats;
   const $ = id => document.getElementById(id);
 
-  const SAMPLE = [
-    '点字のしくみ',
-    '点字は、フランスのルイ・ブライユが考案した文字です。',
-    'ブライユが生まれたのは、１８０９年１月４日です。',
-    '──────────',
-    '「おいしい？」「うん」',
-    'その後、列車が遅れたため駅はひどく混み合っていた。',
-    'ＮＨＫの番組で、10円玉とＡ型の話を聞いた。'
-  ].join('\n');
-
   const state = {
     tokenizer: null,
     mode: 'sumiji',
     rows: [],
     fileBase: '点訳',
-    typeMap: new Map([['点字のしくみ', 'h2']]), // 原文の行 → 行の種類（手で選んだもの・Wordの見出しなど）
+    typeMap: new Map(), // 原文の行 → 行の種類（手で選んだもの・Wordの見出しなど）
     figures: new Map(),     // ［図：名前］→ { lines: [点字の行], alt }
     checkCursor: -1
   };
@@ -150,6 +140,7 @@
   function sumijiToRows(text, oldRows) {
     const old = new Map();
     (oldRows || []).forEach(r => { if (r.edited && r.src !== undefined) old.set(r.src, r); });
+    if (!text.trim()) return []; // 何も入っていないときは行を作らない
     return text.replace(/\r/g, '').split('\n').map(src => {
       const type = state.typeMap.get(src) || autoType(src);
       const keep = old.get(src);
@@ -545,6 +536,14 @@
     state.rows.forEach(r => { frag.appendChild(buildRow(r, (r.pagebreak || r.type === 'genpon' || r.type === 'pageno') ? n : n++)); });
     els.rows.textContent = '';
     els.rows.appendChild(frag);
+    if (!state.rows.some(r => r.cells || r.figure || (r.type && r.type !== 'body' && r.type !== 'blank'))) {
+      const li = document.createElement('li');
+      li.className = 'empty-state';
+      li.textContent = state.mode === 'sumiji'
+        ? 'まだ何もありません。左の欄に文章を入力・貼り付けるか、「ファイルを開く」でファイルを選んでください。ここに1行ずつ、かなと点字が並びます。'
+        : 'まだ何もありません。「ファイルを開く」で点字ファイルを選ぶか、「6点入力」で点字を打ってください。';
+      els.rows.appendChild(li);
+    }
     setCurrentRow(Math.min(state.currentRow || 0, rowItems().length - 1), false);
     updateSumiji();
     updateStatus();
@@ -1079,7 +1078,7 @@
   loadPrefs();
   buildMenu();
   setMode('sumiji');
-  els.src.value = SAMPLE;
+  els.src.value = '';
   convertAll();
 
   if (window.kuromoji) {
