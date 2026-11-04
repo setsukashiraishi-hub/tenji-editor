@@ -25,7 +25,9 @@
     src: $('src'), rows: $('rows'), mode: $('mode'), cols: $('cols'), lines: $('lines'),
     indent: $('indent'), hira: $('hira'), fileName: $('file-name'), note: $('file-note'),
     stDict: $('st-dict'), stCount: $('st-count'), stWarn: $('st-warn'),
-    exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint')
+    exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
+    sumiji: $('sumiji'), raw: $('raw'), btnRaw: $('btn-raw'), sumijiActions: $('sumiji-actions'), join: $('join'),
+    srcTitle: $('src-title'), outTitle: $('out-title'), outLegend: $('out-legend')
   };
 
   // ---------- 設定の保存（このブラウザだけ） ----------
@@ -93,7 +95,7 @@
   }
 
   function convertAll() {
-    const raw = els.src.value;
+    const raw = state.mode === 'sumiji' ? els.src.value : els.raw.value;
     if (state.mode === 'sumiji') {
       state.rows = sumijiToRows(raw, state.rows);
     } else {
@@ -226,6 +228,7 @@
       row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true;
       paintAlign(align, row);
       fillMeta(meta, row);
+      updateSumiji();
       updateStatus();
     });
 
@@ -240,6 +243,7 @@
     state.rows.forEach(r => { frag.appendChild(buildRow(r, r.pagebreak ? n : n++)); });
     els.rows.textContent = '';
     els.rows.appendChild(frag);
+    updateSumiji();
     updateStatus();
   }
 
@@ -253,11 +257,44 @@
   }
 
   // ---------- ファイル ----------
+  // 墨字に起こした文章（点字ファイルを読み込んだとき、右側に出す）
+  function buildSumijiText() {
+    const out = [];
+    let para = null;
+    const flush = () => { if (para !== null) { out.push(para); para = null; } };
+    for (const r of state.rows) {
+      if (r.pagebreak) { if (!els.join.checked) out.push(''); continue; }
+      const line = displayKana(r.kana || '').replace(/〓/g, '？');
+      if (!els.join.checked) { out.push(line.replace(/^[ \u3000]+/, '')); continue; }
+      if (!line.trim()) { flush(); out.push(''); continue; }
+      // 行頭にマスあけがある行は新しい段落。それ以外は前の行に続ける（点字の改行は語の切れ目）
+      if (para === null || /^[ \u3000]/.test(line)) { flush(); para = line.replace(/^[ \u3000]+/, ''); }
+      else para += ' ' + line;
+    }
+    flush();
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function updateSumiji() {
+    if (state.mode === 'sumiji') return;
+    els.sumiji.value = buildSumijiText();
+  }
+
   function setMode(mode) {
     state.mode = mode;
     els.mode.value = mode;
-    els.src.classList.toggle('braille', mode === 'braille-unicode');
-    els.src.classList.toggle('nabcc', mode === 'braille-nabcc');
+    const braille = mode !== 'sumiji';
+    document.body.classList.toggle('braille', braille);
+    els.src.hidden = braille;
+    els.sumiji.hidden = !braille;
+    els.sumijiActions.hidden = !braille;
+    els.btnRaw.hidden = !braille;
+    if (!braille) { els.raw.hidden = true; els.btnRaw.setAttribute('aria-expanded', 'false'); }
+    els.raw.classList.toggle('braille', mode === 'braille-unicode');
+    els.srcTitle.textContent = braille ? '墨字に起こしたもの' : '読み込んだファイル';
+    els.outTitle.textContent = braille ? '点字' : '変換データ';
+    els.outLegend.textContent = braille
+      ? '上段：読み（□＝マスあけ）／下段：6点　行を押すと読みを直せます'
+      : '上段：かな（□＝マスあけ）／下段：6点　行を押すとかなを直せます';
   }
 
   async function openFile(file) {
@@ -275,7 +312,8 @@
         if (!state.tokenizer) setNote('辞書の読み込みが終わると、漢字をかなに直して変換します。', true);
       } else {
         setMode(res.rawKind === 'nabcc' ? 'braille-nabcc' : 'braille-unicode');
-        els.src.value = res.raw;
+        els.raw.value = res.raw;
+        els.hira.checked = true; // 墨字はひらがなで起こす（設定はいつでも切り替えられる）
       }
       convertAll();
       toast(`${file.name} を読み込みました`);
@@ -377,7 +415,35 @@
   });
   let timer = null;
   els.src.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(convertAll, 350); });
-  els.mode.addEventListener('change', () => { setMode(els.mode.value); state.rows = []; convertAll(); });
+  els.mode.addEventListener('change', () => {
+    const wasSumiji = state.mode === 'sumiji';
+    setMode(els.mode.value);
+    // 墨字の欄に貼り付けた点字データを、そのまま点字として読み直す
+    if (wasSumiji && state.mode !== 'sumiji') { els.raw.value = els.src.value; els.raw.hidden = false; els.btnRaw.setAttribute('aria-expanded', 'true'); }
+    state.rows = [];
+    convertAll();
+  });
+  els.btnRaw.addEventListener('click', () => {
+    els.raw.hidden = !els.raw.hidden;
+    els.btnRaw.setAttribute('aria-expanded', String(!els.raw.hidden));
+    if (!els.raw.hidden) els.raw.focus();
+  });
+  els.raw.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(convertAll, 350); });
+  els.join.addEventListener('change', updateSumiji);
+  $('btn-save-txt').addEventListener('click', async () => {
+    const text = els.sumiji.value;
+    if (!text.trim()) { toast('保存する内容がありません。', true); return; }
+    const name = `${state.fileBase}_墨字.txt`;
+    if (await saveFile(name, F.textFile(text))) toast(`${name} を保存しました`);
+  });
+  $('btn-save-docx').addEventListener('click', async () => {
+    const text = els.sumiji.value;
+    if (!text.trim()) { toast('保存する内容がありません。', true); return; }
+    try {
+      const name = `${state.fileBase}_墨字.docx`;
+      if (await saveFile(name, await F.docxFromText(text))) toast(`${name} を保存しました`);
+    } catch (e) { toast(e.message || '保存に失敗しました。', true); }
+  });
   [els.cols, els.lines, els.indent].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
   els.hira.addEventListener('change', () => { savePrefs(); render(); });
 

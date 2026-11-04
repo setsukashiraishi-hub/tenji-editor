@@ -378,7 +378,7 @@
     const surf = t.surface_form;
     if (t.isNumber) {
       // 和語の数え方（一つ、二つ…）は仮名で書く
-      if (next && next.surface_form === 'つ' && /^[一二三四五六七八九]$/.test(surf)) return { kana: WAGO_TSU[KANJI_DIGIT[surf]], eatNext: true };
+      if (next && next.surface_form === 'つ' && /^[一二三四五六七八九1-9]$/.test(surf)) return { kana: WAGO_TSU[KANJI_DIGIT[surf] || Number(surf)], eatNext: true };
       if (next && next.surface_form === '人' && (surf === '一' || surf === '二')) return { kana: surf === '一' ? 'ヒトリ' : 'フタリ', eatNext: true };
       const k = numberToKana(surf);
       if (k !== null) return { kana: k };
@@ -537,6 +537,7 @@
     for (const part of parts) {
       const isSp = part.startsWith('⠀');
       if (isSp) {
+        if (!out.length && !line) { line = part; continue; } // 段落の頭のマスあけは残す
         if (line && len(line) + len(part) < cols) line += part;
         else if (line) { out.push(line); line = ''; }
         continue;

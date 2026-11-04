@@ -33,6 +33,9 @@ const SAMPLE = `点字は、ルイ・ブライユが考案した文字です。
     if (id === 'docx-kana') assert.strictEqual(text, rows.map(r => r.kana).join('\n'));
     console.log('OK', id, data.length, 'bytes');
   }
+  // 折り返した段落でも、頭の2マスあけが残ること
+  const firstLines = E.layoutPages(rows, opt).flat().filter(l => l.startsWith('⠀⠀'));
+  assert.strictEqual(firstLines.length, rows.length, '段落の頭のマスあけ');
   // 32マスを超える行がないこと
   E.layoutPages(rows, opt).flat().forEach(l => assert.ok(Array.from(l).length <= 32));
   // 点字 → かな → 点字 が元に戻ること

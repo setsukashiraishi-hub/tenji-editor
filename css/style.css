@@ -119,7 +119,7 @@ body {
   overflow: hidden;
 }
 .pane-head {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px;
   padding: 10px 14px; border-bottom: 1px solid var(--line);
 }
 .pane-head h2 { margin: 0; font-size: 13px; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
@@ -128,14 +128,25 @@ body {
 .note { padding: 8px 14px; font-size: 12px; background: var(--accent-soft); color: var(--ink); border-bottom: 1px solid var(--line); }
 .note.warn { background: var(--warn-soft); }
 
-textarea#src {
+textarea#src, textarea#sumiji {
   flex: 1; min-height: 0; width: 100%; resize: none;
   border: 0; padding: 12px 14px; background: var(--surface); color: var(--ink);
   font: 15px/1.9 var(--font-ui);
   white-space: pre; overflow: auto;
 }
-textarea#src.braille { font-family: var(--font-cells); font-size: 20px; line-height: 1.7; }
-textarea#src.nabcc { font-family: var(--font-mono); font-size: 14px; }
+textarea#sumiji { white-space: pre-wrap; font-size: 16px; line-height: 2; }
+textarea#raw {
+  height: 30%; min-height: 120px; width: 100%; resize: vertical;
+  border: 0; border-bottom: 1px solid var(--line); padding: 10px 14px;
+  background: var(--bg); color: var(--ink); white-space: pre; overflow: auto;
+  font: 14px/1.7 var(--font-mono);
+}
+textarea#raw.braille { font: 20px/1.6 var(--font-cells); }
+.head-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-left: auto; }
+.small-btn { padding: 3px 10px; font-size: 13px; }
+/* 点字ファイルを読み込んだときは左に点字、右に墨字 */
+body.braille .panes { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
+body.braille .pane-out { order: -1; }
 
 /* 対照行 */
 .rows { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; counter-reset: row; }
@@ -230,8 +241,12 @@ textarea#src.nabcc { font-family: var(--font-mono); font-size: 14px; }
 @media (max-width: 860px) {
   body { height: auto; min-height: 100%; }
   .panes { grid-template-columns: minmax(0, 1fr); }
-  .pane-src textarea#src { min-height: 220px; }
+  .pane-src textarea#src, textarea#sumiji { min-height: 220px; }
   .pane-out .rows { max-height: none; }
   .bar-group.end { margin-left: 0; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* 点字ファイルの行は、ファイルのとおり1行に並べる（はみ出すときは横にスクロール） */
+body.braille .align { --cw: 22px; --cg: 2px; flex-wrap: nowrap; overflow-x: auto; }
+body.braille .c { height: 32px; font-size: 22px; }

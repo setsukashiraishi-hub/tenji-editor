@@ -53,16 +53,24 @@
       <div class="pane-head">
         <h2 id="src-title">読み込んだファイル</h2>
         <span class="file-name" id="file-name">例文</span>
+        <div class="head-actions" id="sumiji-actions" hidden>
+          <label class="check" for="join"><input id="join" type="checkbox" checked> 行をつなげて段落にする</label>
+          <button type="button" class="btn small-btn primary" id="btn-save-txt">テキストで保存</button>
+          <button type="button" class="btn small-btn" id="btn-save-docx">Wordで保存</button>
+        </div>
       </div>
       <div class="note" id="file-note" hidden></div>
       <textarea id="src" spellcheck="false" aria-label="原文"></textarea>
+      <textarea id="sumiji" spellcheck="false" aria-label="墨字に起こした文章" hidden></textarea>
     </section>
 
     <section class="pane pane-out" aria-labelledby="out-title">
       <div class="pane-head">
         <h2 id="out-title">変換データ</h2>
-        <span class="legend">上段：かな（□＝マスあけ）／下段：6点　行を押すとかなを直せます</span>
+        <span class="legend" id="out-legend">上段：かな（□＝マスあけ）／下段：6点　行を押すとかなを直せます</span>
+        <button type="button" class="btn small-btn" id="btn-raw" hidden aria-expanded="false">元データ（NABCC等）を編集</button>
       </div>
+      <textarea id="raw" spellcheck="false" aria-label="点字の元データ" hidden></textarea>
       <ol class="rows" id="rows"></ol>
     </section>
   </main>

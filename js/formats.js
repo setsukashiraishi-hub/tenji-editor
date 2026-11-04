@@ -288,7 +288,11 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
     throw new Error('未対応の書き出し形式です: ' + id);
   }
 
-  const api = { readFile, parseRaw, exportFile, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
+  // 墨字の文章をそのまま保存する
+  const textFile = text => enc(withBOM(text.replace(/\r?\n/g, '\r\n')) + '\r\n');
+  const docxFromText = text => docxFile(text.replace(/\r/g, '').split('\n'));
+
+  const api = { readFile, parseRaw, exportFile, textFile, docxFromText, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiFormats = api;
 })(typeof self !== 'undefined' ? self : this);
