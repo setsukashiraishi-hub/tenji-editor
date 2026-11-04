@@ -22,6 +22,7 @@
       <input type="file" id="file-input" hidden
              accept=".txt,.docx,.xlsx,.xlsm,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
+      <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
     </div>
 
     <div class="bar-group">
@@ -125,6 +126,31 @@
         </div>
       </div>
       <div class="t-view"><canvas id="t-preview" aria-label="点図のプレビュー"></canvas></div>
+    </div>
+  </dialog>
+
+  <!-- 校正箇所の一覧 -->
+  <dialog class="sheet" id="check-dlg" aria-labelledby="check-head" aria-describedby="check-desc">
+    <div class="sheet-body">
+      <h2 id="check-head">校正箇所の一覧</h2>
+      <p id="check-desc" class="sheet-lead"></p>
+      <ol class="check-list" id="check-list"></ol>
+      <div class="sheet-actions">
+        <button type="button" class="btn" id="check-close">閉じる（Esc）</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 校正が終わっていないまま書き出そうとしたとき -->
+  <dialog class="sheet confirm" id="confirm-dlg" role="alertdialog" aria-labelledby="confirm-head" aria-describedby="confirm-desc">
+    <div class="sheet-body">
+      <h2 id="confirm-head">校正されていない箇所が残っています</h2>
+      <p id="confirm-desc">校正されていない箇所が<span id="confirm-count"></span>残っています。このままでも書き出せますが、不自然な箇所が残る可能性があります。Enterキーで続ける、Escapeキーで戻る、スペースキーで校正箇所の一覧に移動します。</p>
+      <div class="sheet-actions">
+        <button type="button" class="btn primary" id="confirm-go">続ける（Enter）</button>
+        <button type="button" class="btn" id="confirm-back">戻る（Esc）</button>
+        <button type="button" class="btn" id="confirm-list">校正箇所の一覧へ（スペース）</button>
+      </div>
     </div>
   </dialog>
 

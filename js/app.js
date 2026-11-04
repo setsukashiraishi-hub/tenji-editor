@@ -227,6 +227,16 @@
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
     ((r.checks && r.checks.length) || (r.unknown && r.unknown.length) || (r.unresolved && r.unresolved.length));
 
+  // 要確認の理由（一覧・読み上げ用）
+  function checkReasons(r) {
+    const out = [];
+    for (const ck of (r.checks || [])) if (!ck.done) out.push(`読みを確認：${ck.surface}（今は ${displayKana(ck.kana)}）`);
+    const miss = [...new Set([...(r.unknown || []), ...(r.unresolved || [])])].filter(x => x !== '〓');
+    if (miss.length) out.push('辞書にない語・点字にできない文字：' + miss.join(' '));
+    if ((r.unresolved || []).includes('〓')) out.push('読めない点字');
+    return out;
+  }
+
   // 表示用のマスあけ記号（書き出すデータには入らない）
   const SPACE_MARK = '□';
   const showSpaces = t => t.replace(/[ 　]/g, SPACE_MARK);
@@ -577,6 +587,10 @@
     els.stCount.textContent = `${textRows.length}行 → 点字 ${lines}行・${pages.length}ページ（${opt.cols}マス×${opt.lines}行${opt.pageNumbers ? '・ページ番号あり' : ''}）`;
     const warnRows = textRows.filter(needsCheck).length;
     els.stWarn.textContent = warnRows ? `要確認 ${warnRows}行` : '';
+    const cb = $('btn-checklist');
+    $('check-count').textContent = warnRows;
+    cb.classList.toggle('has', warnRows > 0);
+    cb.setAttribute('aria-label', `校正箇所の一覧、${warnRows ? warnRows + '件' : 'なし'}`);
     els.navCheck.hidden = !warnRows;
   }
 
@@ -708,8 +722,100 @@
     return true;
   }
 
-  async function doExport(fmt) {
+  // ---------- 校正箇所の一覧 ----------
+  const CK = { dlg: $('check-dlg'), list: $('check-list'), desc: $('check-desc') };
+  let checkOpener = null;
+  function openCheckList(opener) {
+    checkOpener = opener || document.activeElement;
+    const items = state.rows.filter(needsCheck);
+    CK.list.textContent = '';
+    CK.desc.textContent = items.length
+      ? `${items.length}件あります。項目を選ぶとその行へ移動します（上下の矢印キーで移動、Enterで決定）。`
+      : '校正が必要な箇所はありません。';
+    items.forEach(r => {
+      const li = document.createElement('li');
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'check-item';
+      const no = document.createElement('span'); no.className = 'ci-no'; no.textContent = `${r._n}行目`;
+      const why = document.createElement('span'); why.className = 'ci-why'; why.textContent = checkReasons(r).join('／');
+      const text = document.createElement('span'); text.className = 'ci-text';
+      text.textContent = (r.src && r.src !== r.cells ? '原文：' + r.src + '　' : '') + 'かな：' + displayKana(r.kana || '');
+      b.append(no, why, text);
+      b.setAttribute('aria-label', `${r._n}行目、${checkReasons(r).join('、')}、かな：${displayKana(r.kana || '')}`);
+      b.addEventListener('click', () => {
+        CK.dlg.close();
+        const al = rowItems().find(el => el.closest('.row') && el.closest('.row').dataset.idx === String(state.rows.indexOf(r)));
+        if (al) {
+          setCurrentRow(rowItems().indexOf(al), false);
+          al.scrollIntoView({ block: 'center' });
+          al.focus({ preventScroll: true });
+          const li2 = al.closest('.row'); li2.classList.add('flash'); setTimeout(() => li2.classList.remove('flash'), 1200);
+        }
+      });
+      li.appendChild(b);
+      CK.list.appendChild(li);
+    });
+    if (!items.length) { const p = document.createElement('li'); p.className = 'check-empty'; p.textContent = 'ありません。'; CK.list.appendChild(p); }
+    CK.dlg.showModal();
+    const first = CK.list.querySelector('.check-item');
+    (first || $('check-close')).focus();
+  }
+  CK.list.addEventListener('keydown', ev => {
+    const items = [...CK.list.querySelectorAll('.check-item')];
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); items[Math.min(items.length - 1, i + 1)].focus(); }
+    if (ev.key === 'ArrowUp') { ev.preventDefault(); items[Math.max(0, i - 1)].focus(); }
+    if (ev.key === 'Home') { ev.preventDefault(); items[0].focus(); }
+    if (ev.key === 'End') { ev.preventDefault(); items[items.length - 1].focus(); }
+  });
+  $('check-close').addEventListener('click', () => CK.dlg.close());
+  CK.dlg.addEventListener('close', () => {
+    // 行へ移動したとき以外は、開いたボタンに戻る
+    if (!els.rows.contains(document.activeElement) && checkOpener && checkOpener.focus) checkOpener.focus();
+  });
+  $('btn-checklist').addEventListener('click', ev => openCheckList(ev.currentTarget));
+
+  // ---------- 書き出す前の確認（校正されていない箇所が残っているとき） ----------
+  const CF = { dlg: $('confirm-dlg'), count: $('confirm-count') };
+  function confirmBeforeExport(opener) {
+    const n = state.rows.filter(needsCheck).length;
+    if (!n) return Promise.resolve('go');
+    CF.count.textContent = `${n}件`;
+    return new Promise(resolve => {
+      let done = false;
+      const finish = v => {
+        if (done) return; done = true;
+        CF.dlg.removeEventListener('keydown', onKey, true);
+        CF.dlg.removeEventListener('cancel', onCancel);
+        CF.dlg.close();
+        resolve(v);
+      };
+      const onKey = ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); finish('go'); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish('back'); }
+        else if (ev.key === ' ' || ev.code === 'Space') { ev.preventDefault(); ev.stopPropagation(); finish('list'); }
+      };
+      const onCancel = ev => { ev.preventDefault(); finish('back'); };
+      CF.dlg.addEventListener('keydown', onKey, true);
+      CF.dlg.addEventListener('cancel', onCancel);
+      $('confirm-go').onclick = () => finish('go');
+      $('confirm-back').onclick = () => finish('back');
+      $('confirm-list').onclick = () => finish('list');
+      CF.dlg.showModal();
+      // ダイアログ自体にフォーカスを置いて、見出しと説明文から読み上げさせる
+      CF.dlg.tabIndex = -1;
+      CF.dlg.focus();
+    }).then(v => {
+      if (v === 'back') { if (opener && opener.focus) opener.focus(); announce('書き出しをやめて戻りました'); }
+      if (v === 'list') openCheckList(opener);
+      return v;
+    });
+  }
+
+  async function doExport(fmt, opener) {
     closeMenu();
+    if ((await confirmBeforeExport(opener || els.exportBtn)) !== 'go') return;
     if (!state.rows.some(r => r.cells || r.figure || E.DECOR_TYPES.has(r.type))) { toast('書き出す内容がありません。', true); return; }
     try {
       const rows = state.rows.map(r => ({ ...r, kana: r.kana ? displayKana(r.kana) : r.kana }));
@@ -745,7 +851,7 @@
       b.querySelector('.desc').textContent = fmt.note;
       b.querySelector('.desc').id = 'exp-' + fmt.id;
       b.querySelector('.ext').setAttribute('aria-hidden', 'true');
-      b.addEventListener('click', () => doExport(fmt));
+      b.addEventListener('click', () => doExport(fmt, els.exportBtn));
       els.exportPop.appendChild(b);
     }
   }
@@ -772,8 +878,9 @@
   document.addEventListener('keydown', ev => {
     if (ev.key === 'Escape' && !els.exportPop.hidden) closeMenu(true);
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'o') { ev.preventDefault(); $('file-input').click(); }
-    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); doExport(F.EXPORTS[0]); }
-    if (ev.key === 'F8') { ev.preventDefault(); goToCheck(ev.shiftKey ? -1 : 1); }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); if (!document.querySelector('dialog[open]')) doExport(F.EXPORTS[0], document.activeElement); }
+    if (ev.key === 'F7') { ev.preventDefault(); if (!document.querySelector('dialog[open]')) openCheckList(document.activeElement); }
+    if (ev.key === 'F8' && !document.querySelector('dialog[open]')) { ev.preventDefault(); goToCheck(ev.shiftKey ? -1 : 1); }
   });
 
   // ---------- 点図ファイル（マス目に縛られない点図） ----------
@@ -930,13 +1037,15 @@
   });
   els.raw.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(convertAll, 250); });
   els.join.addEventListener('change', updateSumiji);
-  $('btn-save-txt').addEventListener('click', async () => {
+  $('btn-save-txt').addEventListener('click', async ev => {
+    if ((await confirmBeforeExport(ev.currentTarget)) !== 'go') return;
     const text = els.sumiji.value;
     if (!text.trim()) { toast('保存する内容がありません。', true); return; }
     const name = `${state.fileBase}_墨字.txt`;
     if (await saveFile(name, F.textFile(text))) toast(`${name} を保存しました`);
   });
-  $('btn-save-docx').addEventListener('click', async () => {
+  $('btn-save-docx').addEventListener('click', async ev => {
+    if ((await confirmBeforeExport(ev.currentTarget)) !== 'go') return;
     const text = els.sumiji.value;
     if (!text.trim()) { toast('保存する内容がありません。', true); return; }
     try {
