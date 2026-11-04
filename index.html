@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>点訳エディタ</title>
+  <meta name="description" content="墨字（テキスト・Word）と点字データ（BSE・BRL・BRF・PEF・BES）を相互に変換する点訳エディタ">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 36%22%3E%3Ccircle cx=%226%22 cy=%226%22 r=%224%22 fill=%22%231f5f6b%22/%3E%3Ccircle cx=%2218%22 cy=%2218%22 r=%224%22 fill=%22%231f5f6b%22/%3E%3Ccircle cx=%226%22 cy=%2230%22 r=%224%22 fill=%22%231f5f6b%22/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="brand">
+      <span class="brand-cells" aria-hidden="true">⠟⠴⠐⠳</span>
+      <span class="brand-name">点訳エディタ</span>
+    </div>
+
+    <div class="bar-group">
+      <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
+      <input type="file" id="file-input" hidden
+             accept=".txt,.docx,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <button type="button" id="btn-new" class="btn">新規</button>
+    </div>
+
+    <div class="bar-group">
+      <label class="field" for="mode">
+        <span>変換の向き</span>
+        <select id="mode">
+          <option value="sumiji">墨字 → 点字</option>
+          <option value="braille-nabcc">点字（NABCC/BSE） → 墨字</option>
+          <option value="braille-unicode">点字（Unicode） → 墨字</option>
+        </select>
+      </label>
+    </div>
+
+    <div class="bar-group">
+      <label class="field small" for="cols"><span>マス</span><input id="cols" type="number" min="10" max="60" value="32"></label>
+      <label class="field small" for="lines"><span>行</span><input id="lines" type="number" min="5" max="40" value="18"></label>
+      <label class="check" for="indent"><input id="indent" type="checkbox" checked> 段落の頭を2マスあける</label>
+      <label class="check" for="hira"><input id="hira" type="checkbox"> ひらがなで表示</label>
+    </div>
+
+    <div class="bar-group end">
+      <div class="menu" id="export-menu">
+        <button type="button" class="btn primary" id="btn-export" aria-haspopup="true" aria-expanded="false">書き出す ▾</button>
+        <div class="menu-pop" id="export-pop" role="menu" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <main class="panes" id="drop-zone">
+    <section class="pane pane-src" aria-labelledby="src-title">
+      <div class="pane-head">
+        <h2 id="src-title">読み込んだファイル</h2>
+        <span class="file-name" id="file-name">例文</span>
+      </div>
+      <div class="note" id="file-note" hidden></div>
+      <textarea id="src" spellcheck="false" aria-label="原文"></textarea>
+    </section>
+
+    <section class="pane pane-out" aria-labelledby="out-title">
+      <div class="pane-head">
+        <h2 id="out-title">変換データ</h2>
+        <span class="legend"><span class="lg-kana">かな（分かち書き・編集可）</span><span class="lg-cells">6点</span></span>
+      </div>
+      <ol class="rows" id="rows"></ol>
+    </section>
+  </main>
+
+  <footer class="status" id="status">
+    <span id="st-dict" class="pill wait">辞書を読み込み中…</span>
+    <span id="st-count"></span>
+    <span id="st-warn"></span>
+    <a class="st-help" href="https://github.com/zjybttvmpr-ux/tenji-editor#readme" target="_blank" rel="noopener">使い方</a>
+  </footer>
+
+  <div class="drop-hint" id="drop-hint" hidden>ここにファイルを離すと読み込みます</div>
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="vendor/kuromoji.js"></script>
+  <script src="vendor/jszip.min.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/formats.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

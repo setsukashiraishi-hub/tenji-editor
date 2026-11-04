@@ -1,0 +1,38 @@
+{
+  "name": "tenji-editor",
+  "version": "1.0.0",
+  "description": "墨字（テキスト・Word）と点字データ（BSE・BRL・BRF・PEF・BES）を相互に変換する点訳エディタ",
+  "main": "electron/main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/rules.test.js && node test/roundtrip.test.js",
+    "serve": "python3 -m http.server 8000",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.0",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "io.github.tenji-editor",
+    "productName": "Tenji Editor",
+    "directories": { "output": "release" },
+    "files": [
+      "index.html",
+      "css/**",
+      "js/**",
+      "vendor/**",
+      "dict/**",
+      "electron/**",
+      "package.json"
+    ],
+    "fileAssociations": [
+      { "ext": ["bse", "brl", "brf", "pef", "bes"], "name": "点字データ", "role": "Editor" }
+    ],
+    "win": { "target": ["nsis", "portable"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
+    "mac": { "target": ["dmg"], "category": "public.app-category.productivity" },
+    "linux": { "target": ["AppImage"], "category": "Office" }
+  }
+}
