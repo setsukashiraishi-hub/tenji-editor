@@ -265,7 +265,19 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
     { id: 'txt-table', label: 'テキスト（対照表）', ext: 'txt', group: '墨字', note: '原文・かな・点字を1行ずつ並べた確認用' }
   ];
 
-  // rows: アプリの行モデル [{src, kana, cells, pagebreak, para}]
+  // 行を墨字（かな）にしたもの。飾りは ─ ┌ ┐ などの形、図は［図］にする
+  function rowCells(r, opt) {
+    if (E.DECOR_TYPES.has(r.type)) return r.fixed ? r.cells : E.decorCells(r.type, opt.cols);
+    if (r.type === 'figure') return (r.figure || []).join('\r\n');
+    return r.cells || '';
+  }
+  function rowText(r, opt) {
+    if (E.DECOR_TYPES.has(r.type)) return E.decorText(r.type, rowCells(r, opt));
+    if (r.type === 'figure') return '［図' + (r.alt ? '：' + r.alt : '') + '］';
+    return (r.kana || '').replace(/⦅/g, '【点訳者注：').replace(/⦆/g, '】');
+  }
+
+  // rows: アプリの行モデル [{src, kana, cells, pagebreak, para, type}]
   async function exportFile(id, rows, opt) {
     const pages = E.layoutPages(rows, opt);
     switch (id) {
@@ -280,10 +292,10 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
         pages.forEach((p, i) => { if (i) lines.push(null); lines.push(...p); });
         return docxFile(lines, 'Segoe UI Symbol');
       }
-      case 'txt-kana': return enc(withBOM(rows.map(r => r.pagebreak ? '' : r.kana).join('\r\n')) + '\r\n');
-      case 'docx-kana': return docxFile(rows.map(r => r.pagebreak ? null : r.kana));
+      case 'txt-kana': return enc(withBOM(rows.filter(r => r.type !== 'genpon' && r.type !== 'pageno').map(r => r.pagebreak ? '' : rowText(r, opt)).join('\r\n')) + '\r\n');
+      case 'docx-kana': return docxFile(rows.filter(r => r.type !== 'genpon' && r.type !== 'pageno').map(r => r.pagebreak ? null : rowText(r, opt)));
       case 'txt-table': return enc(withBOM(rows.filter(r => !r.pagebreak).map((r, i) =>
-        `[${i + 1}]\r\n原文：${r.src || ''}\r\nかな：${r.kana}\r\n点字：${r.cells}\r\n`).join('\r\n')));
+        `[${i + 1}]\r\n原文：${r.src || ''}\r\nかな：${rowText(r, opt)}\r\n点字：${rowCells(r, opt)}\r\n`).join('\r\n')));
     }
     throw new Error('未対応の書き出し形式です: ' + id);
   }

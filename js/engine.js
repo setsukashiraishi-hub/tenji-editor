@@ -82,6 +82,7 @@
     '「': '⠤', '」': '⠤', '『': '⠰⠤', '』': '⠤⠆',
     '（': '⠶', '）': '⠶', '(': '⠶', ')': '⠶',
     '〔': '⠐⠶', '〕': '⠶⠂', '［': '⠐⠶', '］': '⠶⠂', '[': '⠐⠶', ']': '⠶⠂', '【': '⠐⠶', '】': '⠶⠂',
+    '⦅': '⠠⠶', '⦆': '⠶⠄', // 点訳者挿入符
     '“': '⠰⠄', '”': '⠠⠆', '〈': '⠰⠄', '〉': '⠠⠆', '《': '⠰⠄', '》': '⠠⠆', '＜': '⠰⠄', '＞': '⠠⠆',
     '：': '⠐⠂', ':': '⠐⠂', '※': '⠰⠆', '-': '⠤', '－': '⠤', '‐': '⠤'
   };
@@ -213,7 +214,7 @@
   function brailleToKana(cellsLine) {
     const s = Array.from(cellsLine.replace(/ /g, '⠀'));
     let out = '';
-    let kagi = false, kakko = false;
+    let kagi = false, kakko = false, ins = false;
     const blank = j => j >= s.length || s[j] === '⠀';
     const closer = j => j >= s.length || s[j] === '⠀' || s[j] === '⠤' || s[j] === '⠶';
     for (let i = 0; i < s.length; i++) {
@@ -266,6 +267,7 @@
         if (n1 === '⠤') { out += '～'; i++; continue; }
         out += kagi ? '」' : '「'; kagi = !kagi; continue;
       }
+      if (c === '⠶' && n1 === '⠄' && ins) { out += '⦆'; ins = false; i++; continue; }
       if (c === '⠶') {
         if (n1 === '⠂') { out += '〕'; i++; continue; }
         out += kakko ? '）' : '（'; kakko = !kakko; continue;
@@ -276,6 +278,7 @@
         if (n1 === '⠂') { out += '：'; i++; continue; }
         if (REV_DAKU[n1]) { out += REV_DAKU[n1]; i++; continue; }
       }
+      if (c === '⠠' && n1 === '⠶') { out += '⦅'; ins = true; i++; continue; }
       if (c === '⠠') {
         if (n1 === '⠆') { out += '”'; i++; continue; }
         if (REV_HANDAKU[n1]) { out += REV_HANDAKU[n1]; i++; continue; }
@@ -451,11 +454,27 @@
     return moraCount(kana);
   }
 
+  // 読みが割れる語（候補を出して、点訳者に選んでもらう）
+  const AMBIG = {
+    'その後': ['ソノゴ', 'ソノ アト', 'ソノ ノチ'], 'その他': ['ソノ ホカ', 'ソノタ'],
+    '一日': ['イチニチ', 'ツイタチ'], '今日': ['キョー', 'コンニチ'], '明日': ['アシタ', 'アス', 'ミョーニチ'],
+    '昨日': ['キノー', 'サクジツ'], '日本': ['ニホン', 'ニッポン'], '上手': ['ジョーズ', 'ウワテ', 'カミテ'],
+    '下手': ['ヘタ', 'シモテ', 'シタテ'], '人気': ['ニンキ', 'ヒトケ'], '生物': ['セイブツ', 'ナマモノ'],
+    '色紙': ['シキシ', 'イロガミ'], '市場': ['イチバ', 'シジョー'], '大家': ['オーヤ', 'タイカ'],
+    '一行': ['イチギョー', 'イッコー'], '風車': ['フーシャ', 'カザグルマ'], '最中': ['サイチュー', 'モナカ'],
+    '何人': ['ナンニン', 'ナニジン'], '方': ['カタ', 'ホー'], '何': ['ナニ', 'ナン'], '等': ['ナド', 'トー', 'ラ'],
+    '今月末': ['コンゲツマツ', 'コンゲツ スエ'], '一番': ['イチバン', 'イチ バン'], '分': ['フン', 'ブン', 'ワケ'],
+    '後': ['アト', 'ゴ', 'ノチ', 'ウシロ'], '前': ['マエ', 'ゼン'], '中': ['ナカ', 'チュー', 'ジュー'],
+    '間': ['アイダ', 'マ', 'カン', 'ケン'], '上': ['ウエ', 'ジョー', 'カミ'], '下': ['シタ', 'カ', 'ゲ', 'シモ'],
+    '他': ['ホカ', 'タ'], '行方': ['ユクエ', 'ギョーホー', 'イクエ'], '一時': ['イチジ', 'イットキ', 'イチ ジ']
+  };
+
   // 1行分の kuromoji トークン → 分かち書きした点字仮名
   function tokensToKana(rawTokens) {
     const tokens = prepareTokens(rawTokens);
     let out = '';
     const unresolved = [];
+    const checks = [];
     const ctx = { attachNext: false, prevMora: 0, curMora: 0 };
     let prev = null;
     for (let i = 0; i < tokens.length; i++) {
@@ -469,6 +488,8 @@
       }
       const r = tokenKana(t, prev, tokens[i + 1]);
       if (r.unresolved) unresolved.push(surf);
+      if (AMBIG[surf] && r.kana) checks.push({ surface: surf, kana: r.kana, options: AMBIG[surf] });
+      else if (t.isNumber && tokens[i + 1] && tokens[i + 1].surface_form === '日') checks.push({ surface: surf + '日', kana: r.kana + 'ニチ', options: [r.kana + 'ニチ', r.kana + 'カ'] });
       ctx.curMora = moraOf(t, r.kana);
       const brk = needsBreak(t, prev, ctx);
       if (brk && out && !out.endsWith(' ')) out += ' ';
@@ -479,7 +500,7 @@
       ctx.prevMora = ctx.curMora;
       prev = t;
     }
-    return { kana: normalizeSpacing(out), unresolved };
+    return { kana: normalizeSpacing(out), unresolved, checks };
   }
 
   // 句読点まわりのマスあけを整える
@@ -495,27 +516,114 @@
       .trim();
   }
 
+  // ---------- 行の種類と飾り ----------
+  const ROW_TYPES = [
+    ['body', '本文'], ['h1', '大見出し'], ['h2', '中見出し'], ['h3', '小見出し'],
+    ['rule', '区切り線'], ['frame-start', '枠の始まり'], ['frame-end', '枠の終わり'],
+    ['figure', '図'], ['blank', '空行']
+  ];
+  const HEAD_INDENT = { h1: 6, h2: 4, h3: 2 }; // 7・5・3マス目から書き出す
+  const DECOR_TYPES = new Set(['rule', 'frame-start', 'frame-end']);
+  // 枠線：第1種（⠖⠒⠲ / ⠓⠒⠚）。区切り線は棒線（⠒）を左右2マスあけて引く
+  function decorCells(type, cols) {
+    const inner = Math.max(2, cols - 6);
+    if (type === 'rule') return '⠀⠀' + '⠒'.repeat(Math.max(2, cols - 4));
+    if (type === 'frame-start') return '⠀⠀⠖' + '⠒'.repeat(inner) + '⠲';
+    if (type === 'frame-end') return '⠀⠀⠓' + '⠒'.repeat(inner) + '⠚';
+    return '';
+  }
+  // 点字の飾り行を見分ける（点字→墨字のとき、読まずに飾りとして扱う）
+  function detectDecor(cells) {
+    const t = (cells || '').replace(/^⠀+|⠀+$/g, '');
+    if (!t) return null;
+    if (/^⠒{4,}$/.test(t) || /^⠂{6,}$/.test(t) || /^⠤{6,}$/.test(t)) return 'rule';
+    if (/^[⠖⠫]⠒{2,}[⠲⠝]$/.test(t)) return 'frame-start';
+    if (/^[⠓⠮]⠒{2,}[⠚⠵]$/.test(t)) return 'frame-end';
+    return null;
+  }
+  // 飾りの点字を、墨字のデザインに起こす
+  const DECOR_GLYPH = {
+    rule: { '⠒': '─', '⠂': '･', '⠤': '─' },
+    'frame-start': { '⠖': '┌', '⠫': '┏', '⠒': '─', '⠲': '┐', '⠝': '┓' },
+    'frame-end': { '⠓': '└', '⠮': '┗', '⠒': '─', '⠚': '┘', '⠵': '┛' }
+  };
+  function decorText(type, cells) {
+    const map = DECOR_GLYPH[type] || {};
+    return Array.from(cells || '').map(c => c === '⠀' ? '　' : (map[c] || '･')).join('').replace(/^　+|　+$/g, '');
+  }
+  // 点字が多く、かなとして読むと意味をなさない行（点図・模様）を見分ける
+  function looksLikeGraphic(cells, kana) {
+    const t = (cells || '').replace(/⠀/g, '');
+    if (t.length < 6) return false;
+    const bad = (kana.match(/〓/g) || []).length;
+    const dense = (t.match(/[⠿⠾⠷⠯⠟⠻⠽]/g) || []).length / t.length;
+    return bad / t.length > 0.25 || (dense > 0.6 && !/[ァ-ン]{3}/.test(kana.replace(/メ|モ|ミ|ヘ|テ|セ|ム/g, '')));
+  }
+
+  const digitsCells = n => '⠼' + String(n).split('').map(d => DIGIT[d]).join('');
+  // ページ行（1行目）：点字ページ番号を28マス目から書く。原本ページは行頭に書く（指定したとき）
+  function pageLine(n, genpon, cols, opt) {
+    const line = Array(cols).fill('⠀');
+    const num = Array.from(digitsCells(n));
+    let start = Math.min(27, cols - num.length);
+    num.forEach((c, i) => { line[start + i] = c; });
+    if (opt.genpon && genpon) {
+      const g = Array.from(digitsCells(genpon));
+      g.forEach((c, i) => { if (i < start - 1) line[i] = c; });
+    }
+    return line.join('').replace(/⠀+$/, '');
+  }
+
   // ---------- レイアウト（マス数・行数） ----------
-  // rows: [{cells: '⠁⠃⠀…', para: true}, {pagebreak: true}, ...]
+  // rows: [{cells, para, type}, {pagebreak:true}, {type:'genpon', page:'12'}, ...]
   function layoutPages(rows, opt) {
     const cols = opt.cols || 32, lines = opt.lines || 18, indent = opt.indent ? 2 : 0;
-    const pages = [[]];
-    const pushLine = l => {
-      let page = pages[pages.length - 1];
-      if (page.length >= lines) { page = []; pages.push(page); }
-      page.push(l);
-    };
+    const bodyLines = opt.pageNumbers ? lines - 1 : lines;
+    let curGenpon = null;
+    const pages = [[]], meta = [{ genpon: null }];
+    const cur = () => pages[pages.length - 1];
+    const newPage = () => { pages.push([]); meta.push({ genpon: curGenpon }); };
+    const room = () => bodyLines - cur().length;
+    const pushLine = l => { if (cur().length >= bodyLines) newPage(); cur().push(l); };
     for (const row of rows) {
-      if (row.pagebreak) {
-        if (pages[pages.length - 1].length) pages.push([]);
+      if (row.pagebreak) { if (cur().length) newPage(); continue; }
+      const type = row.type || 'body';
+      if (type === 'pageno') { if (!opt.pageNumbers) pushLine(row.cells); continue; } // ページ番号を付ける設定なら付け直す
+      if (type === 'genpon') {
+        curGenpon = row.page;
+        if (!cur().length) meta[meta.length - 1].genpon = curGenpon;
+        continue;
+      }
+      if (type === 'blank') { pushLine(''); continue; }
+      if (DECOR_TYPES.has(type)) {
+        pushLine(row.fixed ? row.cells : decorCells(type, cols));
+        continue;
+      }
+      if (type === 'figure' && row.figure && row.figure.length) {
+        if (room() < row.figure.length && cur().length) newPage();
+        for (const l of row.figure) pushLine(Array.from(l).slice(0, cols).join(''));
         continue;
       }
       let cells = row.cells || '';
       if (cells.replace(/⠀/g, '') === '') { pushLine(''); continue; }
+      if (HEAD_INDENT[type]) {
+        const ind = HEAD_INDENT[type];
+        const body = wrapCells(cells.replace(/^⠀+/, ''), cols - ind).map(l => '⠀'.repeat(ind) + l);
+        // 見出しの前は1行あける。ページの最後に見出しだけが残らないようにする
+        if (cur().length && cur()[cur().length - 1] !== '') {
+          if (room() < body.length + 2) newPage(); else pushLine('');
+        } else if (room() < body.length + 1) newPage();
+        for (const l of body) pushLine(l);
+        continue;
+      }
       if (row.para && indent && !cells.startsWith('⠀')) cells = '⠀'.repeat(indent) + cells;
       for (const l of wrapCells(cells, cols)) pushLine(l);
     }
-    if (pages.length > 1 && pages[pages.length - 1].length === 0) pages.pop();
+    if (pages.length > 1 && cur().length === 0) { pages.pop(); meta.pop(); }
+    if (opt.pageNumbers) {
+      const startNo = opt.pageStart || 1;
+      return pages.map((p, i) => [pageLine(startNo + i, meta[i].genpon, cols, opt), ...p]);
+    }
     return pages;
   }
 
@@ -584,6 +692,7 @@
   }
 
   const api = {
+    ROW_TYPES, HEAD_INDENT, DECOR_TYPES, decorCells, detectDecor, decorText, looksLikeGraphic, pageLine, AMBIG,
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount

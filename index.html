@@ -38,6 +38,8 @@
       <label class="field small" for="lines"><span>行</span><input id="lines" type="number" min="5" max="40" value="18"></label>
       <label class="check" for="indent"><input id="indent" type="checkbox" checked> 段落の頭を2マスあける</label>
       <label class="check" for="hira"><input id="hira" type="checkbox"> ひらがなで表示</label>
+      <label class="check" for="pagenum"><input id="pagenum" type="checkbox"> ページ番号を付ける</label>
+      <label class="check" for="genpon"><input id="genpon" type="checkbox"> 原本ページも書く</label>
     </div>
 
     <div class="bar-group end">
@@ -68,7 +70,10 @@
       <div class="pane-head">
         <h2 id="out-title">変換データ</h2>
         <span class="legend" id="out-legend">上段：かな（□＝マスあけ）／下段：6点　行を押すとかなを直せます</span>
-        <button type="button" class="btn small-btn" id="btn-raw" hidden aria-expanded="false">元データ（NABCC等）を編集</button>
+        <div class="head-actions">
+          <label class="check" for="sixdot" id="sixdot-wrap" hidden title="F D S J K L を同時に押して1マス入力。スペースでマスあけ"><input id="sixdot" type="checkbox"> 6点入力</label>
+          <button type="button" class="btn small-btn" id="btn-raw" hidden aria-expanded="false">元データ（NABCC等）を編集</button>
+        </div>
       </div>
       <textarea id="raw" spellcheck="false" aria-label="点字の元データ" hidden></textarea>
       <ol class="rows" id="rows"></ol>
@@ -79,6 +84,10 @@
     <span id="st-dict" class="pill wait">辞書を読み込み中…</span>
     <span id="st-count"></span>
     <span id="st-warn"></span>
+    <span class="nav-check" id="nav-check" hidden>
+      <button type="button" class="btn small-btn" id="btn-prev-check" aria-label="前の要確認へ">‹ 前</button>
+      <button type="button" class="btn small-btn" id="btn-next-check" aria-label="次の要確認へ">次 ›</button>
+    </span>
     <a class="st-help" href="https://github.com/setsukashiraishi-hub/tenji-editor#readme" target="_blank" rel="noopener">使い方</a>
   </footer>
 

@@ -250,3 +250,37 @@ body.braille .pane-out { order: -1; }
 /* 点字ファイルの行は、ファイルのとおり1行に並べる（はみ出すときは横にスクロール） */
 body.braille .align { --cw: 22px; --cg: 2px; flex-wrap: nowrap; overflow-x: auto; }
 body.braille .c { height: 32px; font-size: 22px; }
+
+/* 行の種類・校正 */
+.type-sel {
+  font: inherit; font-size: 11px; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; height: 20px;
+}
+.check-box { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.opt {
+  font: inherit; font-size: 11px; padding: 0 8px; height: 20px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--warn); background: var(--surface); color: var(--warn);
+}
+.opt:hover { background: var(--warn-soft); }
+.opt.current { background: var(--warn); color: #fff; }
+.opt.ok-btn { border-color: var(--accent); color: var(--accent); }
+.opt.ok-btn:hover { background: var(--accent-soft); }
+.row.needs-check .row-no { color: var(--warn); font-weight: 700; }
+.row.flash { animation: flash 1.2s ease-out; }
+@keyframes flash { from { background: var(--warn-soft); } to { background: transparent; } }
+@media (prefers-reduced-motion: reduce) { .row.flash { animation: none; background: var(--warn-soft); } }
+.row.type-h1 .u-k, .row.type-h2 .u-k, .row.type-h3 .u-k { font-weight: 700; }
+.align.static { cursor: default; }
+.u.decor .u-k { color: var(--accent); }
+.u.decor .c { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.align.figure-view { flex-direction: column; flex-wrap: nowrap; gap: 0; overflow-x: auto; }
+.fig-cap { font-size: 12px; color: var(--accent); margin-bottom: 4px; }
+.fig-line { display: flex; gap: 0; }
+.fig-line .c { width: 16px; height: 22px; font-size: 18px; border-radius: 0; border-color: color-mix(in srgb, var(--line) 50%, transparent); }
+.fig-line .c.blank { background: transparent; }
+.edit-wrap { display: flex; gap: 6px; align-items: center; }
+.edit-wrap .kana-edit { flex: 1; min-width: 0; }
+.row.genpon .pb { letter-spacing: .1em; color: var(--accent); border-top-style: dotted; }
+.nav-check { display: inline-flex; gap: 6px; }
+/* 区切り線・枠の行は折り返さずに1行で見せる */
+.row.type-rule .align, .row.type-frame-start .align, .row.type-frame-end .align { flex-wrap: nowrap; overflow-x: auto; }
