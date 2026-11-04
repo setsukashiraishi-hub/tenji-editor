@@ -33,24 +33,63 @@
     exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
     sumiji: $('sumiji'), raw: $('raw'), btnRaw: $('btn-raw'), sumijiActions: $('sumiji-actions'), join: $('join'),
     srcTitle: $('src-title'), outTitle: $('out-title'), outLegend: $('out-legend'),
-    sixdot: $('sixdot'), sixdotWrap: $('sixdot-wrap')
+    sixdot: $('sixdot'), sixdotWrap: $('sixdot-wrap'), srmode: $('srmode'),
+    srPolite: $('sr-polite'), srAssertive: $('sr-assertive')
   };
 
+  // ---------- スクリーンリーダーへのお知らせ ----------
+  let announceTimer = null;
+  function announce(msg, urgent) {
+    const el = urgent ? els.srAssertive : els.srPolite;
+    clearTimeout(announceTimer);
+    el.textContent = '';
+    // 同じ文でも読み直させるため、いったん空にしてから入れる
+    announceTimer = setTimeout(() => { el.textContent = msg; }, 60);
+  }
+  // 点字1マスを点の番号で読む（例：⠋ → 1 2 4の点）
+  function cellDots(c) {
+    const b = c.charCodeAt(0) - 0x2800;
+    if (!b) return 'マスあけ';
+    const n = [];
+    for (let i = 0; i < 6; i++) if (b & (1 << i)) n.push(i + 1);
+    return n.join(' ') + 'の点';
+  }
+  const cellsDots = cells => Array.from(cells || '').map(cellDots).join('、');
+  // 行を読み上げ用の文にする
+  function speakRow(row, n) {
+    const type = row.type || 'body';
+    const label = TYPE_LABEL[type] || '';
+    const cells = rowCellsForDisplay(row);
+    const parts = [`${n}行目`];
+    if (type !== 'body') parts.push(label);
+    if (type === 'figure') parts.push(row.alt ? row.alt : '', row.figure && !row.noFigure ? `点図 ${row.figure.length}行` : '点図なし');
+    else if (E.DECOR_TYPES.has(type)) parts.push(`${cellLen(cells)}マス`);
+    else if (type !== 'blank') {
+      parts.push(displayKana(row.kana || '') || '空行');
+      if (cells) parts.push(`点字 ${cellLen(cells)}マス`);
+      if (els.srmode.value === 'dots' && cells) parts.push('点字：' + cellsDots(cells));
+    }
+    if (needsCheck(row)) parts.push('要確認');
+    if (row.edited) parts.push('手直し済み');
+    return parts.filter(Boolean).join('、');
+  }
+
   // ---------- 設定の保存（このブラウザだけ） ----------
-  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon'];
+  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'srmode'];
   function loadPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem('tenji-editor-prefs') || '{}');
       for (const k of PREF_KEYS) {
         if (p[k] === undefined) continue;
         if (els[k].type === 'checkbox') els[k].checked = !!p[k]; else els[k].value = p[k];
+        if (els[k].tagName === 'SELECT' && !els[k].value) els[k].selectedIndex = 0;
       }
     } catch (e) { /* 保存できない環境では既定値のまま */ }
   }
   function savePrefs() {
     try {
       const p = {};
-      for (const k of PREF_KEYS) p[k] = els[k].type === 'checkbox' ? els[k].checked : +els[k].value;
+      for (const k of PREF_KEYS) p[k] = els[k].type === 'checkbox' ? els[k].checked : (els[k].tagName === 'SELECT' ? els[k].value : +els[k].value);
       localStorage.setItem('tenji-editor-prefs', JSON.stringify(p));
     } catch (e) { /* 何もしない */ }
   }
@@ -69,6 +108,7 @@
     els.toast.textContent = msg;
     els.toast.classList.toggle('err', !!isErr);
     els.toast.hidden = false;
+    announce(msg, !!isErr);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { els.toast.hidden = true; }, isErr ? 7000 : 3500);
   }
@@ -207,7 +247,7 @@
     if (row.type !== 'genpon') {
       const sel = document.createElement('select');
       sel.className = 'type-sel';
-      sel.setAttribute('aria-label', 'この行の種類');
+      sel.setAttribute('aria-label', `${row._n || ''}行目の種類`);
       for (const [v, label] of E.ROW_TYPES) {
         const o = document.createElement('option'); o.value = v; o.textContent = label; sel.appendChild(o);
       }
@@ -254,6 +294,8 @@
         b.className = 'opt' + (opt2 === ck.kana ? ' current' : '');
         b.textContent = displayKana(opt2);
         b.title = opt2 === ck.kana ? '今の読み（このままでよい）' : 'この読みにする';
+        b.setAttribute('aria-pressed', String(opt2 === ck.kana));
+        b.setAttribute('aria-label', `${row._n || ''}行目の「${ck.surface}」を ${displayKana(opt2)} と読む`);
         b.addEventListener('click', ev => {
           ev.stopPropagation();
           if (opt2 !== ck.kana && row.kana.includes(ck.kana)) {
@@ -262,6 +304,7 @@
             row.cells = r.cells; row.bad = r.bad; row.unknown = r.unknown; row.edited = true;
           }
           ck.kana = opt2; ck.done = true;
+          announce(`「${ck.surface}」を ${displayKana(opt2)} にしました`);
           if (!(row.checks || []).some(c => !c.done) && !(row.unknown || []).length && !(row.unresolved || []).length) row.reviewed = true;
           onChange();
         });
@@ -272,7 +315,8 @@
     if (needsCheck(row)) {
       const ok = document.createElement('button');
       ok.type = 'button'; ok.className = 'opt ok-btn'; ok.textContent = '確認した';
-      ok.addEventListener('click', ev => { ev.stopPropagation(); row.reviewed = true; (row.checks || []).forEach(c => { c.done = true; }); onChange(); });
+      ok.setAttribute('aria-label', `${row._n || ''}行目を確認済みにする`);
+      ok.addEventListener('click', ev => { ev.stopPropagation(); row.reviewed = true; (row.checks || []).forEach(c => { c.done = true; }); onChange(); announce(`${row._n || ''}行目を確認済みにしました`); });
       meta.appendChild(ok);
     }
     if (row.edited) meta.appendChild(chipEl('かなを手直し済み', 'edited'));
@@ -301,6 +345,7 @@
   }
   function paintAlign(el, row) {
     el.textContent = '';
+    el.dataset.speak = '';
     el.classList.remove('plain', 'figure-view');
     const type = row.type || 'body';
     if (type === 'figure') {
@@ -377,22 +422,26 @@
     const no = document.createElement('div');
     no.className = 'row-no';
     no.textContent = idx + 1;
+    no.setAttribute('aria-hidden', 'true');
     const body = document.createElement('div');
     body.className = 'row-body';
 
+    row._n = idx + 1;
     const align = document.createElement('div');
     align.className = 'align';
     const editable = !E.DECOR_TYPES.has(type) && type !== 'figure' && type !== 'blank';
-    if (editable) {
-      align.tabIndex = 0;
-      align.setAttribute('role', 'button');
-      align.setAttribute('aria-label', `${idx + 1}行目：${row.kana || '空行'}。押すとかなを直せます`);
-      align.title = 'クリックでかなを直す';
-    } else {
-      align.classList.add('static');
-      align.setAttribute('aria-label', `${idx + 1}行目：${TYPE_LABEL[type]}`);
-    }
+    // 行はすべて矢印キーで移れるようにする（Tab で入るのは1行だけ）
+    align.tabIndex = -1;
+    align.setAttribute('role', editable ? 'button' : 'img');
+    if (editable) align.title = 'クリックでかなを直す';
+    else align.classList.add('static');
+    const setLabel = () => {
+      align.setAttribute('aria-label', speakRow(row, idx + 1) + (editable ? '。Enterでかなを直せます' : ''));
+    };
     paintAlign(align, row);
+    // 点字のマスや、かなを1文字ずつ読ませない（行の読み上げ文にまとめる）
+    for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
+    setLabel();
 
     const editWrap = document.createElement('div');
     editWrap.className = 'edit-wrap';
@@ -408,12 +457,15 @@
     insBtn.className = 'btn small-btn';
     insBtn.textContent = '点訳者注 ⦅ ⦆';
     insBtn.title = '点訳者挿入符（⠠⠶ … ⠶⠄）を入れる。選んだ文字があれば囲む';
+    insBtn.setAttribute('aria-label', '点訳者注の記号を入れる');
     editWrap.append(edit, insBtn);
 
     const meta = document.createElement('div');
     meta.className = 'meta';
     const refresh = () => {
       paintAlign(align, row);
+      for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
+      setLabel();
       fillMeta(meta, row, refresh);
       li.classList.toggle('needs-check', !!needsCheck(row));
       updateSumiji();
@@ -435,10 +487,15 @@
       const b = E.kanaToBraille(row.kana);
       row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
       refresh();
+      clearTimeout(row._speakTimer);
+      row._speakTimer = setTimeout(() => {
+        announce(`点字 ${cellLen(row.cells)}マス` + (els.srmode.value === 'dots' ? '、' + cellsDots(row.cells) : '') +
+          (b.unknown.length ? `、点字にできない文字があります：${b.unknown.join(' ')}` : ''));
+      }, 700);
     };
     align.addEventListener('click', openEdit);
     align.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEdit(); } });
-    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); edit.blur(); } });
+    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; align.focus(); } });
     edit.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== insBtn && document.activeElement !== edit) editWrap.hidden = true; }, 0); });
     edit.addEventListener('input', applyEdit);
     insBtn.addEventListener('mousedown', ev => ev.preventDefault()); // 入力欄のフォーカスを保つ
@@ -478,9 +535,39 @@
     state.rows.forEach(r => { frag.appendChild(buildRow(r, (r.pagebreak || r.type === 'genpon' || r.type === 'pageno') ? n : n++)); });
     els.rows.textContent = '';
     els.rows.appendChild(frag);
+    setCurrentRow(Math.min(state.currentRow || 0, rowItems().length - 1), false);
     updateSumiji();
     updateStatus();
   }
+
+  // ---------- 行の移動（矢印キー） ----------
+  const rowItems = () => [...els.rows.querySelectorAll('.align')];
+  function setCurrentRow(i, focus) {
+    const items = rowItems();
+    if (!items.length) return;
+    i = Math.max(0, Math.min(items.length - 1, i));
+    items.forEach((el, k) => { el.tabIndex = k === i ? 0 : -1; });
+    state.currentRow = i;
+    if (focus) items[i].focus();
+  }
+  els.rows.addEventListener('focusin', ev => {
+    const items = rowItems();
+    const i = items.indexOf(ev.target);
+    if (i >= 0) setCurrentRow(i, false);
+  });
+  els.rows.addEventListener('keydown', ev => {
+    const items = rowItems();
+    const i = items.indexOf(document.activeElement);
+    if (i < 0) return;
+    const go = j => { ev.preventDefault(); setCurrentRow(j, true); };
+    if (ev.key === 'ArrowDown') go(i + 1);
+    else if (ev.key === 'ArrowUp') go(i - 1);
+    else if (ev.key === 'Home') go(0);
+    else if (ev.key === 'End') go(items.length - 1);
+    else if (ev.key === 'PageDown') go(i + 10);
+    else if (ev.key === 'PageUp') go(i - 10);
+  });
+  els.rows.addEventListener('focus', () => setCurrentRow(state.currentRow || 0, true));
 
   function updateStatus() {
     const textRows = state.rows.filter(r => !r.pagebreak && r.type !== 'genpon' && r.type !== 'pageno');
@@ -510,8 +597,11 @@
     li.scrollIntoView({ block: 'start', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     li.classList.add('flash');
     setTimeout(() => li.classList.remove('flash'), 1200);
-    const focusEl = li.querySelector('.check-box .opt, .align');
-    if (focusEl) focusEl.focus({ preventScroll: true });
+    const al = li.querySelector('.align');
+    const k = rowItems().indexOf(al);
+    if (k >= 0) setCurrentRow(k, false);
+    if (al) al.focus({ preventScroll: true });
+    announce(`要確認 ${idx + 1}件目／${items.length}件`);
   }
   $('btn-next-check').addEventListener('click', () => goToCheck(1));
   $('btn-prev-check').addEventListener('click', () => goToCheck(-1));
@@ -648,16 +738,29 @@
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'menu-item' + (fmt.id === 'bes' ? ' experimental' : '');
-      b.setAttribute('role', 'menuitem');
+      b.setAttribute('aria-describedby', 'exp-' + fmt.id);
       b.innerHTML = `<span class="label"></span><span class="ext"></span><span class="desc"></span>`;
       b.querySelector('.label').textContent = fmt.label;
       b.querySelector('.ext').textContent = '.' + fmt.ext;
       b.querySelector('.desc').textContent = fmt.note;
+      b.querySelector('.desc').id = 'exp-' + fmt.id;
+      b.querySelector('.ext').setAttribute('aria-hidden', 'true');
       b.addEventListener('click', () => doExport(fmt));
       els.exportPop.appendChild(b);
     }
   }
-  function closeMenu() { els.exportPop.hidden = true; els.exportBtn.setAttribute('aria-expanded', 'false'); }
+  function closeMenu(returnFocus) {
+    const wasOpen = !els.exportPop.hidden;
+    els.exportPop.hidden = true; els.exportBtn.setAttribute('aria-expanded', 'false');
+    if (wasOpen && returnFocus) els.exportBtn.focus();
+  }
+  els.exportPop.addEventListener('keydown', ev => {
+    const items = [...els.exportPop.querySelectorAll('.menu-item')];
+    const i = items.indexOf(document.activeElement);
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); items[(i + 1) % items.length].focus(); }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    else if (ev.key === 'Escape') { ev.preventDefault(); closeMenu(true); }
+  });
   els.exportBtn.addEventListener('click', ev => {
     ev.stopPropagation();
     const open = els.exportPop.hidden;
@@ -667,7 +770,7 @@
   });
   document.addEventListener('click', ev => { if (!$('export-menu').contains(ev.target)) closeMenu(); });
   document.addEventListener('keydown', ev => {
-    if (ev.key === 'Escape') closeMenu();
+    if (ev.key === 'Escape' && !els.exportPop.hidden) closeMenu(true);
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'o') { ev.preventDefault(); $('file-input').click(); }
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); doExport(F.EXPORTS[0]); }
     if (ev.key === 'F8') { ev.preventDefault(); goToCheck(ev.shiftKey ? -1 : 1); }
@@ -703,16 +806,20 @@
     try {
       const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), opt);
       window.TenjiFigure.drawPreview(T.canvas, lay);
+      T.canvas.setAttribute('aria-label', `点図のプレビュー：${lay.dots.length}個の点` + (lay.rects.length ? '、塗りの図' : ''));
       T.info.textContent = opt.style === 'solid'
         ? '立体コピー（カプセルペーパー）用：黒い部分が浮き上がります。見出しの点字も点で描きます。'
         : `点図プリンタ用：点 ${lay.dots.length.toLocaleString()} 個` + (lay.dots.length > 2000 ? '（2,000点を超えるので、ソフトによっては読み込めないことがあります）' : '');
     } catch (e) { T.info.textContent = '図を作れませんでした：' + (e.message || e); }
   }
+  let tactileOpener = null;
   function openTactile(row) {
     tactileRow = row;
+    tactileOpener = document.activeElement;
     // エーデルなどの点図はもとから見出しを含むので、見出しは空にしておく
     T.title.value = row.tactile ? '' : (row.alt ? 'ズ' + row.alt.replace(/^図/, '').replace(/\.[^.]+$/, '') : 'ズ');
     if (T.dlg.showModal) T.dlg.showModal(); else T.dlg.hidden = false;
+    T.styleDots.checked ? T.styleDots.focus() : T.styleSolid.focus();
     refreshTactile();
   }
   [T.paper, T.landscape, T.pitch, T.size, T.title, T.styleDots, T.styleSolid].forEach(el =>
@@ -739,6 +846,7 @@
   $('t-pdf').addEventListener('click', () => exportTactile('pdf'));
   $('t-svg').addEventListener('click', () => exportTactile('svg'));
   $('t-close').addEventListener('click', () => { if (T.dlg.close) T.dlg.close(); else T.dlg.hidden = true; });
+  T.dlg.addEventListener('close', () => { if (tactileOpener && tactileOpener.focus) tactileOpener.focus(); });
 
   // ---------- 6点入力（F D S J K L ＝ 1 2 3 4 5 6 の点） ----------
   const DOT_KEYS = { KeyF: 1, KeyD: 2, KeyS: 4, KeyJ: 8, KeyK: 16, KeyL: 32 };
@@ -758,7 +866,7 @@
       if (!ev.repeat) { held.add(ev.code); chord |= DOT_KEYS[ev.code]; }
       return;
     }
-    if (ev.code === 'Space') { ev.preventDefault(); insertAtCaret(els.raw, cellFor(0)); return; }
+    if (ev.code === 'Space') { ev.preventDefault(); insertAtCaret(els.raw, cellFor(0)); announce('マスあけ'); return; }
     // そのほかの文字キーは 6点入力中は無視（Enter・矢印・BackSpace は使える）
     if (ev.key.length === 1) ev.preventDefault();
   });
@@ -766,7 +874,12 @@
     if (!els.sixdot.checked || !DOT_KEYS[ev.code]) return;
     ev.preventDefault();
     held.delete(ev.code);
-    if (!held.size && chord) { insertAtCaret(els.raw, cellFor(chord)); chord = 0; }
+    if (!held.size && chord) {
+      insertAtCaret(els.raw, cellFor(chord));
+      const kana = E.brailleToKana(E.bitsCell(chord)).replace(/〓/g, '');
+      announce((kana && kana !== ' ' ? kana + '、' : '') + cellDots(E.bitsCell(chord)));
+      chord = 0;
+    }
   });
   els.sixdot.addEventListener('change', () => {
     if (els.sixdot.checked) {
@@ -831,7 +944,7 @@
       if (await saveFile(name, await F.docxFromText(text))) toast(`${name} を保存しました`);
     } catch (e) { toast(e.message || '保存に失敗しました。', true); }
   });
-  [els.cols, els.lines, els.indent, els.hira, els.pagenum, els.genpon].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
+  [els.cols, els.lines, els.indent, els.hira, els.pagenum, els.genpon, els.srmode].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
 
   // ドラッグ＆ドロップ
   let dragDepth = 0;
@@ -860,6 +973,7 @@
       }
       state.tokenizer = tokenizer;
       els.stDict.textContent = '辞書 準備完了';
+      announce('辞書の準備ができました');
       els.stDict.className = 'pill ok';
       if (state.mode === 'sumiji') {
         state.rows = state.rows.filter(r => r.edited);

@@ -9,11 +9,13 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-  <header class="bar">
-    <div class="brand">
+  <a class="skip" href="#rows">変換データへ移動</a>
+  <a class="skip" href="#src-pane">読み込んだファイルへ移動</a>
+  <header class="bar" aria-label="操作">
+    <h1 class="brand">
       <span class="brand-cells" aria-hidden="true">⠟⠴⠐⠳</span>
       <span class="brand-name">点訳エディタ</span>
-    </div>
+    </h1>
 
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
@@ -38,20 +40,27 @@
       <label class="field small" for="lines"><span>行</span><input id="lines" type="number" min="5" max="40" value="18"></label>
       <label class="check" for="indent"><input id="indent" type="checkbox" checked> 段落の頭を2マスあける</label>
       <label class="check" for="hira"><input id="hira" type="checkbox"> ひらがなで表示</label>
+      <label class="field" for="srmode"><span>点字の読み上げ</span>
+        <select id="srmode" aria-describedby="srmode-hint">
+          <option value="count">マス数だけ読む</option>
+          <option value="dots">点の番号も読む</option>
+        </select>
+      </label>
+      <span id="srmode-hint" class="sr-only">スクリーンリーダーで右側の行を読んだときに、点字をどう読むかを選びます。</span>
       <label class="check" for="pagenum"><input id="pagenum" type="checkbox"> ページ番号を付ける</label>
       <label class="check" for="genpon"><input id="genpon" type="checkbox"> 原本ページも書く</label>
     </div>
 
     <div class="bar-group end">
       <div class="menu" id="export-menu">
-        <button type="button" class="btn primary" id="btn-export" aria-haspopup="true" aria-expanded="false">書き出す ▾</button>
-        <div class="menu-pop" id="export-pop" role="menu" hidden></div>
+        <button type="button" class="btn primary" id="btn-export" aria-expanded="false" aria-controls="export-pop">書き出す<span aria-hidden="true"> ▾</span></button>
+        <div class="menu-pop" id="export-pop" role="group" aria-label="書き出す形式" hidden></div>
       </div>
     </div>
   </header>
 
   <main class="panes" id="drop-zone">
-    <section class="pane pane-src" aria-labelledby="src-title">
+    <section class="pane pane-src" id="src-pane" tabindex="-1" aria-labelledby="src-title">
       <div class="pane-head">
         <h2 id="src-title">読み込んだファイル</h2>
         <span class="file-name" id="file-name">例文</span>
@@ -76,11 +85,12 @@
         </div>
       </div>
       <textarea id="raw" spellcheck="false" aria-label="点字の元データ" hidden></textarea>
-      <ol class="rows" id="rows"></ol>
+      <p id="rows-help" class="sr-only">上下の矢印キーで行を移動、Enterでかなを直せます。Homeで最初の行、Endで最後の行。F8で次の要確認の行へ移動します。</p>
+      <ol class="rows" id="rows" tabindex="-1" aria-labelledby="out-title" aria-describedby="rows-help"></ol>
     </section>
   </main>
 
-  <footer class="status" id="status">
+  <footer class="status" id="status" aria-label="状態">
     <span id="st-dict" class="pill wait">辞書を読み込み中…</span>
     <span id="st-count"></span>
     <span id="st-warn"></span>
@@ -119,7 +129,10 @@
   </dialog>
 
   <div class="drop-hint" id="drop-hint" hidden>ここにファイルを離すと読み込みます</div>
-  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <div class="toast" id="toast" aria-hidden="true" hidden></div>
+  <!-- スクリーンリーダー向けのお知らせ（画面には出ない） -->
+  <div id="sr-polite" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div id="sr-assertive" class="sr-only" role="alert" aria-live="assertive" aria-atomic="true"></div>
 
   <script src="vendor/kuromoji.js"></script>
   <script src="vendor/jszip.min.js"></script>

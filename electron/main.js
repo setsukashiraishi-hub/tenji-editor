@@ -30,7 +30,9 @@ function createWindow() {
   });
 }
 
+// スクリーンリーダー（ナレーター・NVDA・PC-Talker・JAWS・VoiceOver）にいつも画面の情報を渡す
 app.whenReady().then(() => {
+  app.setAccessibilitySupportEnabled(true);
   protocol.handle('app', req => {
     const { pathname } = new URL(req.url);
     let rel = decodeURIComponent(pathname);
