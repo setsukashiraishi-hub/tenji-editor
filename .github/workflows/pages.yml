@@ -26,6 +26,7 @@ jobs:
       - run: node test/rules.test.js
       - run: node test/roundtrip.test.js
       - run: node test/office.test.js
+      - run: node test/real.test.js
 
   deploy:
     if: github.event_name != 'pull_request'

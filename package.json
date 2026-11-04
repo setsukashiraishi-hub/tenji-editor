@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node test/rules.test.js && node test/roundtrip.test.js && node test/office.test.js",
+    "test": "node test/rules.test.js && node test/roundtrip.test.js && node test/office.test.js && node test/real.test.js",
     "serve": "python3 -m http.server 8000",
     "dist": "electron-builder --publish never"
   },
@@ -53,6 +53,11 @@
       {
         "ext": "bes",
         "name": "点字データ（.bes）",
+        "role": "Editor"
+      },
+      {
+        "ext": "edl",
+        "name": "エーデル点図（.edl）",
         "role": "Editor"
       }
     ],

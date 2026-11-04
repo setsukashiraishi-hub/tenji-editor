@@ -18,7 +18,7 @@
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
       <input type="file" id="file-input" hidden
-             accept=".txt,.docx,.xlsx,.xlsm,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+             accept=".txt,.docx,.xlsx,.xlsm,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
     </div>
 
@@ -95,7 +95,7 @@
     <div class="t-layout">
       <div class="t-side">
         <h2 id="t-head">点図ファイルに書き出す</h2>
-        <p class="t-lead">本文のマス目に縛られずに、用紙全体へ等間隔に点を打ちます。</p>
+        <p class="t-lead">本文のマス目に縛られずに、用紙全体へ等間隔に点を打ちます。エーデル形式は8×10インチの点字用紙・点で打つ形で書き出します。</p>
         <fieldset class="t-field">
           <legend>使い道</legend>
           <label class="check" for="t-style-dots"><input type="radio" name="t-style" id="t-style-dots" checked> 点図プリンタ用（点で打つ。ViewPlus Tiger など）</label>
@@ -110,6 +110,7 @@
         <div class="t-actions">
           <button type="button" class="btn primary" id="t-pdf">PDFで保存</button>
           <button type="button" class="btn" id="t-svg">SVGで保存</button>
+          <button type="button" class="btn" id="t-edl" title="エーデル（.edl）。8×10インチの点字用紙・点で打つ形で書き出します">エーデル（.edl）で保存</button>
           <button type="button" class="btn" id="t-close">閉じる</button>
         </div>
       </div>

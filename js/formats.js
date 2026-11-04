@@ -100,6 +100,7 @@
     if (ext === 'docx') return readDocxStructured(buf, opt || {});
     if (ext === 'xlsx' || ext === 'xlsm') return readXlsx(buf);
     if (ext === 'pdf') return readPDF(buf);
+    if (ext === 'edl') return readEDL(name, buf, opt || {});
     if (/^(png|jpe?g|gif|bmp|webp)$/.test(ext)) return readImage(name, buf, opt || {});
     return fromPlainText(decodeText(buf), 'txt');
   }
@@ -373,22 +374,150 @@
     return { kind: ext, mode: 'braille', raw, rawKind: 'nabcc', rows, note: note.trim() ? `先頭の書式情報：${note.trim()}` : '' };
   }
 
-  function readBES(u8, ext) {
-    if (u8.length <= BES_HEADER_SIZE) throw new Error('BESファイルの中身が空か、壊れています。');
-    const rows = [];
+  /*
+   * BES（点字編集システム）の作り
+   *  0〜1023    ヘッダ。"%BET400%" ＋ 日付 ＋ "E" 片面0/両面5 ＋ マス数+1 ＋ 行数 ＋ ページ数 …
+   *  1024       0xFF
+   *  そのあと   ページごとに [長さ(2バイト・下位が先)] 0xFD [本文]   長さは長さのバイトから次のページの前まで
+   *  本文       1マス＝0xA0＋点のビット、0x0D 0xFE＝改行、0xFE＝行移し、0x0C＝改ページマーク
+   *  最後       0xFF
+   * 1行目はページ行（ページ番号の行）です。
+   */
+  function besLinesToRows(bytes, rows) {
     let cur = '';
-    for (let i = BES_HEADER_SIZE; i < u8.length; i++) {
-      const b = u8[i];
+    for (let i = 0; i < bytes.length; i++) {
+      const b = bytes[i];
       if (b >= 0xa0 && b <= 0xdf) cur += E.bitsCell(b - 0xa0);
-      else if (b === 0xfe || b === 0x0c) { rows.push({ cells: cur }); cur = ''; }
-      else if (b === 0xfd) { if (cur) rows.push({ cells: cur }); cur = ''; rows.push({ pagebreak: true }); }
-      else if (b === 0xf4) { rows.push({ cells: cur }); cur = ''; }
-      // それ以外（0x0d や図形データなど）は読み飛ばす
+      else if (b === 0xfe) { rows.push({ cells: cur }); cur = ''; }
+      // 0x0D（改行マーク）・0x0C（改ページマーク）・図形のデータなどは読み飛ばす
     }
     if (cur) rows.push({ cells: cur });
+  }
+  function readBES(u8, ext) {
+    if (u8.length <= 1024) throw new Error('BESファイルの中身が空か、壊れています。');
+    const head = latin1(u8.subarray(0, 8));
+    let broken = 0;
+    for (let i = 0; i + 2 < u8.length; i++) if (u8[i] === 0xef && u8[i + 1] === 0xbf && u8[i + 2] === 0xbd) broken++;
+    if (broken > 20) {
+      throw new Error('このBESファイルは、途中で文字コードを変換されて壊れています（点字のデータが「�」に置き換わっています）。元のファイルをもう一度用意してください。');
+    }
+    const rows = [];
+    let p = 1025, pages = 0;
+    const structured = head === '%BET400%' && u8[1024] === 0xff && u8[1027] === 0xfd;
+    if (structured) {
+      while (p + 2 < u8.length && u8[p + 2] === 0xfd) {
+        const len = u8[p] | (u8[p + 1] << 8);
+        if (len < 3) break;
+        const end = Math.min(u8.length, p + len);
+        if (pages) rows.push({ pagebreak: true });
+        besLinesToRows(u8.subarray(p + 3, end), rows);
+        pages++;
+        p = end;
+      }
+    } else {
+      // 作りが分からないファイル：ヘッダ1029バイトのあとを順に読む（以前の読み方）
+      let cur = '';
+      for (let i = 1029; i < u8.length; i++) {
+        const b = u8[i];
+        if (b >= 0xa0 && b <= 0xdf) cur += E.bitsCell(b - 0xa0);
+        else if (b === 0xfe || b === 0x0c) { rows.push({ cells: cur }); cur = ''; }
+        else if (b === 0xfd) { if (cur) rows.push({ cells: cur }); cur = ''; rows.push({ pagebreak: true }); }
+      }
+      if (cur) rows.push({ cells: cur });
+    }
     const clean = trimTail(rows);
-    const note = ext === 'besx' ? 'BESXの校正情報・下調べ情報は読み込まず、点字本文だけを表示しています。' : '';
-    return { kind: ext, mode: 'braille', raw: rowsToUnicodeText(clean), rawKind: 'unicode', rows: clean, note };
+    const notes = [];
+    if (ext === 'besx') notes.push('BESXの校正情報・下調べ情報は読み込まず、点字本文だけを表示しています。');
+    if (structured) {
+      const info = latin1(u8.subarray(20, 26));
+      const m = /^E(\d)(\d\d)(\d\d)$/.exec(info);
+      if (m) notes.push(`${+m[2] - 1}マス×${+m[3]}行・${m[1] === '0' ? '片面' : '両面'}のBESファイルです（${pages}ページ）。`);
+    }
+    return { kind: ext, mode: 'braille', raw: rowsToUnicodeText(clean), rawKind: 'unicode', rows: clean, note: notes.join(' ') };
+  }
+
+  // ---------- エーデル（.edl 点図） ----------
+  /*
+   * 1行目 "EDELB5,最小のy,最大のy"。2行目から「点の大きさ（1桁）＋点の座標の並び」。
+   * 座標は x・y それぞれ2文字の26進法（@=0, A=1 … Z=26）。点は上から下・左から右の順で、
+   * 点の大きさが変わるところで行を変えます。x は1目盛り約0.4mm、y は約0.34mm（点字の点の間隔から推定）。
+   */
+  const EDL_UNIT_X = 0.4, EDL_UNIT_Y = 2.4 / 7;
+  const EDL_DOT_MM = { '1': 1.2, '2': 1.5, '3': 0.8, '4': 1.8 };
+  const edlNum = t => (t.charCodeAt(0) - 64) * 26 + (t.charCodeAt(1) - 64);
+  function parseEDL(text) {
+    const lines = text.replace(/\x1a/g, '').split(/\r?\n/);
+    const head = lines[0] || '';
+    if (!/^EDEL/.test(head)) throw new Error('エーデルの点図ファイル（.edl）ではないようです。');
+    const dots = [];
+    for (const ln of lines.slice(1)) {
+      if (!ln) continue;
+      const size = ln[0], s = ln.slice(1);
+      for (let i = 0; i + 3 < s.length; i += 4) {
+        dots.push({ x: edlNum(s.slice(i, i + 2)) * EDL_UNIT_X, y: edlNum(s.slice(i + 2, i + 4)) * EDL_UNIT_Y, d: EDL_DOT_MM[size] || 1.2, kind: size });
+      }
+    }
+    return { paper: head.slice(4).split(',')[0], dots };
+  }
+  // 点図をマス目に置き直す（本文の点字ファイルに入れるとき用）
+  function dotsToInlineCells(dots, maxCols, maxLines) {
+    if (!dots.length) return [];
+    const minX = Math.min(...dots.map(p => p.x)), maxX = Math.max(...dots.map(p => p.x));
+    const minY = Math.min(...dots.map(p => p.y)), maxY = Math.max(...dots.map(p => p.y));
+    let w = maxCols * 2;
+    let h = Math.max(3, Math.round((maxY - minY) / Math.max(1e-6, maxX - minX) * w));
+    if (h > maxLines * 3) { h = maxLines * 3; w = Math.max(2, Math.round((maxX - minX) / Math.max(1e-6, maxY - minY) * h)); }
+    const grid = new Array(w * h).fill(false);
+    for (const p of dots) {
+      const gx = Math.min(w - 1, Math.round((p.x - minX) / Math.max(1e-6, maxX - minX) * (w - 1)));
+      const gy = Math.min(h - 1, Math.round((p.y - minY) / Math.max(1e-6, maxY - minY) * (h - 1)));
+      grid[gy * w + gx] = true;
+    }
+    const BIT = [[1, 8], [2, 16], [4, 32]];
+    const out = [];
+    for (let y = 0; y < h; y += 3) {
+      let line = '';
+      for (let x = 0; x < w; x += 2) {
+        let bits = 0;
+        for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 2; dx++) if (y + dy < h && x + dx < w && grid[(y + dy) * w + x + dx]) bits |= BIT[dy][dx];
+        line += E.bitsCell(bits);
+      }
+      out.push(line.replace(/⠀+$/, ''));
+    }
+    return out;
+  }
+  function readEDL(name, buf, opt) {
+    const edl = parseEDL(latin1(new Uint8Array(buf)));
+    const label = name.replace(/\.[^.]+$/, '');
+    const lines = dotsToInlineCells(edl.dots, (opt.cols || 32) - 4, (opt.lines || 18) - 3).map(l => '⠀⠀' + l);
+    return { kind: 'edl', mode: 'sumiji', raw: `［図：${label}］`, rawKind: 'text', types: [],
+      figures: [[label, { lines, alt: name, tactile: edl.dots }]],
+      note: `エーデルの点図（点 ${edl.dots.length} 個）を読み込みました。「点図ファイルに書き出す」で、エーデル形式・点図プリンタ用・立体コピー用に書き出せます。本文の点字ファイルに入れるときは、マス目に置き直した形になります。` };
+  }
+  // 点の座標（mm、用紙の左上が原点）→ エーデル形式の文字列
+  function toEDL(dots, opt) {
+    const enc2 = n => String.fromCharCode(64 + Math.floor(n / 26)) + String.fromCharCode(64 + (n % 26));
+    const ox = (opt && opt.originX) || 0, oy = (opt && opt.originY) || 0;
+    const seen = new Set(), pts = [];
+    for (const p of dots) {
+      const x = Math.max(0, Math.min(701, Math.round((p.x - ox) / EDL_UNIT_X)));
+      const y = Math.max(0, Math.min(701, Math.round((p.y - oy) / EDL_UNIT_Y)));
+      const kind = p.kind || (p.d >= 1.45 ? '2' : p.d >= 1.0 ? '1' : '3');
+      const key = x + ',' + y;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      pts.push({ x, y, kind });
+    }
+    if (!pts.length) throw new Error('点がありません。');
+    pts.sort((a, b) => a.y - b.y || a.x - b.x);
+    const out = [`EDEL${(opt && opt.paper) || 'B5'},${pts[0].y},${pts[pts.length - 1].y}`];
+    let line = '', kind = null;
+    for (const p of pts) {
+      if (p.kind !== kind) { if (line) out.push(line); kind = p.kind; line = kind; }
+      line += enc2(p.x) + enc2(p.y);
+    }
+    if (line) out.push(line);
+    return enc(out.join('\r\n'));
   }
 
   function readPEF(xml) {
@@ -446,16 +575,30 @@
   function nabccFile(pages, lower) {
     return enc(pages.map(p => p.map(l => E.cellsToAscii(l, lower).replace(/ +$/, '')).join('\r\n')).join('\r\n\f') + '\r\n');
   }
-  function besFile(pages) {
-    const bytes = new Array(BES_HEADER_SIZE).fill(0);
+  // BES：点字編集システムと同じ作りで書き出す（1行目はページ行）
+  function besFile(pages, opt) {
+    const pad = (v, n) => String(v).padEnd(n, ' ');
+    const d = new Date();
+    const date = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    const lines = opt.lines || 18, cols = opt.cols || 32;
+    const duplex = opt.duplex !== false && lines !== 22 && lines !== 24;
+    const header = new Uint8Array(1024).fill(0x20);
+    const text = '%BET400%' + date + '  E' + (duplex ? '5' : '0') + String(cols + 1).padStart(2, '0') + String(lines).padStart(2, '0') + '     ' + pad(pages.length, 2);
+    for (let i = 0; i < text.length; i++) header[i] = text.charCodeAt(i);
+    header.set([0xff, 0xff, 0xff, 0x54], 512);
+    const out = Array.from(header);
+    out.push(0xff);
     pages.forEach(p => {
+      const body = [];
       p.forEach(l => {
-        for (const c of l) bytes.push(0xa0 + (E.cellBits(c) & 63));
-        bytes.push(0xfe);
+        for (const c of l) body.push(0xa0 + (E.cellBits(c) & 63));
+        body.push(0x0d, 0xfe);
       });
-      bytes.push(0xfd);
+      const len = body.length + 3;
+      out.push(len & 0xff, (len >> 8) & 0xff, 0xfd, ...body);
     });
-    return new Uint8Array(bytes);
+    out.push(0xff);
+    return new Uint8Array(out);
   }
   function pefFile(pages, opt) {
     const today = new Date().toISOString().slice(0, 10);
@@ -503,7 +646,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
     { id: 'brl', label: 'BRL（NABCC）', ext: 'brl', group: '点字', note: 'NABCCのテキスト。多くの点字ソフト・点字ディスプレイ・点字プリンタで読める' },
     { id: 'brf', label: 'BRF（Braille Ready）', ext: 'brf', group: '点字', note: '英語圏標準。Duxbury、BrailleBlaster、各種点字ディスプレイ向け' },
     { id: 'pef', label: 'PEF', ext: 'pef', group: '点字', note: 'XML形式の国際規格（ページ・行の情報つき）' },
-    { id: 'bes', label: 'BES（試験的）', ext: 'bes', group: '点字', note: 'ヘッダの仕様が非公開のため試験的な出力です。点字編集システムで開けるかは保証できません' },
+    { id: 'bes', label: 'BES（点字編集システム）', ext: 'bes', group: '点字', note: '点字編集システムのファイルと同じ作りで書き出します（1行目はページ行）。実物のBESを解析して作りました' },
     { id: 'txt-braille', label: 'テキスト（点字Unicode）', ext: 'txt', group: '点字', note: '点字の形をUnicode点字文字で保存' },
     { id: 'docx-braille', label: 'Word（点字Unicode）', ext: 'docx', group: '点字', note: '点字の形をWordに貼った版' },
     { id: 'txt-kana', label: 'テキスト（かな分かち書き）', ext: 'txt', group: '墨字', note: '点字を墨字に起こしたもの' },
@@ -531,7 +674,11 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
       case 'brl': return nabccFile(pages, true);
       case 'brf': return nabccFile(pages, false);
       case 'pef': return pefFile(pages, opt);
-      case 'bes': return besFile(pages);
+      case 'bes': {
+        // BESは1行目が必ずページ行。ページ番号を付けない設定でも、空のページ行を入れる
+        const p2 = E.layoutPages(rows, { ...opt, pageNumbers: true, noNumbers: !opt.pageNumbers });
+        return besFile(p2, opt);
+      }
       case 'txt-braille': return enc(withBOM(pages.map(p => p.join('\r\n')).join('\r\n\f')) + '\r\n');
       case 'docx-braille': {
         const lines = [];
@@ -550,7 +697,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
   const textFile = text => enc(withBOM(text.replace(/\r?\n/g, '\r\n')) + '\r\n');
   const docxFromText = text => docxFile(text.replace(/\r/g, '').split('\n'));
 
-  const api = { readFile, parseRaw, exportFile, textFile, docxFromText, readXlsx, readDocxStructured, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
+  const api = { parseEDL, toEDL, readFile, parseRaw, exportFile, textFile, docxFromText, readXlsx, readDocxStructured, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiFormats = api;
 })(typeof self !== 'undefined' ? self : this);

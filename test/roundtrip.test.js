@@ -24,7 +24,9 @@ const SAMPLE = `点字は、ルイ・ブライユが考案した文字です。
     const back = await F.readFile('x.' + ext, data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
     assert.strictEqual(back.mode, 'braille', id);
     const got = back.rows.filter(r => !r.pagebreak).map(r => r.cells).join('\n');
-    assert.strictEqual(got, expected, id + ' の読み戻しが一致しません');
+    // BES は各ページの1行目がページ行（ページ番号を付けない設定なら空）
+    const want = id === 'bes' ? E.layoutPages(rows, { ...opt, pageNumbers: true, noNumbers: true }).flat().join('\n') : expected;
+    assert.strictEqual(got, want, id + ' の読み戻しが一致しません');
     console.log('OK', id, data.length, 'bytes');
   }
   for (const id of ['docx-kana', 'docx-braille']) {

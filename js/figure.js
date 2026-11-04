@@ -90,7 +90,10 @@
     b4: { label: 'B4（257×364mm）', w: 257, h: 364 },
     a3: { label: 'A3（297×420mm）', w: 297, h: 420 }
   };
-  const DOT_SIZES = { large: { label: '大', d: 1.6 }, medium: { label: '中', d: 1.2 }, small: { label: '小', d: 0.8 } };
+  // kind はエーデル形式での点の種類の数字（点字の点と同じ大きさ＝2）
+  const DOT_SIZES = { large: { label: '大', d: 1.6, kind: '2' }, medium: { label: '中', d: 1.2, kind: '1' }, small: { label: '小', d: 0.8, kind: '3' } };
+  // エーデルの描ける範囲（32マス×約700目盛り）
+  const EDEL_AREA = { w: 480 * 0.4, h: 690 * 2.4 / 7 };
   // 点字（見出し用）の寸法：点の間隔 2.3mm、マスの間隔 6.0mm、行の間隔 10mm
   const BR = { dot: 2.3, cell: 6.0, line: 10.0, d: 1.4 };
 
@@ -103,7 +106,7 @@
       if (x + BR.dot > x0 + maxW) { x = x0; y += BR.line; }
       const bits = ch.charCodeAt(0) - 0x2800;
       for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 2; dx++) {
-        if (bits & DOT_BIT[dy][dx]) dots.push({ x: x + dx * BR.dot, y: y + dy * BR.dot, d: BR.d });
+        if (bits & DOT_BIT[dy][dx]) dots.push({ x: x + dx * BR.dot, y: y + dy * BR.dot, d: BR.d, kind: '2' });
       }
       x += BR.cell;
     }
@@ -116,9 +119,9 @@
    * opt: paper, margin, pitch（点の間隔）, size（点の大きさ）, style（'dots' | 'solid'）, titleCells, landscape
    */
   async function layoutTactile(src, opt) {
-    const paper = PAPERS[opt.paper] || PAPERS.a4;
-    const pw = opt.landscape ? paper.h : paper.w, ph = opt.landscape ? paper.w : paper.h;
-    const m = opt.margin == null ? 12 : opt.margin;
+    const paper = opt.edel ? EDEL_AREA : (PAPERS[opt.paper] || PAPERS.a4);
+    const pw = opt.landscape && !opt.edel ? paper.h : paper.w, ph = opt.landscape && !opt.edel ? paper.w : paper.h;
+    const m = opt.edel ? 0 : (opt.margin == null ? 12 : opt.margin);
     const out = { pageW: pw, pageH: ph, dots: [], rects: [], style: opt.style || 'dots' };
     let top = m;
     if (opt.titleCells) {
@@ -127,7 +130,20 @@
       top = t.bottom + 6;
     }
     const areaW = pw - 2 * m, areaH = ph - top - m;
-    const d = (DOT_SIZES[opt.size] || DOT_SIZES.medium).d;
+    const sz = DOT_SIZES[opt.size] || DOT_SIZES.medium;
+    const d = sz.d, kind = sz.kind;
+
+    if (src.dots) {
+      // エーデルなどから読み込んだ点：大きさはそのまま、用紙の中に収まるように縮める（大きくはしない）
+      const xs = src.dots.map(p => p.x), ys = src.dots.map(p => p.y);
+      const minX = Math.min(...xs), minY = Math.min(...ys), bw = Math.max(...xs) - minX || 1, bh = Math.max(...ys) - minY || 1;
+      const scale = Math.min(1, areaW / bw, areaH / bh);
+      const keep = opt.edel && scale === 1 && !opt.titleCells; // エーデルに書き戻すときは元の位置のまま
+      for (const p of src.dots) {
+        out.dots.push({ x: keep ? p.x : m + (p.x - minX) * scale, y: keep ? p.y : top + (p.y - minY) * scale, d: p.d, kind: p.kind });
+      }
+      return out;
+    }
 
     if (src.cells) {
       // 本文の点図（点字マス）：マスの点の位置をそのまま等間隔の格子に置き直す
@@ -138,7 +154,7 @@
       src.cells.forEach((line, ly) => Array.from(line).forEach((ch, cx) => {
         const bits = ch.charCodeAt(0) - 0x2800;
         for (let dy = 0; dy < 3; dy++) for (let dx = 0; dx < 2; dx++) {
-          if (bits & DOT_BIT[dy][dx]) out.dots.push({ x: m + (cx * 2 + dx) * p, y: top + (ly * 3 + dy) * p, d });
+          if (bits & DOT_BIT[dy][dx]) out.dots.push({ x: m + (cx * 2 + dx) * p, y: top + (ly * 3 + dy) * p, d, kind });
         }
       }));
       return out;
@@ -148,7 +164,7 @@
     const fit = Math.min(areaW / size.w, areaH / size.h); // mm / 画像の1px
     const drawW = size.w * fit, drawH = size.h * fit;
     const x0 = m + (areaW - drawW) / 2, y0 = top;
-    if (out.style === 'solid') {
+    if (out.style === 'solid' && !opt.edel) {
       // 立体コピー用：0.4mm 単位の白黒で、黒い部分を塗る（横に続く部分はまとめる）
       const res = 0.4;
       const w = Math.max(2, Math.round(drawW / res)), h = Math.max(2, Math.round(drawH / res));
@@ -169,7 +185,7 @@
     const w = Math.max(2, Math.floor(drawW / pitch)), h = Math.max(2, Math.floor(drawH / pitch));
     const bits = await imageToBits(src.blob, w, h);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-      if (bits[y * w + x]) out.dots.push({ x: x0 + x * pitch + pitch / 2, y: y0 + y * pitch + pitch / 2, d });
+      if (bits[y * w + x]) out.dots.push({ x: x0 + x * pitch + pitch / 2, y: y0 + y * pitch + pitch / 2, d, kind });
     }
     return out;
   }

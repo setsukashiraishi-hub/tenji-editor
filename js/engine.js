@@ -560,6 +560,7 @@
   const digitsCells = n => '⠼' + String(n).split('').map(d => DIGIT[d]).join('');
   // ページ行（1行目）：点字ページ番号を28マス目から書く。原本ページは行頭に書く（指定したとき）
   function pageLine(n, genpon, cols, opt) {
+    if (opt.noNumbers) return '';
     const line = Array(cols).fill('⠀');
     const num = Array.from(digitsCells(n));
     let start = Math.min(27, cols - num.length);
@@ -585,7 +586,13 @@
     for (const row of rows) {
       if (row.pagebreak) { if (cur().length) newPage(); continue; }
       const type = row.type || 'body';
-      if (type === 'pageno') { if (!opt.pageNumbers) pushLine(row.cells); continue; } // ページ番号を付ける設定なら付け直す
+      if (type === 'pageno') {
+        // 読み込んだページ行：ページ番号を付け直す設定なら捨てる。BESのようにページ行の枠があればそこへ置く
+        if (opt.pageNumbers && !opt.noNumbers) continue;
+        if (opt.pageNumbers) { if (cur().length) newPage(); meta[meta.length - 1].pageLine = row.cells; continue; }
+        pushLine(row.cells);
+        continue;
+      }
       if (type === 'genpon') {
         curGenpon = row.page;
         if (!cur().length) meta[meta.length - 1].genpon = curGenpon;
@@ -601,8 +608,8 @@
         for (const l of row.figure) pushLine(Array.from(l).slice(0, cols).join(''));
         continue;
       }
-      let cells = row.cells || '';
-      if (cells.replace(/⠀/g, '') === '') { pushLine(''); continue; }
+      let cells = (row.cells || '').replace(/⠀+$/, ''); // 行末の空白は折り返しの計算に入れない
+      if (cells === '') { pushLine(''); continue; }
       if (HEAD_INDENT[type]) {
         const ind = HEAD_INDENT[type];
         const body = wrapCells(cells.replace(/^⠀+/, ''), cols - ind).map(l => '⠀'.repeat(ind) + l);
@@ -619,7 +626,7 @@
     if (pages.length > 1 && cur().length === 0) { pages.pop(); meta.pop(); }
     if (opt.pageNumbers) {
       const startNo = opt.pageStart || 1;
-      return pages.map((p, i) => [pageLine(startNo + i, meta[i].genpon, cols, opt), ...p]);
+      return pages.map((p, i) => [meta[i].pageLine !== undefined ? meta[i].pageLine : pageLine(startNo + i, meta[i].genpon, cols, opt), ...p]);
     }
     return pages;
   }

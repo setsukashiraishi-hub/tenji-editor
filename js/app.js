@@ -122,7 +122,7 @@
         const m = FIGURE_RE.exec(src.trim());
         const fig = m && state.figures.get(m[1]);
         // 点図にできない（しない）ときのために「⦅図⦆」の点字も用意しておく
-        return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
+        return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, tactile: fig ? fig.tactile : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
       }
       if (type === 'table') {
         // 表の行：セルごとに点訳して、セルの間を2マスあける
@@ -232,7 +232,7 @@
       lab.append(cb, document.createTextNode(' 点図として入れる（外すと「⦅図⦆」とだけ書く）'));
       meta.appendChild(lab);
     }
-    if (row.type === 'figure' && (row.blob || (row.figure && row.figure.length))) {
+    if (row.type === 'figure' && (row.blob || row.tactile || (row.figure && row.figure.length))) {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'opt ok-btn'; b.textContent = '点図ファイルに書き出す…';
       b.title = 'マス目に縛られない点図（点図プリンタ用・立体コピー用のPDF / SVG）にする';
@@ -695,7 +695,7 @@
       titleCells: titleKana ? E.kanaToBraille(titleKana).cells : ''
     };
   };
-  const tactileSrc = row => row.blob ? { blob: row.blob } : { cells: (row.figure || []).map(l => l.replace(/^⠀+/, '')) };
+  const tactileSrc = row => row.tactile ? { dots: row.tactile } : row.blob ? { blob: row.blob } : { cells: (row.figure || []).map(l => l.replace(/^⠀+/, '')) };
   async function refreshTactile() {
     if (!tactileRow) return;
     const opt = tactileOpt();
@@ -710,7 +710,8 @@
   }
   function openTactile(row) {
     tactileRow = row;
-    if (!T.title.value) T.title.value = row.alt ? 'ズ' + row.alt.replace(/^図/, '').replace(/\.[^.]+$/, '') : 'ズ';
+    // エーデルなどの点図はもとから見出しを含むので、見出しは空にしておく
+    T.title.value = row.tactile ? '' : (row.alt ? 'ズ' + row.alt.replace(/^図/, '').replace(/\.[^.]+$/, '') : 'ズ');
     if (T.dlg.showModal) T.dlg.showModal(); else T.dlg.hidden = false;
     refreshTactile();
   }
@@ -724,6 +725,17 @@
     const data = kind === 'svg' ? new TextEncoder().encode(window.TenjiFigure.toSVG(lay)) : window.TenjiFigure.toPDF(lay);
     if (await saveFile(`${base}.${kind}`, data)) toast(`${base}.${kind} を保存しました`);
   }
+  // エーデル形式：エーデルの描ける範囲（8×10インチの点字用紙）に合わせて点を置く
+  async function exportEdel() {
+    if (!tactileRow) return;
+    try {
+      const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), { ...tactileOpt(), edel: true, style: 'dots' });
+      const alt = (tactileRow.alt || '図').replace(/\.[^.]+$/, '');
+      const name = (alt === state.fileBase ? alt : `${state.fileBase}_${alt}`) + '.edl';
+      if (await saveFile(name, F.toEDL(lay.dots))) toast(`${name} を保存しました`);
+    } catch (e) { toast(e.message || 'エーデル形式にできませんでした。', true); }
+  }
+  $('t-edl').addEventListener('click', exportEdel);
   $('t-pdf').addEventListener('click', () => exportTactile('pdf'));
   $('t-svg').addEventListener('click', () => exportTactile('svg'));
   $('t-close').addEventListener('click', () => { if (T.dlg.close) T.dlg.close(); else T.dlg.hidden = true; });
