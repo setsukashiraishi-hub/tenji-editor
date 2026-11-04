@@ -169,7 +169,7 @@ textarea#src.nabcc { font-family: var(--font-mono); font-size: 14px; }
   text-align: center; white-space: nowrap; min-height: 1.4em;
   overflow: visible;
 }
-.u.multi .u-k { border-bottom: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 1px; }
+.u.multi .u-k { box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent) 45%, transparent); }
 .u-k.tight { font-size: 10px; letter-spacing: -.02em; }
 .u.sp .u-k { color: var(--muted); opacity: .75; }
 .u-c { display: flex; gap: var(--cg); }
