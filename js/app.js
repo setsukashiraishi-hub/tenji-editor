@@ -122,7 +122,7 @@
         const m = FIGURE_RE.exec(src.trim());
         const fig = m && state.figures.get(m[1]);
         // 点図にできない（しない）ときのために「⦅図⦆」の点字も用意しておく
-        return { ...base, figure: fig ? fig.lines : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
+        return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
       }
       if (type === 'table') {
         // 表の行：セルごとに点訳して、セルの間を2マスあける
@@ -231,6 +231,13 @@
       cb.addEventListener('change', () => { row.noFigure = !cb.checked; onChange(); });
       lab.append(cb, document.createTextNode(' 点図として入れる（外すと「⦅図⦆」とだけ書く）'));
       meta.appendChild(lab);
+    }
+    if (row.type === 'figure' && (row.blob || (row.figure && row.figure.length))) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'opt ok-btn'; b.textContent = '点図ファイルに書き出す…';
+      b.title = 'マス目に縛られない点図（点図プリンタ用・立体コピー用のPDF / SVG）にする';
+      b.addEventListener('click', ev => { ev.stopPropagation(); openTactile(row); });
+      meta.appendChild(b);
     }
     const miss = [...new Set([...(row.unknown || []), ...(row.unresolved || [])])].filter(x => x !== '〓');
     if (miss.length) meta.appendChild(chipEl('辞書にない語：' + miss.join(' '), 'warn'));
@@ -665,6 +672,61 @@
     if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 's') { ev.preventDefault(); doExport(F.EXPORTS[0]); }
     if (ev.key === 'F8') { ev.preventDefault(); goToCheck(ev.shiftKey ? -1 : 1); }
   });
+
+  // ---------- 点図ファイル（マス目に縛られない点図） ----------
+  const T = {
+    dlg: $('tactile-dlg'), canvas: $('t-preview'), paper: $('t-paper'), landscape: $('t-landscape'),
+    pitch: $('t-pitch'), size: $('t-size'), title: $('t-title'), info: $('t-info'), styleDots: $('t-style-dots'), styleSolid: $('t-style-solid')
+  };
+  let tactileRow = null, tactileTimer = null;
+  for (const [k, v] of Object.entries(window.TenjiFigure ? window.TenjiFigure.PAPERS : {})) {
+    const o = document.createElement('option'); o.value = k; o.textContent = v.label; T.paper.appendChild(o);
+  }
+  for (const [k, v] of Object.entries(window.TenjiFigure ? window.TenjiFigure.DOT_SIZES : {})) {
+    const o = document.createElement('option'); o.value = k; o.textContent = `${v.label}（直径${v.d}mm）`; T.size.appendChild(o);
+  }
+  T.paper.value = 'a4'; T.size.value = 'medium';
+  const tactileOpt = () => {
+    const titleKana = E.toKatakana(T.title.value.trim());
+    return {
+      paper: T.paper.value, landscape: T.landscape.checked,
+      pitch: Math.max(1, Math.min(5, +T.pitch.value || 2.5)), size: T.size.value,
+      style: T.styleSolid.checked ? 'solid' : 'dots',
+      titleCells: titleKana ? E.kanaToBraille(titleKana).cells : ''
+    };
+  };
+  const tactileSrc = row => row.blob ? { blob: row.blob } : { cells: (row.figure || []).map(l => l.replace(/^⠀+/, '')) };
+  async function refreshTactile() {
+    if (!tactileRow) return;
+    const opt = tactileOpt();
+    T.pitch.disabled = opt.style === 'solid' && !!tactileRow.blob;
+    try {
+      const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), opt);
+      window.TenjiFigure.drawPreview(T.canvas, lay);
+      T.info.textContent = opt.style === 'solid'
+        ? '立体コピー（カプセルペーパー）用：黒い部分が浮き上がります。見出しの点字も点で描きます。'
+        : `点図プリンタ用：点 ${lay.dots.length.toLocaleString()} 個` + (lay.dots.length > 2000 ? '（2,000点を超えるので、ソフトによっては読み込めないことがあります）' : '');
+    } catch (e) { T.info.textContent = '図を作れませんでした：' + (e.message || e); }
+  }
+  function openTactile(row) {
+    tactileRow = row;
+    if (!T.title.value) T.title.value = row.alt ? 'ズ' + row.alt.replace(/^図/, '').replace(/\.[^.]+$/, '') : 'ズ';
+    if (T.dlg.showModal) T.dlg.showModal(); else T.dlg.hidden = false;
+    refreshTactile();
+  }
+  [T.paper, T.landscape, T.pitch, T.size, T.title, T.styleDots, T.styleSolid].forEach(el =>
+    el.addEventListener('input', () => { clearTimeout(tactileTimer); tactileTimer = setTimeout(refreshTactile, 200); }));
+  async function exportTactile(kind) {
+    if (!tactileRow) return;
+    const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), tactileOpt());
+    const style = lay.style === 'solid' ? '立体コピー' : '点図';
+    const base = `${state.fileBase}_${(tactileRow.alt || '図').replace(/\.[^.]+$/, '')}_${style}`;
+    const data = kind === 'svg' ? new TextEncoder().encode(window.TenjiFigure.toSVG(lay)) : window.TenjiFigure.toPDF(lay);
+    if (await saveFile(`${base}.${kind}`, data)) toast(`${base}.${kind} を保存しました`);
+  }
+  $('t-pdf').addEventListener('click', () => exportTactile('pdf'));
+  $('t-svg').addEventListener('click', () => exportTactile('svg'));
+  $('t-close').addEventListener('click', () => { if (T.dlg.close) T.dlg.close(); else T.dlg.hidden = true; });
 
   // ---------- 6点入力（F D S J K L ＝ 1 2 3 4 5 6 の点） ----------
   const DOT_KEYS = { KeyF: 1, KeyD: 2, KeyS: 4, KeyJ: 8, KeyK: 16, KeyL: 32 };

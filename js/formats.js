@@ -100,6 +100,7 @@
     if (ext === 'docx') return readDocxStructured(buf, opt || {});
     if (ext === 'xlsx' || ext === 'xlsm') return readXlsx(buf);
     if (ext === 'pdf') return readPDF(buf);
+    if (/^(png|jpe?g|gif|bmp|webp)$/.test(ext)) return readImage(name, buf, opt || {});
     return fromPlainText(decodeText(buf), 'txt');
   }
 
@@ -203,7 +204,7 @@
           try {
             const blob = new Blob([await f.async('uint8array')]);
             const linesOfDots = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
-            figures.push([label, { lines: linesOfDots.map(l => '⠀⠀' + l), alt: target.split('/').pop() }]);
+            figures.push([label, { lines: linesOfDots.map(l => '⠀⠀' + l), alt: target.split('/').pop(), blob }]);
           } catch (e) { /* 読めない画像（EMF など）は点図にしない */ }
         }
       }
@@ -211,6 +212,17 @@
     closeBox();
     const note = figNo ? `画像が${figNo}点ありました。右側で点図に変えています（線画向き。写真は形が崩れることがあります）。` : '';
     return { kind: 'docx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures, note };
+  }
+
+  // ---------- 画像（1枚の図として読み込む） ----------
+  async function readImage(name, buf, opt) {
+    if (!root.TenjiFigure || typeof Blob === 'undefined') throw new Error('画像はブラウザ版・デスクトップ版でだけ読み込めます。');
+    const blob = new Blob([buf]);
+    const lines = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
+    const label = name.replace(/\.[^.]+$/, '');
+    return { kind: 'image', mode: 'sumiji', raw: `［図：${label}］`, rawKind: 'text', types: [],
+      figures: [[label, { lines: lines.map(l => '⠀⠀' + l), alt: name, blob }]],
+      note: '画像を1枚の図として読み込みました。図の行の「点図ファイルに書き出す」で、点図プリンタ用・立体コピー用のPDFにできます。' };
   }
 
   // ---------- Excel（シートごとに見出し＋表） ----------

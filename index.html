@@ -18,7 +18,7 @@
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
       <input type="file" id="file-input" hidden
-             accept=".txt,.docx,.xlsx,.xlsm,.pdf,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+             accept=".txt,.docx,.xlsx,.xlsm,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
     </div>
 
@@ -90,6 +90,32 @@
     </span>
     <a class="st-help" href="https://github.com/setsukashiraishi-hub/tenji-editor#readme" target="_blank" rel="noopener">使い方</a>
   </footer>
+
+  <dialog class="tactile" id="tactile-dlg" aria-labelledby="t-head">
+    <div class="t-layout">
+      <div class="t-side">
+        <h2 id="t-head">点図ファイルに書き出す</h2>
+        <p class="t-lead">本文のマス目に縛られずに、用紙全体へ等間隔に点を打ちます。</p>
+        <fieldset class="t-field">
+          <legend>使い道</legend>
+          <label class="check" for="t-style-dots"><input type="radio" name="t-style" id="t-style-dots" checked> 点図プリンタ用（点で打つ。ViewPlus Tiger など）</label>
+          <label class="check" for="t-style-solid"><input type="radio" name="t-style" id="t-style-solid"> 立体コピー用（黒く塗る。カプセルペーパー）</label>
+        </fieldset>
+        <label class="field" for="t-paper"><span>用紙</span><select id="t-paper"></select></label>
+        <label class="check" for="t-landscape"><input type="checkbox" id="t-landscape"> 横向き</label>
+        <label class="field" for="t-pitch"><span>点の間隔（mm）</span><input type="number" id="t-pitch" min="1" max="5" step="0.1" value="2.5"></label>
+        <label class="field" for="t-size"><span>点の大きさ</span><select id="t-size"></select></label>
+        <label class="field col" for="t-title"><span>図の見出し（かなで。点字にして図の上に入れます）</span><input type="text" id="t-title" placeholder="例：ズ1 テンジノ シクミ"></label>
+        <p class="t-info" id="t-info"></p>
+        <div class="t-actions">
+          <button type="button" class="btn primary" id="t-pdf">PDFで保存</button>
+          <button type="button" class="btn" id="t-svg">SVGで保存</button>
+          <button type="button" class="btn" id="t-close">閉じる</button>
+        </div>
+      </div>
+      <div class="t-view"><canvas id="t-preview" aria-label="点図のプレビュー"></canvas></div>
+    </div>
+  </dialog>
 
   <div class="drop-hint" id="drop-hint" hidden>ここにファイルを離すと読み込みます</div>
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
