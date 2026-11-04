@@ -17,7 +17,9 @@
   "build": {
     "appId": "io.github.tenji-editor",
     "productName": "Tenji Editor",
-    "directories": { "output": "release" },
+    "directories": {
+      "output": "release"
+    },
     "files": [
       "index.html",
       "css/**",
@@ -28,11 +30,55 @@
       "package.json"
     ],
     "fileAssociations": [
-      { "ext": ["bse", "brl", "brf", "pef", "bes"], "name": "点字データ", "role": "Editor" }
+      {
+        "ext": "bse",
+        "name": "点字データ（.bse）",
+        "role": "Editor"
+      },
+      {
+        "ext": "brl",
+        "name": "点字データ（.brl）",
+        "role": "Editor"
+      },
+      {
+        "ext": "brf",
+        "name": "点字データ（.brf）",
+        "role": "Editor"
+      },
+      {
+        "ext": "pef",
+        "name": "点字データ（.pef）",
+        "role": "Editor"
+      },
+      {
+        "ext": "bes",
+        "name": "点字データ（.bes）",
+        "role": "Editor"
+      }
     ],
-    "win": { "target": ["nsis", "portable"] },
-    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true },
-    "mac": { "target": ["dmg"], "category": "public.app-category.productivity" },
-    "linux": { "target": ["AppImage"], "category": "Office" }
-  }
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Office"
+    }
+  },
+  "author": "setsukashiraishi-hub",
+  "homepage": "https://setsukashiraishi-hub.github.io/tenji-editor/"
 }
