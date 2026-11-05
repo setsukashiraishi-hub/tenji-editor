@@ -558,6 +558,71 @@
     return canvasBlob(c);
   }
 
+  // PDF の文字を、行（同じ高さ）と、その中の段（大きくあいたところで区切る）にまとめる
+  function pdfTextRows(items) {
+    const rows = [];
+    for (const it of items) {
+      if (!it.str || !it.str.trim()) continue;
+      const y = it.transform[5], x = it.transform[4], h = Math.abs(it.transform[3]) || it.height || 10;
+      let row = rows.find(r => Math.abs(r.y - y) < Math.min(r.h, h) * 0.5);
+      if (!row) { row = { y, h, parts: [] }; rows.push(row); }
+      row.parts.push({ x, str: it.str, w: it.width || 0, h });
+      row.h = Math.max(row.h, h);
+    }
+    const out = [];
+    for (const r of rows) {
+      r.parts.sort((a, b) => a.x - b.x);
+      const segs = [];
+      let cur = null;
+      for (const pt of r.parts) {
+        const gap = cur ? pt.x - cur.x1 : 0;
+        if (cur && gap > Math.max(cur.h, pt.h) * 2 && pt.str.trim()) { segs.push(cur); cur = null; }
+        if (!cur) { cur = { x0: pt.x, x1: pt.x + pt.w, text: pt.str, h: pt.h }; continue; }
+        if (gap > Math.max(cur.h, pt.h) * 0.25 && /[A-Za-z0-9.,:;!?)]$/.test(cur.text) && /^[A-Za-z0-9(]/.test(pt.str)) cur.text += ' ';
+        cur.text += pt.str; cur.x1 = Math.max(cur.x1, pt.x + pt.w); cur.h = Math.max(cur.h, pt.h);
+      }
+      if (cur) segs.push(cur);
+      segs.forEach(g => { g.text = g.text.replace(/\s+/g, ' ').trim(); });
+      const live = segs.filter(g => g.text);
+      if (!live.length) continue;
+      // 大きさの違う文字が横に並んでいるとき（見出しと小さなラベルなど）は別の行にする
+      const hs = live.map(g => g.h);
+      if (live.length >= 2 && Math.max(...hs) > Math.min(...hs) * 1.3) {
+        for (const g of live) out.push({ y: r.y, h: g.h, segs: [g] });
+      } else out.push({ y: r.y, h: r.h, segs: live });
+    }
+    return out;
+  }
+  // 2つの行が、同じ位置の段で並んでいるか（表やカードの続き）
+  function sameColumns(a, b) {
+    if (a.segs.length !== b.segs.length || a.segs.length < 2) return false;
+    if (a.y - b.y > Math.max(a.h, b.h) * 6) return false;
+    const pitch = Math.min(...a.segs.slice(1).map((g, i) => g.x0 - a.segs[i].x0));
+    return a.segs.every((g, i) => {
+      const h = b.segs[i];
+      const overlap = Math.min(g.x1, h.x1) - Math.max(g.x0, h.x0) > 0;
+      return overlap || Math.abs(g.x0 - h.x0) < pitch * 0.4;
+    });
+  }
+  // 段組みの行のまとまりを、表・カードの並び・2段組みの文章・1行のどれかにする
+  function layoutBlock(grp) {
+    const cols = grp[0].segs.length, n = grp.length;
+    const cells = grp.map(r => r.segs.map(g => g.text));
+    const avg = cells.flat().reduce((a, t) => a + t.length, 0) / (n * cols);
+    const stripArrow = t => t.replace(/^[>＞→⇒▶►]\s*/, '');
+    if (n === 1) return { kind: 'line', lines: [{ text: cells[0].join('　'), type: 'body' }] };
+    // 2段組みの文章（長い文が左右に並ぶ）：左の段を読んでから右の段
+    if (cols === 2 && n >= 4 && avg > 14) {
+      return { kind: 'columns', lines: [0, 1].map(c => ({ text: cells.map(r => r[c]).join(''), type: 'body' })) };
+    }
+    // カードの並び（番号や短いラベルが横に並び、その下に説明）：縦の列ごとに1行
+    const labelRow = cells[0].every(t => /^(?:[0-9０-９]{1,3}[.)．]?|(?:STEP|Step|step|No\.?|Ｎｏ．?)\s*[0-9０-９]+|[A-ZＡ-Ｚ]|[①-⑳])$/.test(t));
+    if (labelRow || (n < cols && n <= 3 && cols >= 3)) {
+      return { kind: 'cards', lines: cells[0].map((_, c) => ({ text: cells.map(r => stripArrow(r[c])).filter(Boolean).join('　'), type: 'body' })) };
+    }
+    return { kind: 'table', lines: [{ text: FRAME_TOP, type: 'frame' }, ...cells.map(r => ({ text: r.join('\t'), type: 'table' })), { text: FRAME_BOTTOM, type: 'frame' }] };
+  }
+
   async function readPDF(buf, opt) {
     opt = opt || {};
     if (!SCRIPT_BASE || typeof document === 'undefined') throw new Error('PDFはブラウザ版・デスクトップ版でだけ読み込めます。');
@@ -569,38 +634,19 @@
       cMapPacked: true
     }).promise;
     const lines = [], types = [], figures = [];
-    let figNo = 0, scannedPages = 0, textChars = 0;
+    let figNo = 0, scannedPages = 0, textChars = 0, droppedHF = 0, tableCount = 0, cardCount = 0;
     const MAX_FIGURES = 200;
+    const pages = [];
+    // 1回目：ページごとに、文字の行（段組みの区切りつき）と画像を取り出す
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
       const tc = await page.getTextContent();
-      // 同じ高さの文字を1行にまとめる
-      const items = tc.items.filter(it => it.str !== undefined);
-      const rowsOfPage = [];
-      for (const it of items) {
-        const y = it.transform[5], x = it.transform[4], h = Math.abs(it.transform[3]) || it.height || 10;
-        let row = rowsOfPage.find(r => Math.abs(r.y - y) < h * 0.5);
-        if (!row) { row = { y, h, parts: [] }; rowsOfPage.push(row); }
-        row.parts.push({ x, str: it.str, w: it.width || 0 });
-        row.h = Math.max(row.h, h);
-      }
-      const texts = rowsOfPage.map(r => {
-        r.parts.sort((a, b) => a.x - b.x);
-        let s = '', end = null;
-        for (const pt of r.parts) {
-          if (end !== null && pt.x - end > r.h * 0.6 && /[A-Za-z0-9]$/.test(s)) s += ' ';
-          s += pt.str; end = pt.x + pt.w;
-        }
-        return { text: s.trim(), h: r.h, y: r.y };
-      }).filter(r => r.text);
-      const chars = texts.reduce((a, r) => a + r.text.length, 0);
-      textChars += chars;
-      lines.push(`［原本 ${p}］`);
-
-      // 画像：位置を調べて切り出す。文字がほとんどないページ（スキャン・図だけのページ）は丸ごと図にする
-      const entries = texts.map(t => ({ ...t, kind: 'text' }));
       const view = page.view; // [x0, y0, x1, y1]
-      const pageArea = (view[2] - view[0]) * (view[3] - view[1]);
+      const pageH = view[3] - view[1], pageArea = (view[2] - view[0]) * pageH;
+      const rows = pdfTextRows(tc.items.filter(it => it.str !== undefined));
+      const chars = rows.reduce((a, r) => a + r.segs.reduce((n, g) => n + g.text.length, 0), 0);
+      textChars += chars;
+      const figs = [];
       if (figNo < MAX_FIGURES) {
         const ops = await page.getOperatorList();
         let boxes = pdfImageBoxes(ops, pdfjs.OPS)
@@ -618,30 +664,81 @@
             const info = await makeFigure(blob, figNo, scanned ? `${p}ページ全体` : `${p}ページの画像`, opt);
             if (scanned) info.kind = info.kind === 'drawing' ? 'drawing' : 'photo';
             figures.push([`図${figNo}`, info]);
-            entries.push({ kind: 'figure', y: (b.y0 + b.y1) / 2, label: `図${figNo}` });
+            figs.push({ kind: 'figure', y: b.y1, label: `図${figNo}` }); // 図の上端の位置に入れる（段落の途中で切らない）
           }
         }
       }
-      entries.sort((a, b) => b.y - a.y);
-      const hs = texts.map(r => r.h).sort((a, b) => a - b);
-      const median = hs.length ? hs[Math.floor(hs.length / 2)] : 10;
-      // 見た目の改行はつなげて段落にする（文の終わり・大きい文字・行間があいたところで区切る）
-      let para = '', prev = null;
-      const flush = () => { if (para) { lines.push(para); para = ''; } };
-      for (const r of entries) {
-        if (r.kind === 'figure') { flush(); lines.push(`［図：${r.label}］`); prev = null; continue; }
-        const big = r.h > median * 1.25;
-        const gap = prev && (prev.y - r.y) > Math.max(prev.h, r.h) * 1.8;
-        if (big) { flush(); lines.push(r.text); types.push([r.text, r.h > median * 1.6 ? 'h1' : 'h2']); prev = r; continue; }
-        if (gap || (prev && prev.big)) flush();
-        para += (para && /[A-Za-z0-9]$/.test(para) && /^[A-Za-z0-9]/.test(r.text) ? ' ' : '') + r.text;
-        if (/[。．！？!?」』]$/.test(r.text)) flush();
-        prev = { ...r, big };
+      pages.push({ p, rows, figs, top: view[3], bottom: view[1], pageH });
+    }
+    // くり返し出てくるヘッダー・フッター（柱・ノンブル）を見つける
+    const hfKey = t => t.replace(/[0-9０-９]+/g, '#').replace(/\s+/g, '');
+    const edge = (pg, r) => r.y > pg.top - pg.pageH * 0.1 || r.y < pg.bottom + pg.pageH * 0.1;
+    const keyPages = new Map();
+    for (const pg of pages) for (const r of pg.rows) if (edge(pg, r)) {
+      const k = hfKey(r.segs.map(g => g.text).join(' '));
+      if (!keyPages.has(k)) keyPages.set(k, new Set());
+      keyPages.get(k).add(pg.p);
+    }
+    const isPageNo = t => /^[-–—‐\s(（]*(?:p\.?\s*)?[0-9０-９]+(?:\s*[\/／]\s*[0-9０-９]+)?[-–—‐\s)）]*$/i.test(t) || /^[0-9０-９]+\s*ページ$/.test(t);
+    const allH = pages.flatMap(pg => pg.rows.flatMap(r => r.segs.map(g => g.h))).sort((a, b) => a - b);
+    const median = allH.length ? allH[Math.floor(allH.length / 2)] : 10;
+
+    // 2回目：ページごとに、表・カードの並び・段落・見出しにまとめる
+    for (const pg of pages) {
+      lines.push(`［原本 ${pg.p}］`);
+      const rows = pg.rows.filter(r => {
+        if (!edge(pg, r)) return true;
+        const t = r.segs.map(g => g.text).join(' ');
+        const n = keyPages.get(hfKey(t));
+        if (isPageNo(t) || (pages.length >= 2 && n && n.size >= 2)) { droppedHF++; return false; }
+        return true;
+      });
+      const entries = [...rows.map(r => ({ ...r, kind: 'row' })), ...pg.figs].sort((a, b) => b.y - a.y);
+      const out = []; // {text, type, h, y}
+      const pushOut = (text, type, r) => out.push({ text, type, h: r ? r.h : 0, y: r ? r.y : 0 });
+      let para = null;
+      const flush = () => { if (para) { pushOut(para.text, 'body', para); para = null; } };
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        if (e.kind === 'figure') { flush(); pushOut(`［図：${e.label}］`, 'figure'); continue; }
+        if (e.segs.length >= 2) {
+          // 段組みの行が続くところを集めて、表・カードの並び・2段組みのどれかにする
+          flush();
+          const grp = [e];
+          while (i + 1 < entries.length && entries[i + 1].kind === 'row' && sameColumns(grp[grp.length - 1], entries[i + 1])) grp.push(entries[++i]);
+          const blk = layoutBlock(grp);
+          if (blk.kind === 'table') tableCount++;
+          if (blk.kind === 'cards') cardCount++;
+          for (const l of blk.lines) pushOut(l.text, l.type, e);
+          continue;
+        }
+        const text = e.segs[0].text;
+        const lv = e.h > median * 1.6 ? 'h1' : e.h > median * 1.25 ? 'h2' : null;
+        if (lv) {
+          flush();
+          const last = out[out.length - 1];
+          // 2行に分かれた見出しは1つにつなぐ
+          if (last && last.type === lv && Math.abs(last.h - e.h) < e.h * 0.15 && last.y - e.y < e.h * 2) { last.text += text; last.y = e.y; }
+          else pushOut(text, lv, e);
+          continue;
+        }
+        const prevRow = para;
+        const gap = prevRow && ((prevRow.y - e.y) > Math.max(prevRow.h, e.h) * 2.4 || Math.abs(prevRow.h - e.h) > e.h * 0.2);
+        if (gap) flush();
+        if (para) { para.text += (/[A-Za-z0-9]$/.test(para.text) && /^[A-Za-z0-9]/.test(text) ? ' ' : '') + text; para.y = e.y; para.h = e.h; }
+        else para = { text, y: e.y, h: e.h };
+        if (/[。．！？!?」』]$/.test(text)) flush();
       }
       flush();
+      for (const o of out) {
+        lines.push(o.text);
+        if (o.type === 'h1' || o.type === 'h2') types.push([o.text, o.type]);
+      }
     }
     if (!textChars && !figures.length) throw new Error('このPDFからは文字も画像も取り出せませんでした。');
     const notes = ['原本のページの区切りを「［原本 ○］」として残しています。'];
+    if (droppedHF) notes.push('各ページにくり返し出てくるヘッダー・フッター（柱・ページ番号）は省きました。');
+    if (tableCount || cardCount) notes.push(`横に並んだ文字は、${[tableCount ? `表${tableCount}つ` : '', cardCount ? `項目の並び${cardCount}つ（縦の列ごとに1行）` : ''].filter(Boolean).join('と')}にまとめました。`);
     if (scannedPages) notes.push(`文字の情報がないページ（スキャンしたページなど）${scannedPages}ページは、ページ全体を図にしました。文字として読むには、OCR（文字認識）をかけたPDFを使ってください。`);
     const fn = figureNote(figures, 0);
     if (fn) notes.push(fn);

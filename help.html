@@ -119,13 +119,23 @@
             <tr><th scope="row">Word（.docx）</th><td class="mark">○</td><td class="mark">○</td><td>見出し・表・枠・区切り線・画像を読み込みます</td></tr>
             <tr><th scope="row">Excel（.xlsx）</th><td class="mark">○</td><td class="mark">－</td><td>シートごとに見出し＋表にします。日付・％の表示、グラフ（データの表にします）、貼り付けた画像も読み込みます</td></tr>
             <tr><th scope="row">CSV（.csv・.tsv）</th><td class="mark">○</td><td class="mark">－</td><td>枠で囲んだ表にします</td></tr>
-            <tr><th scope="row">PDF</th><td class="mark">○</td><td class="mark">○</td><td>文字・画像・スキャンしたページを読み込みます。書き出しは点図（点図プリンタ用・立体コピー用）</td></tr>
+            <tr><th scope="row">PDF</th><td class="mark">○</td><td class="mark">○</td><td>文字・画像・スキャンしたページを読み込みます。横に並んだ文字は表や項目の並びに、くり返し出てくるヘッダー・フッターは省きます。書き出しは点図（点図プリンタ用・立体コピー用）</td></tr>
             <tr><th scope="row">画像（PNG・JPEGなど）</th><td class="mark">○</td><td class="mark">－</td><td>点図にします</td></tr>
             <tr><th scope="row">SVG</th><td class="mark">－</td><td class="mark">○</td><td>点図</td></tr>
           </tbody>
         </table>
       </div>
       <p>ブレイルスター（BLS・BLE・BS）、ブレイルメモ（BMT）、コータクン（NAB）、ないーぶネットの旧形式（BET）、旧Word（.doc）、旧Excel（.xls）は読み込めません。元のソフトでBSEやBRLに書き出してから開いてください。.doc は .docx に、.xls は .xlsx か CSV に保存し直すと開けます。</p>
+
+      <h3>記号の点訳</h3>
+      <ul>
+        <li><strong>点字の記号があるもの</strong>：句読点、カッコ類、矢印（→ ← ↔）、斜線（／）、棒線、波線、点線、米印、数式の ＋ × ÷ ＝ などは、点字の記号で書きます。</li>
+        <li><strong>点字の記号がないもの</strong>：読みに置き換えます（例：％→パーセント、℃→ド、¥1,000→1,000エン、＆→アンド、＠→アット、○→マル、α→アルファ）。</li>
+        <li><strong>丸数字・特殊な文字</strong>：①は（1）、㈱は（株）、㎝は cm、Ⅲは III のように、普通の文字にしてから点字にします。</li>
+        <li><strong>飾り</strong>：行頭の ■ ● ・ などの箇条書きの印と、絵文字・音符は省きます。</li>
+        <li><strong>不等号</strong>：「＜注＞」のように対になっていれば山カッコ、「3＜5」は「ショーナリ」と読み、「観察＞構想」のような流れは矢印にします。</li>
+        <li><strong>辞書にない漢字の語</strong>：1字ずつ辞書で読んで点字にし、「要確認」に残します。</li>
+      </ul>
 
       <h2 id="save">4. 保存のしかたと保存先（Ctrl+S）</h2>
       <div class="note"><strong>Ctrl+S（Macは ⌘+S）はBSE形式だけです。</strong> BSE以外の形式で保存したいときは、「書き出す」ボタンから形式を選んでください。</div>

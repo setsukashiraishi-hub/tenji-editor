@@ -129,10 +129,23 @@
     return 'body';
   }
 
+  // 辞書にない語は、1字ずつ辞書で読む（読めた語も「要確認」に残す）
+  function readByChar(surf) {
+    let out = '';
+    for (const ch of surf) {
+      if (/[ぁ-ゖァ-ヺー]/.test(ch)) { out += E.toKatakana(ch); continue; }
+      const t = state.tokenizer.tokenize(ch)[0];
+      if (t && t.reading && t.reading !== '*') { out += t.reading; continue; }
+      if (E.READ[ch] !== undefined) { out += E.READ[ch]; continue; }
+      return null;
+    }
+    return out || null;
+  }
+
   function convertLine(text) {
     let kana = text, unresolved = [], checks = [];
     if (state.tokenizer) {
-      const r = E.tokensToKana(state.tokenizer.tokenize(E.normalizeInput(text)));
+      const r = E.tokensToKana(state.tokenizer.tokenize(E.prepareSumiji(E.normalizeInput(text))), { fallback: readByChar });
       kana = r.kana; unresolved = r.unresolved; checks = r.checks;
     }
     const b = E.kanaToBraille(kana);
