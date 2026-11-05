@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
+        os: [windows-latest, macos-15-intel, ubuntu-latest]  # Mac は Apple Silicon の実行機が混みやすいため Intel 版（M1 以降の Mac でも動きます）
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
