@@ -50,7 +50,7 @@
   };
   const UNSUPPORTED = {
     bls: 'ブレイルスター（初期）', ble: 'ブレイルスターII', bs: 'ブレイルスターIII / for Windows',
-    bmt: 'ブレイルメモ', nab: 'コータクン', bet: 'ないーぶネット旧形式', doc: '旧Word（.doc）', xls: '旧Excel（.xls）'
+    bmt: 'ブレイルメモ', nab: 'コータクン', bet: 'ないーぶネット旧形式', doc: '旧Word（.doc）', xls: '旧Excel（.xls）。Excelで .xlsx か .csv に保存し直してから'
   };
   function extOf(name) { const m = /\.([^.]+)$/.exec(name || ''); return m ? m[1].toLowerCase() : ''; }
 
@@ -93,16 +93,126 @@
   async function readFile(name, buf, opt) {
     const ext = extOf(name);
     const u8 = new Uint8Array(buf);
+    if (ext === 'xls' || ext === 'doc') throw new Error(`${ext === 'xls' ? '古いExcel' : '古いWord'}の形式（.${ext}）は読み込めません。${ext === 'xls' ? 'Excelで「名前を付けて保存」から .xlsx か .csv' : 'Wordで「名前を付けて保存」から .docx'} にしてから開いてください。`);
     if (UNSUPPORTED[ext]) throw new Error(`${UNSUPPORTED[ext]}の形式（.${ext}）は仕様が公開されていないため読み込めません。元のソフトでBSEやBRLに書き出してから読み込んでください。`);
     if (ext === 'bes' || ext === 'besx') return readBES(u8, ext);
     if (ext === 'pef') return readPEF(decodeText(buf));
     if (ext === 'bse' || ext === 'brl' || ext === 'brf' || ext === 'brt' || ext === 'txn') return readNABCC(u8, ext);
     if (ext === 'docx') return readDocxStructured(buf, opt || {});
-    if (ext === 'xlsx' || ext === 'xlsm') return readXlsx(buf);
-    if (ext === 'pdf') return readPDF(buf);
+    if (ext === 'xlsx' || ext === 'xlsm') return readXlsx(buf, opt || {});
+    if (ext === 'csv' || ext === 'tsv') return readCSV(name, buf);
+    if (ext === 'pdf') return readPDF(buf, opt || {});
     if (ext === 'edl') return readEDL(name, buf, opt || {});
     if (/^(png|jpe?g|gif|bmp|webp)$/.test(ext)) return readImage(name, buf, opt || {});
     return fromPlainText(decodeText(buf), 'txt');
+  }
+
+  // ---------- 図（画像）とグラフの共通処理 ----------
+  // 画像1つを図にする：線画は本文の点字の中に描き、写真は点図（別ファイル）にする
+  async function makeFigure(blob, no, alt, opt) {
+    const info = { lines: null, alt: alt || '', blob, kind: 'drawing', no };
+    if (!root.TenjiFigure || typeof Blob === 'undefined' || !blob) return info;
+    try {
+      info.kind = await root.TenjiFigure.classifyImage(blob);
+      const cells = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
+      info.lines = cells.map(l => '⠀⠀' + l);
+    } catch (e) { /* 読めない画像（EMF など）は点図にしない */ }
+    return info;
+  }
+
+  // グラフ（Office の chart XML）→ { 種類, 題, 項目, 系列 }
+  const CHART_KINDS = [
+    ['barChart', '棒グラフ'], ['bar3DChart', '棒グラフ'], ['lineChart', '折れ線グラフ'], ['line3DChart', '折れ線グラフ'],
+    ['pieChart', '円グラフ'], ['pie3DChart', '円グラフ'], ['doughnutChart', 'ドーナツグラフ'], ['areaChart', '面グラフ'],
+    ['area3DChart', '面グラフ'], ['scatterChart', '散布図'], ['radarChart', 'レーダーチャート'], ['bubbleChart', 'バブルチャート']
+  ];
+  const tagTexts = (xml, tag) => [...xml.matchAll(new RegExp('<' + tag + '\\b[^>]*>([\\s\\S]*?)</' + tag + '>', 'g'))].map(m => xmlUnescape(m[1]));
+  function cachePoints(xml) {
+    const pts = [];
+    for (const m of xml.matchAll(/<pt\b[^>]*idx="(\d+)"[^>]*>[\s\S]*?<v>([\s\S]*?)<\/v>/g)) pts[+m[1]] = xmlUnescape(m[2]);
+    return pts;
+  }
+  // タグの接頭辞（c: a: xdr: など）を外す。ファイルを作ったソフトによって付け方が違うため
+  const stripPrefixes = xml => xml.replace(/<(\/?)[A-Za-z_][\w.-]*:/g, '<$1');
+  function parseChartXml(xml) {
+    xml = stripPrefixes(xml);
+    let kind = 'グラフ';
+    for (const [tag, label] of CHART_KINDS) {
+      const m = new RegExp('<' + tag + '\\b[\\s\\S]*?</' + tag + '>').exec(xml);
+      if (!m) continue;
+      kind = label;
+      if (/^bar/.test(tag) && /<barDir val="bar"/.test(m[0])) kind = '横棒グラフ';
+      break;
+    }
+    const titleM = /<title>([\s\S]*?)<\/title>/.exec(xml);
+    const title = titleM ? (tagTexts(titleM[1], 't').join('') || tagTexts(titleM[1], 'v').join('')).trim() : '';
+    const series = [];
+    let cats = [];
+    for (const ser of xml.match(/<ser>[\s\S]*?<\/ser>/g) || []) {
+      const txM = /<tx>([\s\S]*?)<\/tx>/.exec(ser);
+      const name = txM ? (tagTexts(txM[1], 'v')[0] || tagTexts(txM[1], 't').join('')) : '';
+      const catM = /<(?:cat|xVal)>([\s\S]*?)<\/(?:cat|xVal)>/.exec(ser);
+      const valM = /<(?:val|yVal)>([\s\S]*?)<\/(?:val|yVal)>/.exec(ser);
+      const c = catM ? cachePoints(catM[1]) : [];
+      if (c.length > cats.length) cats = c;
+      const fOf = mm => mm ? xmlUnescape(((/<f>([\s\S]*?)<\/f>/.exec(mm[1])) || [])[1] || '') : '';
+      series.push({ name: name.trim() || '', nameRef: txM ? fOf(txM) : '', catRef: fOf(catM), valRef: fOf(valM),
+        vals: valM ? cachePoints(valM[1]) : [] });
+    }
+    return { kind, title, cats, series };
+  }
+  // グラフの中に数値の控えがないとき、参照しているセル（例：Sheet1!$B$2:$B$5）から読む
+  function fillChartFromCells(ch, lookup) {
+    if (!lookup) return ch;
+    for (const s of ch.series) {
+      if (!s.vals.length && s.valRef) s.vals = lookup(s.valRef);
+      if (!ch.cats.length && s.catRef) ch.cats = lookup(s.catRef);
+      if (!s.name && s.nameRef) s.name = (lookup(s.nameRef)[0] || '');
+    }
+    ch.series.forEach((s, i) => { if (!s.name) s.name = `系列${i + 1}`; });
+    return ch;
+  }
+  const fmtNum = v => {
+    if (v === undefined || v === '') return '';
+    const n = Number(v);
+    if (!isFinite(n) || /[^0-9.eE+\-]/.test(String(v))) return String(v);
+    return String(Math.round(n * 100) / 100);
+  };
+  // グラフを、点字で読める表（枠つき）の行にする
+  function chartLines(ch, push, label) {
+    const head = `${label}　${ch.kind}${ch.title ? '：' + ch.title : ''}`;
+    push(head, 'h3');
+    ch.series.forEach((s, i) => { if (!s.name) s.name = `系列${i + 1}`; });
+    const n = Math.max(ch.cats.length, ...ch.series.map(s => s.vals.length), 0);
+    if (!n) { push('（グラフのデータを取り出せませんでした）'); return; }
+    push(FRAME_TOP);
+    const pie = /円|ドーナツ/.test(ch.kind) && ch.series.length === 1;
+    const total = pie ? ch.series[0].vals.reduce((a, v) => a + (Number(v) || 0), 0) : 0;
+    push(['項目', ...ch.series.map(s => s.name), ...(pie && total ? ['割合'] : [])].join('\t'));
+    for (let i = 0; i < n; i++) {
+      const cells = [ch.cats[i] !== undefined ? ch.cats[i] : String(i + 1), ...ch.series.map(s => fmtNum(s.vals[i]))];
+      if (pie && total) cells.push(Math.round((Number(ch.series[0].vals[i]) || 0) / total * 1000) / 10 + '%');
+      push(cells.join('\t'));
+    }
+    push(FRAME_BOTTOM);
+  }
+  const zipPath = (base, target) => {
+    if (target.startsWith('/')) return target.slice(1);
+    const parts = base.split('/'); parts.pop();
+    for (const seg of target.split('/')) { if (seg === '..') parts.pop(); else if (seg !== '.') parts.push(seg); }
+    return parts.join('/');
+  };
+  async function relsOf(zip, partPath) {
+    const dir = partPath.split('/'); const file = dir.pop();
+    const f = zip.file([...dir, '_rels', file + '.rels'].join('/'));
+    const map = {};
+    if (!f) return map;
+    const x = await f.async('string');
+    for (const m of x.matchAll(/<Relationship\b([^>]*)\/?>/g)) {
+      const id = /Id="([^"]+)"/.exec(m[1]), tg = /Target="([^"]+)"/.exec(m[1]);
+      if (id && tg) map[id[1]] = zipPath(partPath, tg[1]);
+    }
+    return map;
   }
 
   // ---------- Word（見出し・表・枠・区切り線・画像） ----------
@@ -162,7 +272,7 @@
     };
 
     const lines = [], types = [], figures = [];
-    let figNo = 0, inBox = false;
+    let figNo = 0, inBox = false, chartCount = 0, photoCount = 0;
     const push = (text, type) => { lines.push(text); if (type) types.push([text, type]); };
     const closeBox = () => { if (inBox) { push(FRAME_BOTTOM); inBox = false; } };
     const body = /<w:body>([\s\S]*)<\/w:body>/.exec(xml);
@@ -194,6 +304,14 @@
         const lvl = headingLevel(blk);
         for (const t of text.split('\n')) push(t, lvl ? 'h' + Math.min(3, lvl) : null);
       } else if (!imgs.length) push('');
+      // グラフ：データを取り出して、点字の表にする
+      for (const cm of blk.matchAll(/<(?:\w+:)?chart\b[^>]*r:id="([^"]+)"/g)) {
+        const target = rels[cm[1]];
+        const f = target && (zip.file('word/' + target.replace(/^\.?\//, '')) || zip.file(target.replace(/^\//, '')));
+        if (!f) continue;
+        figNo++; chartCount++;
+        chartLines(parseChartXml(await f.async('string')), push, `図${figNo}`);
+      }
       for (const im of imgs) {
         const target = rels[im[1] || im[2]];
         if (!target) continue;
@@ -201,44 +319,53 @@
         const label = `図${figNo}`;
         push(`［図：${label}］`);
         const f = zip.file('word/' + target.replace(/^\.?\//, '')) || zip.file(target.replace(/^\//, ''));
-        if (f && root.TenjiFigure && typeof Blob !== 'undefined') {
-          try {
-            const blob = new Blob([await f.async('uint8array')]);
-            const linesOfDots = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
-            figures.push([label, { lines: linesOfDots.map(l => '⠀⠀' + l), alt: target.split('/').pop(), blob }]);
-          } catch (e) { /* 読めない画像（EMF など）は点図にしない */ }
-        }
+        const blob = f && typeof Blob !== 'undefined' ? new Blob([await f.async('uint8array')]) : null;
+        const info = await makeFigure(blob, figNo, target.split('/').pop(), opt);
+        if (info.kind === 'photo') photoCount++;
+        figures.push([label, info]);
       }
     }
     closeBox();
-    const note = figNo ? `画像が${figNo}点ありました。右側で点図に変えています（線画向き。写真は形が崩れることがあります）。` : '';
-    return { kind: 'docx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures, note };
+    return { kind: 'docx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures, note: figureNote(figures, chartCount) };
+  }
+
+  function figureNote(figures, chartCount) {
+    const photos = figures.filter(f => f[1].kind === 'photo').length, drawings = figures.length - photos;
+    const parts = [];
+    if (chartCount) parts.push(`グラフ${chartCount}点はデータの表にして点字にしました`);
+    if (drawings) parts.push(`図${drawings}点は点字のマスで描いた点図にしました`);
+    if (photos) parts.push(`写真${photos}点は点図（別ファイル）にして右側に表示しています`);
+    return parts.length ? parts.join('。') + '。書き出すときに、点図データも一緒に出力できます。' : '';
   }
 
   // ---------- 画像（1枚の図として読み込む） ----------
   async function readImage(name, buf, opt) {
     if (!root.TenjiFigure || typeof Blob === 'undefined') throw new Error('画像はブラウザ版・デスクトップ版でだけ読み込めます。');
-    const blob = new Blob([buf]);
-    const lines = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
-    const label = name.replace(/\.[^.]+$/, '');
-    return { kind: 'image', mode: 'sumiji', raw: `［図：${label}］`, rawKind: 'text', types: [],
-      figures: [[label, { lines: lines.map(l => '⠀⠀' + l), alt: name, blob }]],
-      note: '画像を1枚の図として読み込みました。図の行の「点図ファイルに書き出す」で、点図プリンタ用・立体コピー用のPDFにできます。' };
+    const info = await makeFigure(new Blob([buf]), 1, name, opt);
+    return { kind: 'image', mode: 'sumiji', raw: '［図：図1］', rawKind: 'text', types: [],
+      figures: [['図1', info]], note: figureNote([['図1', info]], 0) };
   }
 
   // ---------- Excel（シートごとに見出し＋表） ----------
-  async function readXlsx(buf) {
+  // セルの表示形式（日付・パーセント）
+  const DATE_FMT_IDS = new Set([14, 15, 16, 17, 22, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 50, 51, 52, 53, 54, 55, 56, 57, 58]);
+  function excelDate(serial, withTime) {
+    const ms = Math.round((Number(serial) - 25569) * 86400000);
+    const d = new Date(ms);
+    if (isNaN(d)) return String(serial);
+    let s = `${d.getUTCFullYear()}年${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+    if (withTime && (d.getUTCHours() || d.getUTCMinutes())) s += ` ${d.getUTCHours()}時${String(d.getUTCMinutes()).padStart(2, '0')}分`;
+    return s;
+  }
+
+  async function readXlsx(buf, opt) {
+    opt = opt || {};
     const JSZip = getJSZip();
     const zip = await JSZip.loadAsync(buf);
     const wb = zip.file('xl/workbook.xml');
     if (!wb) throw new Error('Excelファイルの中身が見つかりません。');
     const wbx = await wb.async('string');
-    const relx = zip.file('xl/_rels/workbook.xml.rels') ? await zip.file('xl/_rels/workbook.xml.rels').async('string') : '';
-    const rels = {};
-    for (const m of relx.matchAll(/<Relationship\b([^>]*)\/?>/g)) {
-      const id = /Id="([^"]+)"/.exec(m[1]), tg = /Target="([^"]+)"/.exec(m[1]);
-      if (id && tg) rels[id[1]] = tg[1];
-    }
+    const rels = await relsOf(zip, 'xl/workbook.xml');
     const shared = [];
     const ss = zip.file('xl/sharedStrings.xml');
     if (ss) {
@@ -247,48 +374,193 @@
         shared.push((si.match(/<t\b[^>]*>([\s\S]*?)<\/t>/g) || []).map(t => xmlUnescape(t.replace(/<[^>]+>/g, ''))).join(''));
       }
     }
+    // 書式番号 → 日付／パーセントかどうか
+    const styleKind = [];
+    const st = zip.file('xl/styles.xml');
+    if (st) {
+      const sx = await st.async('string');
+      const custom = {};
+      for (const m of sx.matchAll(/<numFmt\b[^>]*numFmtId="(\d+)"[^>]*formatCode="([^"]*)"/g)) custom[+m[1]] = xmlUnescape(m[2]);
+      const xfs = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(sx);
+      for (const m of (xfs ? xfs[1] : '').matchAll(/<xf\b[^>]*?numFmtId="(\d+)"/g)) {
+        const id = +m[1], code = (custom[id] || '').replace(/"[^"]*"|\[[^\]]*\]/g, '');
+        if (DATE_FMT_IDS.has(id) || /[yd]|m{3,}|ge|e{2}/i.test(code)) styleKind.push(/[hs]/i.test(code) || id === 22 ? 'datetime' : 'date');
+        else if (id === 9 || id === 10 || /%/.test(code)) styleKind.push('percent');
+        else styleKind.push('');
+      }
+    }
     const colIndex = ref => { let n = 0; for (const ch of ref.replace(/\d+$/, '')) n = n * 26 + (ch.charCodeAt(0) - 64); return n - 1; };
-    const lines = [], types = [];
+    const lines = [], types = [], figures = [];
+    let figNo = 0, chartCount = 0;
+    const push = (text, type) => { lines.push(text); if (type) types.push([text, type]); };
+    const sheets = [];
+    const grids = {};
     for (const m of wbx.matchAll(/<sheet\b([^>]*)\/?>/g)) {
       const name = xmlUnescape((/name="([^"]*)"/.exec(m[1]) || [])[1] || 'シート');
       const rid = (/r:id="([^"]+)"/.exec(m[1]) || [])[1];
-      let target = rels[rid] || '';
-      target = target.startsWith('/') ? target.slice(1) : 'xl/' + target.replace(/^\.\//, '');
-      const f = zip.file(target);
+      const target = rels[rid];
+      const f = target && zip.file(target);
       if (!f) continue;
       const sx = await f.async('string');
       const rows = [];
+      const grid = grids[name] = {};
       for (const r of sx.match(/<row\b[\s\S]*?<\/row>/g) || []) {
         const cells = [];
         for (const c of r.match(/<c\b[^>]*\/>|<c\b[\s\S]*?<\/c>/g) || []) {
           const ref = (/r="([A-Z]+\d+)"/.exec(c) || [])[1];
           const t = (/\bt="([^"]+)"/.exec(c) || [])[1];
+          const sIdx = (/\bs="(\d+)"/.exec(c) || [])[1];
           const v = (/<v>([\s\S]*?)<\/v>/.exec(c) || [])[1];
           let val = '';
           if (t === 's' && v !== undefined) val = shared[+v] || '';
           else if (t === 'inlineStr') val = xmlUnescape(((/<t\b[^>]*>([\s\S]*?)<\/t>/.exec(c)) || [])[1] || '');
-          else if (v !== undefined) val = xmlUnescape(v);
+          else if (v !== undefined) {
+            val = xmlUnescape(v);
+            const kind = sIdx !== undefined ? styleKind[+sIdx] : '';
+            if ((kind === 'date' || kind === 'datetime') && t !== 'str' && isFinite(Number(val))) val = excelDate(val, kind === 'datetime');
+            else if (kind === 'percent' && isFinite(Number(val))) val = Math.round(Number(val) * 1000) / 10 + '%';
+            else if (t !== 'str' && t !== 'b' && /^-?\d+\.\d{6,}$/.test(val)) val = String(Math.round(Number(val) * 10000) / 10000);
+          }
           const idx = ref ? colIndex(ref) : cells.length;
           cells[idx] = val;
+          if (ref) grid[ref] = val;
         }
         const arr = Array.from(cells, x => x || '');
         if (arr.some(x => x.trim())) rows.push(arr);
       }
-      if (!rows.length) continue;
-      if (lines.length) lines.push('');
-      lines.push(name); types.push([name, 'h2']);
-      lines.push(FRAME_TOP);
-      for (const r of rows) lines.push(r.join('\t').replace(/\t+$/, ''));
-      lines.push(FRAME_BOTTOM);
+      // シートの上に置かれたグラフと画像
+      const drawings = [];
+      const srels = await relsOf(zip, target);
+      for (const dm of sx.matchAll(/<drawing\b[^>]*r:id="([^"]+)"/g)) {
+        const dpath = srels[dm[1]];
+        const df = dpath && zip.file(dpath);
+        if (!df) continue;
+        const dx = stripPrefixes(await df.async('string'));
+        const drels = await relsOf(zip, dpath);
+        for (const anc of dx.match(/<(twoCellAnchor|oneCellAnchor|absoluteAnchor)\b[\s\S]*?<\/\1>/g) || []) {
+          const chart = /<chart\b[^>]*r:id="([^"]+)"/.exec(anc);
+          const pic = /<blip\b[^>]*r:embed="([^"]+)"/.exec(anc);
+          const descr = (/<cNvPr\b[^>]*descr="([^"]*)"/.exec(anc) || /<cNvPr\b[^>]*name="([^"]*)"/.exec(anc) || [])[1] || '';
+          if (chart && drels[chart[1]]) drawings.push({ chart: drels[chart[1]] });
+          else if (pic && drels[pic[1]]) drawings.push({ image: drels[pic[1]], descr: xmlUnescape(descr) });
+        }
+      }
+      sheets.push({ name, rows, drawings });
+    }
+    // 参照（'シート名'!$B$2:$B$5）→ 値の並び
+    const colName = n => { let s = ''; n++; while (n) { const r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); } return s; };
+    const lookup = ref => {
+      const m = /^(?:'?((?:[^']|'')+?)'?!)?\$?([A-Z]+)\$?(\d+)(?::\$?([A-Z]+)\$?(\d+))?$/.exec(ref.trim());
+      if (!m) return [];
+      const g = grids[(m[1] || sheets[0] && sheets[0].name || '').replace(/''/g, "'")] || {};
+      const c1 = colIndex(m[2] + '1'), r1 = +m[3], c2 = m[4] ? colIndex(m[4] + '1') : c1, r2 = m[5] ? +m[5] : r1;
+      const out = [];
+      for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) out.push(g[colName(c) + r] || '');
+      return out;
+    };
+    for (const { name, rows, drawings } of sheets) {
+      if (!rows.length && !drawings.length) continue;
+      if (lines.length) push('');
+      push(name, 'h2');
+      if (rows.length) {
+        push(FRAME_TOP);
+        for (const r of rows) push(r.join('\t').replace(/\t+$/, ''));
+        push(FRAME_BOTTOM);
+      }
+      for (const d of drawings) {
+        figNo++;
+        if (d.chart) {
+          const cf = zip.file(d.chart);
+          if (!cf) continue;
+          chartCount++;
+          chartLines(fillChartFromCells(parseChartXml(await cf.async('string')), lookup), push, `図${figNo}`);
+        } else {
+          const imf = zip.file(d.image);
+          const blob = imf && typeof Blob !== 'undefined' ? new Blob([await imf.async('uint8array')]) : null;
+          const label = `図${figNo}`;
+          push(`［図：${label}］`);
+          figures.push([label, await makeFigure(blob, figNo, d.descr || d.image.split('/').pop(), opt)]);
+        }
+      }
     }
     if (!lines.length) throw new Error('Excelファイルに文字の入ったセルがありません。');
-    return { kind: 'xlsx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures: [],
-      note: '各シートを中見出しにして、表を枠で囲みました。セルの間は点字で2マスあけます。' };
+    const extra = figureNote(figures, chartCount);
+    return { kind: 'xlsx', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures,
+      note: '各シートを中見出しにして、表を枠で囲みました。セルの間は点字で2マスあけます。' + (extra ? ' ' + extra : '') };
   }
 
-  // ---------- PDF（文字を取り出す。原本のページ番号つき） ----------
-  async function readPDF(buf) {
-    if (!SCRIPT_BASE) throw new Error('PDFはブラウザ版・デスクトップ版でだけ読み込めます。');
+  // ---------- CSV（表として読み込む） ----------
+  function readCSV(name, buf) {
+    const text = decodeText(buf).replace(/\r\n?/g, '\n');
+    const sep = (text.split('\n')[0].match(/\t/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? '\t' : ',';
+    const rows = [];
+    let row = [], cell = '', q = false;
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (q) {
+        if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; }
+        else if (ch === '"') q = false;
+        else cell += ch;
+      } else if (ch === '"') q = true;
+      else if (ch === sep) { row.push(cell); cell = ''; }
+      else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+      else cell += ch;
+    }
+    if (cell || row.length) { row.push(cell); rows.push(row); }
+    const body = rows.filter(r => r.some(c => c.trim())).map(r => r.map(c => c.replace(/\s+/g, ' ').trim()).join('\t').replace(/\t+$/, ''));
+    if (!body.length) throw new Error('CSVファイルに中身がありません。');
+    const title = name.replace(/\.[^.]+$/, '');
+    return { kind: 'csv', mode: 'sumiji', raw: [title, FRAME_TOP, ...body, FRAME_BOTTOM].join('\n'), rawKind: 'text',
+      types: [[title, 'h2']], figures: [], note: '表を枠で囲みました。セルの間は点字で2マスあけます。' };
+  }
+
+  // ---------- PDF（文字・画像・スキャンしたページ。原本のページ番号つき） ----------
+  // 変換行列の掛け算（pdf.js と同じ並び [a b c d e f]）
+  const mul = (m, n) => [m[0] * n[0] + m[2] * n[1], m[1] * n[0] + m[3] * n[1], m[0] * n[2] + m[2] * n[3],
+    m[1] * n[2] + m[3] * n[3], m[0] * n[4] + m[2] * n[5] + m[4], m[1] * n[4] + m[3] * n[5] + m[5]];
+  // ページの中で画像が描かれる位置（PDF の座標）を、描画命令から調べる
+  function pdfImageBoxes(ops, OPS) {
+    const boxes = [];
+    let ctm = [1, 0, 0, 1, 0, 0];
+    const stack = [];
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      const fn = ops.fnArray[i], args = ops.argsArray[i];
+      if (fn === OPS.save) stack.push(ctm);
+      else if (fn === OPS.restore) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      else if (fn === OPS.transform) ctm = mul(ctm, args);
+      else if (fn === OPS.paintFormXObjectBegin) { stack.push(ctm); if (args && args[0]) ctm = mul(ctm, args[0]); }
+      else if (fn === OPS.paintFormXObjectEnd) ctm = stack.pop() || [1, 0, 0, 1, 0, 0];
+      else if (fn === OPS.paintImageXObject || fn === OPS.paintInlineImageXObject) {
+        const pts = [[0, 0], [1, 0], [0, 1], [1, 1]].map(([x, y]) => [ctm[0] * x + ctm[2] * y + ctm[4], ctm[1] * x + ctm[3] * y + ctm[5]]);
+        const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+        boxes.push({ x0: Math.min(...xs), x1: Math.max(...xs), y0: Math.min(...ys), y1: Math.max(...ys) });
+      }
+    }
+    return boxes;
+  }
+  async function renderPdfPage(page, scale) {
+    const vp = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.ceil(vp.width); canvas.height = Math.ceil(vp.height);
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    return { canvas, vp };
+  }
+  const canvasBlob = c => new Promise(res => c.toBlob(res, 'image/png'));
+  async function cropBlob(canvas, vp, box) {
+    const r = vp.convertToViewportRectangle([box.x0, box.y0, box.x1, box.y1]);
+    const x = Math.max(0, Math.floor(Math.min(r[0], r[2]))), y = Math.max(0, Math.floor(Math.min(r[1], r[3])));
+    const w = Math.min(canvas.width - x, Math.ceil(Math.abs(r[2] - r[0]))), h = Math.min(canvas.height - y, Math.ceil(Math.abs(r[3] - r[1])));
+    if (w < 8 || h < 8) return null;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    c.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, w, h);
+    return canvasBlob(c);
+  }
+
+  async function readPDF(buf, opt) {
+    opt = opt || {};
+    if (!SCRIPT_BASE || typeof document === 'undefined') throw new Error('PDFはブラウザ版・デスクトップ版でだけ読み込めます。');
     const pdfjs = await import(new URL('../vendor/pdfjs/pdf.mjs', SCRIPT_BASE).href);
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.mjs', SCRIPT_BASE).href;
     const doc = await pdfjs.getDocument({
@@ -296,8 +568,9 @@
       cMapUrl: new URL('../vendor/pdfjs/cmaps/', SCRIPT_BASE).href,
       cMapPacked: true
     }).promise;
-    const lines = [], types = [];
-    let imageCount = 0, textChars = 0;
+    const lines = [], types = [], figures = [];
+    let figNo = 0, scannedPages = 0, textChars = 0;
+    const MAX_FIGURES = 200;
     for (let p = 1; p <= doc.numPages; p++) {
       const page = await doc.getPage(p);
       const tc = await page.getTextContent();
@@ -311,7 +584,6 @@
         row.parts.push({ x, str: it.str, w: it.width || 0 });
         row.h = Math.max(row.h, h);
       }
-      rowsOfPage.sort((a, b) => b.y - a.y);
       const texts = rowsOfPage.map(r => {
         r.parts.sort((a, b) => a.x - b.x);
         let s = '', end = null;
@@ -321,16 +593,43 @@
         }
         return { text: s.trim(), h: r.h, y: r.y };
       }).filter(r => r.text);
-      textChars += texts.reduce((a, r) => a + r.text.length, 0);
-      const ops = await page.getOperatorList();
-      for (const fn of ops.fnArray) if (fn === pdfjs.OPS.paintImageXObject || fn === pdfjs.OPS.paintInlineImageXObject) imageCount++;
+      const chars = texts.reduce((a, r) => a + r.text.length, 0);
+      textChars += chars;
       lines.push(`［原本 ${p}］`);
+
+      // 画像：位置を調べて切り出す。文字がほとんどないページ（スキャン・図だけのページ）は丸ごと図にする
+      const entries = texts.map(t => ({ ...t, kind: 'text' }));
+      const view = page.view; // [x0, y0, x1, y1]
+      const pageArea = (view[2] - view[0]) * (view[3] - view[1]);
+      if (figNo < MAX_FIGURES) {
+        const ops = await page.getOperatorList();
+        let boxes = pdfImageBoxes(ops, pdfjs.OPS)
+          .filter(b => (b.x1 - b.x0) >= 36 && (b.y1 - b.y0) >= 36) // 小さいアイコンや飾りは除く
+          .filter(b => !(chars > 40 && (b.x1 - b.x0) * (b.y1 - b.y0) > pageArea * 0.8)); // 文字の下に敷いた背景・文字情報つきスキャンの画像は除く
+        const scanned = chars < 20;
+        if (scanned) { boxes = [{ x0: view[0], y0: view[1], x1: view[2], y1: view[3] }]; scannedPages++; }
+        if (boxes.length) {
+          const { canvas, vp } = await renderPdfPage(page, 2);
+          for (const b of boxes) {
+            if (figNo >= MAX_FIGURES) break;
+            const blob = await cropBlob(canvas, vp, b);
+            if (!blob) continue;
+            figNo++;
+            const info = await makeFigure(blob, figNo, scanned ? `${p}ページ全体` : `${p}ページの画像`, opt);
+            if (scanned) info.kind = info.kind === 'drawing' ? 'drawing' : 'photo';
+            figures.push([`図${figNo}`, info]);
+            entries.push({ kind: 'figure', y: (b.y0 + b.y1) / 2, label: `図${figNo}` });
+          }
+        }
+      }
+      entries.sort((a, b) => b.y - a.y);
       const hs = texts.map(r => r.h).sort((a, b) => a - b);
       const median = hs.length ? hs[Math.floor(hs.length / 2)] : 10;
       // 見た目の改行はつなげて段落にする（文の終わり・大きい文字・行間があいたところで区切る）
       let para = '', prev = null;
       const flush = () => { if (para) { lines.push(para); para = ''; } };
-      for (const r of texts) {
+      for (const r of entries) {
+        if (r.kind === 'figure') { flush(); lines.push(`［図：${r.label}］`); prev = null; continue; }
         const big = r.h > median * 1.25;
         const gap = prev && (prev.y - r.y) > Math.max(prev.h, r.h) * 1.8;
         if (big) { flush(); lines.push(r.text); types.push([r.text, r.h > median * 1.6 ? 'h1' : 'h2']); prev = r; continue; }
@@ -341,9 +640,14 @@
       }
       flush();
     }
-    if (!textChars) throw new Error('このPDFには文字の情報がありません（画像だけのPDF・スキャンしたPDFは読み込めません）。');
-    const note = '原本のページの区切りを「［原本 ○］」として残しています。' + (imageCount ? `PDFの中の画像（${imageCount}点）は読み込んでいません。必要ならWordから読み込むか、図の説明を書き足してください。` : '');
-    return { kind: 'pdf', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures: [], note };
+    if (!textChars && !figures.length) throw new Error('このPDFからは文字も画像も取り出せませんでした。');
+    const notes = ['原本のページの区切りを「［原本 ○］」として残しています。'];
+    if (scannedPages) notes.push(`文字の情報がないページ（スキャンしたページなど）${scannedPages}ページは、ページ全体を図にしました。文字として読むには、OCR（文字認識）をかけたPDFを使ってください。`);
+    const fn = figureNote(figures, 0);
+    if (fn) notes.push(fn);
+    notes.push('PDFの中で線で描かれたグラフ・図は取り込めません。必要なら図の説明を書き足してください。');
+    if (figNo >= MAX_FIGURES) notes.push(`図が多いため、最初の${MAX_FIGURES}点だけ取り込みました。`);
+    return { kind: 'pdf', mode: 'sumiji', raw: lines.join('\n'), rawKind: 'text', types, figures, note: notes.join(' ') };
   }
 
   function fromPlainText(text, kind) {

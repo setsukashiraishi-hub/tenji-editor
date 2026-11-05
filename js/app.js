@@ -52,7 +52,9 @@
     const cells = rowCellsForDisplay(row);
     const parts = [`${n}行目`];
     if (type !== 'body') parts.push(label);
-    if (type === 'figure') parts.push(row.alt ? row.alt : '', row.figure && !row.noFigure ? `点図 ${row.figure.length}行` : '点図なし');
+    if (type === 'figure') parts.push(row.alt ? row.alt : '', row.figKind === 'photo' ? '写真' : '',
+      row.figure && !row.noFigure ? `本文に点図 ${row.figure.length}行` : `本文には「${displayKana(row.kana || '')}」`,
+      (row.blob || row.tactile) && (row.noFigure || !row.figure) ? '点図は別ファイル' : '');
     else if (E.DECOR_TYPES.has(type)) parts.push(`${cellLen(cells)}マス`);
     else if (type !== 'blank') {
       parts.push(displayKana(row.kana || '') || '空行');
@@ -138,6 +140,7 @@
   }
 
   function sumijiToRows(text, oldRows) {
+    state.figRows = new Map((oldRows || []).filter(r => r.type === 'figure').map(r => [r.src, r]));
     const old = new Map();
     (oldRows || []).forEach(r => { if (r.edited && r.src !== undefined) old.set(r.src, r); });
     if (!text.trim()) return []; // 何も入っていないときは行を作らない
@@ -152,8 +155,16 @@
       if (type === 'figure') {
         const m = FIGURE_RE.exec(src.trim());
         const fig = m && state.figures.get(m[1]);
-        // 点図にできない（しない）ときのために「⦅図⦆」の点字も用意しておく
-        return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, tactile: fig ? fig.tactile : null, alt: m ? m[1] : '', ...convertLine('⦅ズ⦆'), checks: [], unresolved: [] };
+        // 本文に書く注記：写真は「点図は別紙」、線画は点字の中に描く（描かない設定のときは「⦅図n⦆」とだけ書く）
+        const no = fig && fig.no ? fig.no : ((m && /\d+/.exec(m[1])) || [''])[0];
+        const photo = !!(fig && fig.kind === 'photo');
+        const kana = photo ? `⦅ズ${no} シャシン テンズワ ベッシ⦆` : `⦅ズ${no}⦆`;
+        const b = E.kanaToBraille(kana);
+        const old = state.figRows && state.figRows.get(src);
+        return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, tactile: fig ? fig.tactile : null,
+          figKind: photo ? 'photo' : 'drawing', figNo: no, srcAlt: fig ? fig.alt : '',
+          noFigure: old ? old.noFigure : (photo || !(fig && fig.lines && fig.lines.length)),
+          alt: m ? m[1] : '', kana, cells: b.cells, unknown: [], bad: [], checks: [], unresolved: [] };
       }
       if (type === 'table') {
         // 表の行：セルごとに点訳して、セルの間を2マスあける
@@ -270,7 +281,7 @@
       const cb = document.createElement('input');
       cb.type = 'checkbox'; cb.checked = !row.noFigure;
       cb.addEventListener('change', () => { row.noFigure = !cb.checked; onChange(); });
-      lab.append(cb, document.createTextNode(' 点図として入れる（外すと「⦅図⦆」とだけ書く）'));
+      lab.append(cb, document.createTextNode(' 本文の点字の中に描く（外すと注記だけ書き、点図は別ファイルにする）'));
       meta.appendChild(lab);
     }
     if (row.type === 'figure' && (row.blob || row.tactile || (row.figure && row.figure.length))) {
@@ -344,6 +355,24 @@
     unit.append(k, c);
     return unit;
   }
+  // 行の点図（別ファイル）を作って描く。作った配置は行に覚えておく
+  async function drawRowTactile(row, canvas, info) {
+    try {
+      const opt = tactileOpt();
+      const key = JSON.stringify({ ...opt, titleCells: '', no: row.figNo });
+      if (!row._tact || row._tactKey !== key) {
+        row._tact = await window.TenjiFigure.layoutTactile(row.tactile ? { dots: row.tactile } : { blob: row.blob },
+          { ...opt, titleCells: E.kanaToBraille(`ズ${row.figNo || ''}`).cells });
+        row._tactKey = key;
+      }
+      window.TenjiFigure.drawPreview(canvas, row._tact);
+      const paper = (window.TenjiFigure.PAPERS[opt.paper] || {}).label || '';
+      info.textContent = `点図（別ファイル）：${paper}・点 ${row._tact.dots.length.toLocaleString()} 個` + (row._tact.rects.length ? '・塗り' : '');
+    } catch (e) {
+      info.textContent = '点図を作れませんでした：' + (e.message || e);
+    }
+  }
+
   function paintAlign(el, row) {
     el.textContent = '';
     el.dataset.speak = '';
@@ -354,8 +383,30 @@
       const cap = document.createElement('div');
       cap.className = 'fig-cap';
       const useFig = row.figure && !row.noFigure;
-      cap.textContent = useFig ? `図${row.alt ? '：' + row.alt : ''}（点図 ${row.figure.length}行）` : `図${row.alt ? '：' + row.alt : ''}（点図にせず「⦅図⦆」と書きます）`;
+      const hasTactile = !!(row.blob || row.tactile);
+      const name = `${row.alt || '図'}${row.figKind === 'photo' ? '（写真）' : ''}`;
+      cap.textContent = useFig ? `${name}：本文に点字のマスで描きます（${row.figure.length}行）`
+        : `${name}：本文には「${displayKana(row.kana || '')}」と書きます` + (hasTactile ? '。点図は別ファイル（下）' : '');
       el.appendChild(cap);
+      if (!useFig && hasTactile) {
+        // 点図（別ファイル）のプレビュー：用紙に打つ点の並びそのもの
+        const wrap = document.createElement('div');
+        wrap.className = 'fig-tactile';
+        const cv = document.createElement('canvas');
+        wrap.appendChild(cv);
+        const info = document.createElement('div');
+        info.className = 'fig-tactile-info';
+        info.textContent = '点図を作っています…';
+        wrap.appendChild(info);
+        el.appendChild(wrap);
+        drawRowTactile(row, cv, info);
+        // 本文に書く注記の点字
+        const ln = document.createElement('div');
+        ln.className = 'fig-line note-line';
+        Array.from(row.cells || '').forEach(c => ln.appendChild(cellBox(c, c === '⠀' ? 'blank' : '')));
+        el.appendChild(ln);
+        return;
+      }
       for (const line of (useFig ? row.figure : [row.cells || ''])) {
         const ln = document.createElement('div');
         ln.className = 'fig-line';
@@ -812,17 +863,103 @@
     });
   }
 
+  // ---------- 点図が含まれるときの確認と、まとめての書き出し ----------
+  const figureRows = () => state.rows.filter(r => r.type === 'figure' && (r.blob || r.tactile || (r.figure && r.figure.length)));
+  const FG = { dlg: $('fig-dlg'), count: $('fig-count'), format: $('fig-format') };
+  try { const v = localStorage.getItem('tenji-editor-figformat'); if (v) FG.format.value = v; } catch (e) { /* 既定のまま */ }
+  FG.format.addEventListener('change', () => { try { localStorage.setItem('tenji-editor-figformat', FG.format.value); } catch (e) { /* 何もしない */ } });
+  function askFigures(opener) {
+    const figs = figureRows();
+    if (!figs.length) return Promise.resolve('body');
+    const photos = figs.filter(r => r.figKind === 'photo').length;
+    FG.count.textContent = `${figs.length}点` + (photos ? `（写真${photos}点・図${figs.length - photos}点）` : '');
+    return new Promise(resolve => {
+      let done = false;
+      const finish = v => {
+        if (done) return; done = true;
+        FG.dlg.removeEventListener('keydown', onKey, true);
+        FG.dlg.removeEventListener('cancel', onCancel);
+        FG.dlg.close();
+        resolve(v);
+      };
+      const onKey = ev => {
+        if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); finish('with'); }
+        else if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finish('back'); }
+        else if ((ev.key === ' ' || ev.code === 'Space') && ev.target.tagName !== 'SELECT') { ev.preventDefault(); ev.stopPropagation(); finish('body'); }
+      };
+      const onCancel = ev => { ev.preventDefault(); finish('back'); };
+      FG.dlg.addEventListener('keydown', onKey, true);
+      FG.dlg.addEventListener('cancel', onCancel);
+      $('fig-go').onclick = () => finish('with');
+      $('fig-body').onclick = () => finish('body');
+      $('fig-back').onclick = () => finish('back');
+      FG.dlg.showModal();
+      FG.dlg.tabIndex = -1;
+      FG.dlg.focus();
+    }).then(v => {
+      if (v === 'back') { if (opener && opener.focus) opener.focus(); announce('書き出しをやめて戻りました'); }
+      return v;
+    });
+  }
+  // 点図のファイルを作る → [{ name, data }]
+  async function buildTactileFiles(figs, kind) {
+    const base = state.fileBase;
+    const files = [];
+    const opt0 = tactileOpt();
+    const layouts = [];
+    for (const r of figs) {
+      const opt = { ...opt0, titleCells: E.kanaToBraille(`ズ${r.figNo || ''}`).cells };
+      if (kind === 'pdf-solid') opt.style = 'solid';
+      if (kind === 'pdf-dots') opt.style = 'dots';
+      if (kind === 'edl') { opt.edel = true; opt.style = 'dots'; }
+      layouts.push({ r, lay: await window.TenjiFigure.layoutTactile(tactileSrc(r), opt) });
+    }
+    if (kind === 'pdf-dots' || kind === 'pdf-solid') {
+      files.push({ name: `${base}_${kind === 'pdf-solid' ? '立体コピー' : '点図'}.pdf`, data: window.TenjiFigure.toPDF(layouts.map(x => x.lay)) });
+    } else {
+      for (const { r, lay } of layouts) {
+        const n = r.figNo || (r.alt || '').replace(/\D/g, '');
+        if (kind === 'edl') files.push({ name: `${base}_図${n}.edl`, data: F.toEDL(lay.dots) });
+        else files.push({ name: `${base}_図${n}.svg`, data: new TextEncoder().encode(window.TenjiFigure.toSVG(lay)) });
+      }
+    }
+    // どの図が何か、の一覧（墨字）
+    const pdfPage = kind.startsWith('pdf');
+    const list = ['点図の一覧', '', ...layouts.map(({ r }, i) =>
+      `図${r.figNo || i + 1}：${r.figKind === 'photo' ? '写真' : '図'}${r.srcAlt ? '（' + r.srcAlt + '）' : ''}` +
+      (pdfPage ? `　点図PDFの${i + 1}ページ目` : '') + `　本文では「${displayKana(r.kana || '')}」`)];
+    files.push({ name: `${base}_点図の一覧.txt`, data: F.textFile(list.join('\n')) });
+    return files;
+  }
+
   async function doExport(fmt, opener) {
     closeMenu();
-    if ((await confirmBeforeExport(opener || els.exportBtn)) !== 'go') return;
+    opener = opener || els.exportBtn;
+    if ((await confirmBeforeExport(opener)) !== 'go') return;
     if (!state.rows.some(r => r.cells || r.figure || E.DECOR_TYPES.has(r.type))) { toast('書き出す内容がありません。', true); return; }
+    // 点字の形式で書き出すとき、点図があれば一緒に出すか聞く
+    let withFigures = false;
+    if (fmt.group === '点字') {
+      const ans = await askFigures(opener);
+      if (ans === 'back') return;
+      withFigures = ans === 'with';
+    }
     try {
       const rows = state.rows.map(r => ({ ...r, kana: r.kana ? displayKana(r.kana) : r.kana }));
       const data = await F.exportFile(fmt.id, rows, layoutOpt());
       const suffix = fmt.id.startsWith('txt-') || fmt.id.startsWith('docx-') ? '_' + fmt.id.split('-')[1] : '';
       const name = `${state.fileBase}${suffix}.${fmt.ext}`;
-      const ok = await saveFile(name, data);
-      if (ok) toast(`${name} を保存しました`);
+      if (!withFigures) {
+        if (await saveFile(name, data)) toast(`${name} を保存しました`);
+        return;
+      }
+      toast('点図を作っています…');
+      const files = [{ name, data }, ...await buildTactileFiles(figureRows(), FG.format.value)];
+      const zip = new window.JSZip();
+      for (const f of files) zip.file(f.name, f.data);
+      const zipName = `${state.fileBase}_点字と点図.zip`;
+      const zdata = await zip.generateAsync({ type: 'uint8array' });
+      if (await saveFile(zipName, zdata)) toast(`${zipName} を保存しました（本文と点図 ${files.length}ファイル）`);
     } catch (e) {
       toast(e.message || '書き出しに失敗しました。', true);
     }

@@ -46,6 +46,26 @@
     if (bits.filter(Boolean).length > bits.length / 2) bits = bits.map(d => !d);
     return bits;
   }
+  // 写真か、線画・図かを見分ける（中間の明るさが多く、色の数が多ければ写真）
+  async function classifyImage(blob) {
+    try {
+      const bmp = await createImageBitmap(blob);
+      const w = 96, h = Math.max(1, Math.round(bmp.height / bmp.width * 96));
+      const c = document.createElement('canvas'); c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h); ctx.drawImage(bmp, 0, 0, w, h);
+      const d = ctx.getImageData(0, 0, w, h).data;
+      let mid = 0; const colors = new Set();
+      for (let i = 0; i < d.length; i += 4) {
+        const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+        if (g > 40 && g < 215) mid++;
+        colors.add((d[i] >> 4) << 8 | (d[i + 1] >> 4) << 4 | (d[i + 2] >> 4));
+      }
+      const n = d.length / 4;
+      return (mid / n > 0.35 && colors.size > 120) ? 'photo' : 'drawing';
+    } catch (e) { return 'drawing'; }
+  }
+
   async function imageSize(blob) {
     const bmp = await createImageBitmap(blob);
     return { w: bmp.width, h: bmp.height };
@@ -203,9 +223,10 @@
   }
 
   // PDF（自前で最小限を書く）。単位は pt（1mm = 72/25.4 pt）、原点は左下
-  function toPDF(lay) {
+  // lay に配列を渡すと、1つの図を1ページにした複数ページの PDF にする
+  function pageContent(lay) {
     const k = 72 / 25.4;
-    const W = lay.pageW * k, H = lay.pageH * k;
+    const H = lay.pageH * k;
     const c = 0.5523; // 円をベジェ曲線4本で描くときの係数
     let s = '0 g\n';
     for (const r of lay.rects) s += `${f2(r.x * k)} ${f2(H - (r.y + r.h) * k)} ${f2(r.w * k)} ${f2(r.h * k + 0.05)} re f\n`;
@@ -216,12 +237,21 @@
         `${f2(x - r)} ${f2(y - o)} ${f2(x - o)} ${f2(y - r)} ${f2(x)} ${f2(y - r)} c ` +
         `${f2(x + o)} ${f2(y - r)} ${f2(x + r)} ${f2(y - o)} ${f2(x + r)} ${f2(y)} c f\n`;
     }
-    const objs = [
-      '<< /Type /Catalog /Pages 2 0 R >>',
-      '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
-      `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f2(W)} ${f2(H)}] /Contents 4 0 R /Resources << >> >>`,
-      `<< /Length ${s.length} >>\nstream\n${s}endstream`
-    ];
+    return s;
+  }
+  function toPDF(lays) {
+    if (!Array.isArray(lays)) lays = [lays];
+    const k = 72 / 25.4;
+    const objs = ['<< /Type /Catalog /Pages 2 0 R >>', ''];
+    const kids = [];
+    for (const lay of lays) {
+      const s = pageContent(lay);
+      const pageNo = objs.length + 1;
+      kids.push(`${pageNo} 0 R`);
+      objs.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${f2(lay.pageW * k)} ${f2(lay.pageH * k)}] /Contents ${pageNo + 1} 0 R /Resources << >> >>`);
+      objs.push(`<< /Length ${s.length} >>\nstream\n${s}endstream`);
+    }
+    objs[1] = `<< /Type /Pages /Kids [${kids.join(' ')}] /Count ${kids.length} >>`;
     let pdf = '%PDF-1.4\n';
     const offs = [];
     objs.forEach((o, i) => { offs.push(pdf.length); pdf += `${i + 1} 0 obj\n${o}\nendobj\n`; });
@@ -247,5 +277,5 @@
     for (const p of lay.dots) { ctx.beginPath(); ctx.arc(p.x, p.y, p.d / 2, 0, Math.PI * 2); ctx.fill(); }
   }
 
-  root.TenjiFigure = { imageToCells, dotsToCells, layoutTactile, toSVG, toPDF, drawPreview, PAPERS, DOT_SIZES };
+  root.TenjiFigure = { imageToCells, dotsToCells, layoutTactile, toSVG, toPDF, drawPreview, classifyImage, PAPERS, DOT_SIZES };
 })(typeof self !== 'undefined' ? self : this);

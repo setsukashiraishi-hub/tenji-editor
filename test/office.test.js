@@ -22,5 +22,13 @@ const load = n => { const b = fs.readFileSync(path.join(__dirname, 'fixtures', n
   assert.strictEqual(new Map(x.types).get('時間割'), 'h2');
   assert.ok(x.raw.includes('月\t国語\t算数'));
   console.log('OK xlsx');
+  // グラフはデータの表に、日付・パーセントは見たままの形に、画像は図の行に
+  const c = await F.readFile('chart.xlsx', load('chart.xlsx'));
+  assert.ok(c.raw.includes('2026年11月6日'), '日付');
+  assert.ok(c.raw.includes('87.5%'), 'パーセント');
+  assert.ok(/図\d+　棒グラフ：貸し出し数/.test(c.raw), 'グラフの見出し');
+  assert.ok(c.raw.includes('項目\t点字図書\t録音図書') && c.raw.includes('5月\t18\t25'), 'グラフのデータ');
+  assert.ok(/［図：図\d+］/.test(c.raw), '画像');
+  console.log('OK xlsx chart');
   console.log('office: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

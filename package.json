@@ -1,7 +1,7 @@
 {
   "name": "tenji-editor",
   "version": "1.0.0",
-  "description": "墨字（テキスト・Word）と点字データ（BSE・BRL・BRF・PEF・BES）を相互に変換する点訳エディタ",
+  "description": "墨字（テキスト・Word・Excel・PDF・CSV）と点字データ（BSE・BRL・BRF・PEF・BES）を相互に変換する点訳エディタ",
   "main": "electron/main.js",
   "license": "MIT",
   "scripts": {

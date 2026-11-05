@@ -20,7 +20,7 @@
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
       <input type="file" id="file-input" hidden
-             accept=".txt,.docx,.xlsx,.xlsm,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+             accept=".txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
       <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
     </div>
@@ -150,6 +150,28 @@
         <button type="button" class="btn primary" id="confirm-go">続ける（Enter）</button>
         <button type="button" class="btn" id="confirm-back">戻る（Esc）</button>
         <button type="button" class="btn" id="confirm-list">校正箇所の一覧へ（スペース）</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- 点図が含まれる文書を書き出すとき -->
+  <dialog class="sheet confirm fig" id="fig-dlg" role="alertdialog" aria-labelledby="fig-head" aria-describedby="fig-desc">
+    <div class="sheet-body">
+      <h2 id="fig-head">点図が含まれています</h2>
+      <p id="fig-desc">この文書には点図にできる図が<span id="fig-count"></span>あります。点図データも一緒に出力しますか？ Enterキーで一緒に出力、スペースキーで本文だけ出力、Escapeキーで戻ります。一緒に出力すると、本文の点字ファイルと点図のファイルを1つのZIPファイルにまとめて保存します。</p>
+      <label class="field col" for="fig-format"><span>点図の形式</span>
+        <select id="fig-format">
+          <option value="pdf-dots">点図プリンタ用PDF（すべての図を1つのPDFに、1図1ページ）</option>
+          <option value="pdf-solid">立体コピー用PDF（すべての図を1つのPDFに、1図1ページ）</option>
+          <option value="edl">エーデル（.edl、図ごとに1ファイル）</option>
+          <option value="svg">SVG（図ごとに1ファイル）</option>
+        </select>
+      </label>
+      <p class="sheet-small">用紙・点の間隔・点の大きさは、図の行の「点図ファイルに書き出す…」の設定に従います。各点図の上には「図1」などの見出しを点字で入れます。</p>
+      <div class="sheet-actions">
+        <button type="button" class="btn primary" id="fig-go">一緒に出力（Enter）</button>
+        <button type="button" class="btn" id="fig-body">本文だけ（スペース）</button>
+        <button type="button" class="btn" id="fig-back">戻る（Esc）</button>
       </div>
     </div>
   </dialog>

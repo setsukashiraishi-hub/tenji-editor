@@ -381,3 +381,11 @@ dialog.confirm { width: min(520px, calc(100vw - 32px)); border-top: 4px solid va
 
 .empty-state { padding: 28px 20px; color: var(--muted); line-height: 1.8; max-width: 52ch; }
 textarea::placeholder { color: var(--muted); opacity: .8; }
+
+/* 点図（別ファイル）のプレビュー */
+.fig-tactile { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 8px; }
+.fig-tactile canvas { width: min(260px, 100%); background: #fff; border: 1px solid var(--line); border-radius: 4px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+.fig-tactile-info { font-size: 12px; color: var(--muted); }
+.fig-line.note-line { margin-top: 2px; }
+dialog.confirm.fig { border-top-color: var(--accent); }
+.sheet-small { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
