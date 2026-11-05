@@ -184,7 +184,7 @@
         const parts = src.split('\t').map(c => c.trim() ? convertLine(c.trim()) : { kana: '', unresolved: [], checks: [] });
         const kana = parts.map(p => p.kana).join('  ').replace(/ +$/, '');
         const b = E.kanaToBraille(kana);
-        return { ...base, kana, cells: b.cells, unknown: b.unknown, bad: b.bad,
+        return { ...base, kana, cells: b.cells, unknown: b.unknown, bad: b.bad, tkana: parts.map(p => p.kana),
           unresolved: parts.flatMap(p => p.unresolved), checks: parts.flatMap(p => p.checks) };
       }
       return { ...base, ...convertLine(src.replace(FRAME_SIDE_RE, '')) };
@@ -261,7 +261,7 @@
 
   function rowCellsForDisplay(row) {
     const opt = layoutOpt();
-    if (E.DECOR_TYPES.has(row.type)) return row.fixed ? row.cells : E.decorCells(row.type, opt.cols);
+    if (E.DECOR_TYPES.has(row.type)) return row.fixed ? row.cells : (row._lines ? row._lines[0] : E.decorCells(row.type, opt.cols));
     return row.cells || '';
   }
 
@@ -281,7 +281,11 @@
       meta.appendChild(sel);
     }
     const cells = rowCellsForDisplay(row);
-    if (cells && row.type !== 'figure') {
+    if (row._lines && !E.DECOR_TYPES.has(row.type)) {
+      const n = Math.max(0, ...row._lines.map(cellLen));
+      if (row._fit && row._fit.mode === 'list') meta.appendChild(chipEl(row._fit.head ? '表が1行に入らないため、列の名前の行' : `表が${opt.cols}マスに入らないため、項目ごとに${row._lines.length}行で書きます`, 'warn'));
+      else meta.appendChild(chipEl(`${n}マス` + (row._lines.length > 1 ? `・${row._lines.length}行に折り返し` : '') + (row._inFrame ? '・枠の中（3マス目から）' : '')));
+    } else if (cells && row.type !== 'figure') {
       const ind = E.HEAD_INDENT[row.type] || (row.para && opt.indent ? 2 : 0);
       const n = cellLen(cells) + ind;
       const wrapped = E.wrapCells(cells, opt.cols - ind).length;
@@ -440,6 +444,37 @@
       return;
     }
     if (type === 'blank') { el.appendChild(unitEl(SPACE_MARK, '⠀', { space: true })); return; }
+    const gap = n => { for (let i = 0; i < n; i++) el.appendChild(unitEl('', '⠀', { space: true, decor: true })); };
+    if (type === 'table' && row._fit && row._fit.mode === 'grid') {
+      // 列の頭をそろえて表示する（そろえるためのマスあけは薄く）
+      gap(row._fit.ind);
+      const ks = E.tableKana(row);
+      ks.forEach((k, ci) => {
+        const bb = E.kanaToBraille(k.trim());
+        for (const u of bb.units) {
+          const isSp = /^[ 　]+$/.test(u.text);
+          el.appendChild(unitEl(isSp ? SPACE_MARK : displayKana(u.text), u.cells, { space: isSp }));
+        }
+        if (ci < ks.length - 1) gap(row._fit.widths[ci] - cellLen(bb.cells) + 2);
+      });
+      return;
+    }
+    if (row._lines && row._fit && row._fit.mode === 'list') {
+      // 項目ごとの書き方：仕上がりの行をそのまま出す
+      el.classList.add('figure-view');
+      const cap = document.createElement('div');
+      cap.className = 'fig-cap';
+      cap.textContent = row._fit.head ? `列の名前：${displayKana(E.tableKana(row).join('・'))}` : displayKana(E.tableKana(row).filter(Boolean).join('／'));
+      el.appendChild(cap);
+      for (const line of row._lines) {
+        const ln = document.createElement('div');
+        ln.className = 'fig-line';
+        Array.from(line).forEach(c => ln.appendChild(cellBox(c, c === '⠀' ? 'blank' : '')));
+        el.appendChild(ln);
+      }
+      return;
+    }
+    if (row._inFrame && (type === 'body' || type === 'figure')) gap(2 + (type === 'body' && row.para && els.indent && els.indent.checked ? 2 : 0));
     const b = row.kana ? E.kanaToBraille(row.kana) : null;
     const bad = new Set(row.bad || []);
     if (E.HEAD_INDENT[type]) for (let i = 0; i < E.HEAD_INDENT[type]; i++) el.appendChild(unitEl('', '⠀', { space: true, decor: true }));
@@ -528,6 +563,7 @@
     const meta = document.createElement('div');
     meta.className = 'meta';
     const refresh = () => {
+      E.fitBlocks(state.rows, layoutOpt());
       paintAlign(align, row);
       for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
       setLabel();
@@ -549,6 +585,7 @@
       const v = showSpaces(edit.value);
       if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
       row.kana = E.toKatakana(hideSpaces(v));
+      if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
       const b = E.kanaToBraille(row.kana);
       row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
       refresh();
@@ -595,6 +632,7 @@
   }
 
   function render() {
+    E.fitBlocks(state.rows, layoutOpt()); // 枠の長さ・表の列をそろえてから表示する
     const frag = document.createDocumentFragment();
     let n = 0;
     state.rows.forEach(r => { frag.appendChild(buildRow(r, (r.pagebreak || r.type === 'genpon' || r.type === 'pageno') ? n : n++)); });

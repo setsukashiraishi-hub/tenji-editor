@@ -1057,7 +1057,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
 
   // 行を墨字（かな）にしたもの。飾りは ─ ┌ ┐ などの形、図は［図］にする
   function rowCells(r, opt) {
-    if (E.DECOR_TYPES.has(r.type)) return r.fixed ? r.cells : E.decorCells(r.type, opt.cols);
+    if (E.DECOR_TYPES.has(r.type)) return r.fixed ? r.cells : (r._lines ? r._lines[0] : E.decorCells(r.type, opt.cols));
     if (r.type === 'figure') return (r.figure || []).join('\r\n');
     return r.cells || '';
   }

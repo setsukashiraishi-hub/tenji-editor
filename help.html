@@ -161,14 +161,15 @@
             <tr><th scope="row">本文</th><td>段落の頭を2マスあけて、32マスで語の途中で切らずに折り返します</td></tr>
             <tr><th scope="row">大・中・小見出し</th><td>7・5・3マス目から書き出し、前を1行あけます。ページの最後に見出しだけが残らないようにします</td></tr>
             <tr><th scope="row">区切り線</th><td>左右2マスあけて棒線（<span class="cells">⠒</span>）を引きます</td></tr>
-            <tr><th scope="row">枠の始まり・終わり</th><td>第1種の枠線（<span class="cells">⠖⠒⠲</span>／<span class="cells">⠓⠒⠚</span>）</td></tr>
-            <tr><th scope="row">表の行</th><td>セルの間を2マスあけます</td></tr>
+            <tr><th scope="row">枠の始まり・終わり</th><td>第1種の枠線（<span class="cells">⠖⠒⠲</span>／<span class="cells">⠓⠒⠚</span>）。3マス目から、中身の幅に合わせた長さで引きます。枠の中の文は3マス目から書きます</td></tr>
+            <tr><th scope="row">表の行</th><td>列の頭をそろえ、列の間は2マス以上あけます。1行に入らない表は、1行目を列の名前にして、各行を「列の名前：値」の形で項目ごとに書きます</td></tr>
             <tr><th scope="row">図</th><td>点図を入れます。点図にしない設定なら「⦅図⦆」と書きます</td></tr>
             <tr><th scope="row">空行</th><td>1行あけます</td></tr>
           </tbody>
         </table>
       </div>
       <ul>
+        <li><strong>枠と表のページ送り</strong>：1ページに入る枠は、ページの途中で切れないように次のページへまとめて送ります。</li>
         <li><strong>マス数・行数</strong>：既定は32マス×18行（両面）。上の帯で変えられます。</li>
         <li><strong>ページ番号</strong>：「ページ番号を付ける」で、各ページの1行目（ページ行）の28マス目から書きます。「原本ページも書く」で、ページ行の行頭に原本のページ番号を書きます（PDFのページ区切りや「［原本 12］」と書いた行から取ります）。</li>
         <li><strong>点訳者注</strong>：かなを直すときの「点訳者注 ⦅ ⦆」ボタンで、点訳者挿入符（<span class="cells">⠠⠶</span> … <span class="cells">⠶⠄</span>）を入れられます。</li>

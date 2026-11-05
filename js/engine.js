@@ -669,6 +669,103 @@
     return bad / t.length > 0.25 || (dense > 0.6 && !/[ァ-ン]{3}/.test(kana.replace(/メ|モ|ミ|ヘ|テ|セ|ム/g, '')));
   }
 
+  // ---------- 枠と表の形を整える ----------
+  // 枠の中は3マス目から書く。枠線の長さは中身の幅に合わせる。
+  // 表は列の頭をそろえ（列の間は2マス以上あける）、1行に入らない表は「見出し：値」を項目ごとに書く。
+  const FRAME_IND = 2;
+  const clen = s => Array.from(s || '').length;
+  function tableKana(r) {
+    if (r.tkana && r.tkana.length) return r.tkana;
+    return (r.kana || '').split(/ {2,}|\t/);
+  }
+  function fitBlocks(rows, opt) {
+    const cols = opt.cols || 32;
+    const live = rows.filter(r => r && !r.pagebreak);
+    live.forEach(r => { r._lines = null; r._fit = null; r._inFrame = false; });
+    // 枠の中の行に印を付ける
+    const frames = [];
+    let open = null;
+    for (const r of live) {
+      if (r.type === 'frame-start' && !r.fixed) { if (open) frames.push(open); open = { start: r, rows: [] }; continue; }
+      if (r.type === 'frame-end' && !r.fixed) { if (open) { open.end = r; frames.push(open); open = null; } continue; }
+      if (open && r.type !== 'genpon' && r.type !== 'pageno') { open.rows.push(r); r._inFrame = true; }
+    }
+    if (open) frames.push(open);
+    // 表：続いた表の行を1つの表にして、列をそろえる
+    for (let i = 0; i < live.length;) {
+      if (live[i].type !== 'table') { i++; continue; }
+      let j = i;
+      while (j < live.length && live[j].type === 'table') j++;
+      fitTable(live.slice(i, j), cols, live[i]._inFrame ? FRAME_IND : 0);
+      i = j;
+    }
+    // 枠の中の文は3マス目から（段落の頭はさらに2マスあける）
+    for (const f of frames) {
+      let w = 0;
+      for (const r of f.rows) {
+        if (r.type === 'body' && r.cells) {
+          const ind = FRAME_IND + (r.para && opt.indent ? 2 : 0);
+          const body = (r.cells || '').replace(/^⠀+|⠀+$/g, '');
+          const ls = wrapCells('⠀'.repeat(ind - FRAME_IND) + body, cols - FRAME_IND).map(l => '⠀'.repeat(FRAME_IND) + l);
+          r._lines = ls;
+        }
+        if (r._lines) r._lines.forEach(l => { w = Math.max(w, clen(l)); });
+        else if (HEAD_INDENT[r.type] && r.cells) w = Math.max(w, Math.min(cols, HEAD_INDENT[r.type] + clen(r.cells)));
+        else if (r.type === 'figure' && r.figure && !r.noFigure) r.figure.forEach(l => { w = Math.max(w, Math.min(cols, clen(l))); });
+        else if (r.type === 'figure' && r.cells) w = Math.max(w, Math.min(cols, FRAME_IND + clen(r.cells)));
+      }
+      // 枠線は中身より1マス以上長く、短すぎないように
+      const W = Math.min(cols, Math.max(w + 1, 16));
+      const inner = Math.max(2, W - FRAME_IND - 2);
+      f.start._lines = ['⠀'.repeat(FRAME_IND) + '⠖' + '⠒'.repeat(inner) + '⠲'];
+      if (f.end) f.end._lines = ['⠀'.repeat(FRAME_IND) + '⠓' + '⠒'.repeat(inner) + '⠚'];
+      f.start._block = 2 + f.rows.reduce((a, r) => a + estimateLines(r, cols), 0);
+    }
+    return rows;
+  }
+  function estimateLines(r, cols) {
+    if (r._lines) return r._lines.length;
+    if (r.type === 'blank') return 1;
+    if (r.type === 'figure') return r.figure && !r.noFigure ? r.figure.length : 1;
+    if (HEAD_INDENT[r.type]) return wrapCells((r.cells || '').replace(/^⠀+/, ''), cols - HEAD_INDENT[r.type]).length + 1;
+    return r.cells ? wrapCells(r.cells, cols).length : 1;
+  }
+  function fitTable(trs, cols, ind) {
+    const grid = trs.map(r => tableKana(r).map(k => kanaToBraille(k.trim()).cells));
+    const nc = Math.max(...grid.map(g => g.length));
+    const w = Array(nc).fill(0);
+    grid.forEach(g => g.forEach((c, k) => { if (k < g.length - 1) w[k] = Math.max(w[k], clen(c)); }));
+    grid.forEach(g => { const k = g.length - 1; w[k] = Math.max(w[k], clen(g[k])); });
+    const total = ind + w.reduce((a, b) => a + b, 0) + 2 * (nc - 1);
+    if (total <= cols) {
+      trs.forEach((r, ri) => {
+        let line = '⠀'.repeat(ind);
+        grid[ri].forEach((c, k) => { line += k < grid[ri].length - 1 ? c + '⠀'.repeat(w[k] - clen(c) + 2) : c; });
+        r._lines = [line.replace(/⠀+$/, '')];
+        r._fit = { mode: 'grid', ind, widths: w };
+      });
+      return;
+    }
+    // 1行に入らない表：1行目を列の見出しにして、各行を「見出し：値」で書く
+    const head = trs.length > 1 ? grid[0] : null;
+    const wrapAt = (cells, at) => wrapCells(cells, cols - at).map(l => '⠀'.repeat(at) + l);
+    trs.forEach((r, ri) => {
+      const g = grid[ri];
+      let lines = [];
+      if (head && ri === 0) lines = wrapAt(g.filter(Boolean).join('⠀⠀'), ind);
+      else {
+        lines = wrapAt(g[0] || '', ind);
+        g.slice(1).forEach((c, k) => {
+          if (!c) return;
+          const label = head && head[k + 1] ? head[k + 1] + '⠐⠂' : '';
+          lines.push(...wrapAt(label + c, ind + 2));
+        });
+      }
+      r._lines = lines;
+      r._fit = { mode: 'list', ind, head: !!(head && ri === 0) };
+    });
+  }
+
   const digitsCells = n => '⠼' + String(n).split('').map(d => DIGIT[d]).join('');
   // ページ行（1行目）：点字ページ番号を28マス目から書く。原本ページは行頭に書く（指定したとき）
   function pageLine(n, genpon, cols, opt) {
@@ -689,6 +786,7 @@
   function layoutPages(rows, opt) {
     const cols = opt.cols || 32, lines = opt.lines || 18, indent = opt.indent ? 2 : 0;
     const bodyLines = opt.pageNumbers ? lines - 1 : lines;
+    fitBlocks(rows, opt);
     let curGenpon = null;
     const pages = [[]], meta = [{ genpon: null }];
     const cur = () => pages[pages.length - 1];
@@ -711,6 +809,12 @@
         continue;
       }
       if (type === 'blank') { pushLine(''); continue; }
+      if (row._lines) {
+        // 枠は、1ページに入るならまとめて次のページへ送る。枠線だけがページの端に残らないようにする
+        if (row._block && cur().length && (row._block <= bodyLines ? room() < row._block : room() < 3)) newPage();
+        for (const l of row._lines) pushLine(l);
+        continue;
+      }
       if (DECOR_TYPES.has(type)) {
         pushLine(row.fixed ? row.cells : decorCells(type, cols));
         continue;
@@ -810,7 +914,7 @@
   const api = {
     ROW_TYPES, HEAD_INDENT, DECOR_TYPES, decorCells, detectDecor, decorText, looksLikeGraphic, pageLine, AMBIG,
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
-    layoutPages, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
+    layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, READ
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
