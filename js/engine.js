@@ -95,7 +95,23 @@
   };
 
   // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
-  function sumijiToKana(text, tokenize, opts) {
+  // 行頭の番号・記号（見出しや箇条書きの「ア」「1」「（1）」「第1」）を、点字の書き方にする
+  //  （1）→「（1）」＋1マス、ア／ア．→「ア。」＋1マス、1．→「1。」＋1マス、1・第1（後ろに空白）→＋2マス
+  function lineLabel(text) {
+    const zen = t => t.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+    let m;
+    if ((m = /^[ 　]*[（(]([0-9０-９]+|[ア-ン])[）)][ 　]*(?=\S)/.exec(text))) return { kana: '（' + zen(m[1]) + '）', sep: ' ', rest: text.slice(m[0].length) };
+    if ((m = /^[ 　]*([ア-ン])(?:[．.、][ 　]*|[ 　]+)(?=\S)/.exec(text))) return { kana: m[1] + '。', sep: ' ', rest: text.slice(m[0].length) };
+    if ((m = /^[ 　]*([0-9０-９]+)[．.][ 　]*(?=\S)/.exec(text))) return { kana: zen(m[1]) + '。', sep: ' ', rest: text.slice(m[0].length) };
+    if ((m = /^[ 　]*(第?)([0-9０-９]+)[ 　]+(?=\S)/.exec(text))) return { kana: (m[1] ? 'ダイ' : '') + zen(m[2]), sep: '  ', rest: text.slice(m[0].length) };
+    return null;
+  }
+  function sumijiToKana(text, tokenize, opts, noLabel) {
+    const lb = noLabel ? null : lineLabel(text);
+    if (lb) {
+      const r = sumijiToKana(lb.rest, tokenize, opts, true);
+      return { kana: lb.kana + lb.sep + r.kana, unresolved: r.unresolved, checks: r.checks };
+    }
     // 発音記号（[dʒæ̀pəníːz] など）は読まずに ⟦ ⟧ で囲んで残し、点字にするときに発音記号の点字にする
     const segs = [];
     let last = 0, m;
@@ -193,6 +209,7 @@
     }
     // 英単語の中のアポストロフィ（don't）
     s = s.replace(/([A-Za-z])[’'](?=[A-Za-z])/g, '$1\u02bc');
+    s = s.replace(/([A-Za-z]) *[&＆] *(?=[A-Za-z])/g, '$1 \ue030 '); // 英語のあいだの & は英語の点字で書く
     // 残りの記号を1字ずつ読み替える。絵文字などの飾りは省く
     let out = '';
     for (const c of s) {
@@ -201,7 +218,7 @@
       if (isPictograph(c)) continue;
       out += c;
     }
-    return out.replace(/[ 　]{2,}/g, ' ').replace(/^ | $/g, '');
+    return out.replace(/[ 　]{2,}/g, ' ').replace(/^ | $/g, '').replace(/\ue030/g, '&');
   }
 
   // ---------- 文字種ユーティリティ ----------
@@ -275,14 +292,71 @@
   const IPA_RE = /\[([^\[\]\n]{1,80})\]|［([^［］\n]{1,80})］|\/([^\/\n]{1,80})\/|／([^／\n]{1,80})／/g;
   const isIpaText = t => IPA_MARK.test(t.normalize('NFC')) && /^[a-zA-Zɑæʌɛɔəɪʊᴜŋθðʃʒˈˌːɒɜɚɝɹɡʤʧʍɐɫ\u0300-\u036f\u00c0-\u024f().ˑ' :-]+$/.test(t.normalize('NFC'));
 
+  // ---------- 英語の語句（2語以上）：外国語引用符 ⠦ … ⠴ で囲み、中は英語の点字で書く ----------
+  // 1語だけのときは、今までどおり外字符 ⠰ を前に付ける
+  const EN_LETTER = { a: '⠁', b: '⠃', c: '⠉', d: '⠙', e: '⠑', f: '⠋', g: '⠛', h: '⠓', i: '⠊', j: '⠚', k: '⠅', l: '⠇', m: '⠍', n: '⠝', o: '⠕', p: '⠏', q: '⠟', r: '⠗', s: '⠎', t: '⠞', u: '⠥', v: '⠧', w: '⠺', x: '⠭', y: '⠽', z: '⠵' };
+  const EN_DIGIT = { 1: '⠁', 2: '⠃', 3: '⠉', 4: '⠙', 5: '⠑', 6: '⠋', 7: '⠛', 8: '⠓', 9: '⠊', 0: '⠚' };
+  const EN_PUNCT = { ',': '⠂', '.': '⠲', '?': '⠦', '!': '⠖', "'": '⠄', '’': '⠄', '\u02bc': '⠄', '-': '⠤', ':': '⠒', ';': '⠆', '&': '⠈⠯' };
+  const EN_PHRASE_RE = /[A-Za-z][A-Za-z0-9'’\u02bc.\-]*(?:,? +(?:&|[A-Za-z0-9][A-Za-z0-9'’\u02bc.\-]*))+[.?!]?/g;
+  function englishBraille(text) {
+    let out = '';
+    for (const word of text.split(/ +/)) {
+      if (out) out += '⠀';
+      const letters = word.replace(/[^A-Za-z]/g, '');
+      const allCaps = letters.length >= 2 && letters === letters.toUpperCase();
+      if (allCaps) out += '⠠⠠';
+      let num = false;
+      for (const ch of word) {
+        if (/[0-9]/.test(ch)) { if (!num) out += '⠼'; num = true; out += EN_DIGIT[ch]; continue; }
+        if (/[A-Za-z]/.test(ch)) {
+          if (num && /[a-jA-J]/.test(ch)) out += '⠰'; // 数字のすぐ後の a〜j は、数字と区別する印
+          num = false;
+          if (!allCaps && ch !== ch.toLowerCase()) out += '⠠';
+          out += EN_LETTER[ch.toLowerCase()];
+          continue;
+        }
+        if (num && ch === '.' ) { out += '⠲'; continue; }
+        num = false;
+        out += EN_PUNCT[ch] || '';
+      }
+    }
+    return out;
+  }
+
+  // 英語の点字（外国語引用符の中）→ 英文
+  function englishFromBraille(cells) {
+    const L = {}, P = {}, D = {};
+    for (const k in EN_LETTER) L[EN_LETTER[k]] = k;
+    for (const k in EN_DIGIT) D[EN_DIGIT[k]] = k;
+    for (const k of [',', '.', '?', '!', "'", '-', ':', ';']) P[EN_PUNCT[k]] = k;
+    let out = '', capAll = false, capNext = false, num = false;
+    for (let i = 0; i < cells.length; i++) {
+      const c = cells[i];
+      if (c === '⠀') { out += ' '; capAll = false; num = false; continue; }
+      if (c === '⠠' && cells[i + 1] === '⠠') { capAll = true; i++; continue; }
+      if (c === '⠠') { capNext = true; continue; }
+      if (c === '⠼') { num = true; continue; }
+      if (c === '⠈' && cells[i + 1] === '⠯') { out += '&'; i++; continue; }
+      if (c === '⠰') { num = false; continue; }
+      if (num && D[c]) { out += D[c]; continue; }
+      if (L[c]) { out += (capAll || capNext) ? L[c].toUpperCase() : L[c]; capNext = false; num = false; continue; }
+      if (P[c]) { out += P[c]; continue; }
+      out += '〓';
+    }
+    return out;
+  }
+
   function kanaToBraille(line) {
     // かなを手で直すときに [ ] や / / で発音記号を書いても、発音記号の点字にする
     line = String(line || '').replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; });
+    // 2語以上の英語は外国語引用符で囲む
+    line = line.replace(EN_PHRASE_RE, m => /[A-Za-z]/.test(m.split(/ +/).pop()) || / [0-9]/.test(m) ? '⟪' + m + '⟫' : m);
     const s = Array.from(normalizeInput(toKatakana(line)));
     let out = '';
     const unknown = [];
     const bad = []; // 変換できなかった文字の、点字列での位置
     let inNum = false, inLatin = false, latinCapAll = false;
+    const parens = []; // 開いている丸カッコ（true＝カッコの中のカッコ）
     // 表示用：かなの1単位（1文字、拗音なら2文字）と、それに対応する点字のマスの組
     const units = [];
     let ui = 0, uo = 0;
@@ -294,6 +368,14 @@
       flush(i);
       const c = s[i];
       const next = s[i + 1];
+      if (c === '⟪') { // 英語の語句（⟪ ⟫ の中）
+        let j = i + 1;
+        while (j < s.length && s[j] !== '⟫') j++;
+        out += '⠦' + englishBraille(s.slice(i + 1, j).join('')) + '⠴';
+        inNum = false; inLatin = false;
+        i = j;
+        continue;
+      }
       if (c === '⟦') { // 発音記号（⟦ ⟧ の中）
         let j = i + 1;
         while (j < s.length && s[j] !== '⟧') j++;
@@ -358,6 +440,9 @@
       }
       if (c === '～' || c === '〜' || c === '~') { out += '⠤⠤'; continue; }
       if (c === '"') { out += '⠰⠄'; continue; }
+      // 丸カッコ：カッコの中のカッコは第2の形（⠰⠶ … ⠶⠆）にする
+      if (c === '（' || c === '(') { out += parens.length ? '⠰⠶' : '⠶'; parens.push(parens.length > 0); inNum = false; inLatin = false; continue; }
+      if (c === '）' || c === ')') { out += parens.pop() ? '⠶⠆' : '⠶'; inNum = false; inLatin = false; continue; }
       if (PUNCT[c]) { out += PUNCT[c]; continue; }
       if (c >= '⠀' && c <= '⣿') { out += c; continue; } // すでに点字
       if (c === '\u02bc' || c === "'") { out += '⠄'; inLatin = /[A-Za-z]/.test(next || ''); continue; } // アポストロフィ
@@ -394,7 +479,7 @@
   function brailleToKana(cellsLine) {
     const s = Array.from(cellsLine.replace(/ /g, '⠀'));
     let out = '';
-    let kagi = false, kakko = false, ins = false;
+    let kagi = false, kakko = false, ins = false, inner = 0;
     const blank = j => j >= s.length || s[j] === '⠀';
     const closer = j => j >= s.length || s[j] === '⠀' || s[j] === '⠤' || s[j] === '⠶';
     for (let i = 0; i < s.length; i++) {
@@ -419,6 +504,7 @@
         if (n1 === '⠤') { out += '『'; i++; continue; }
         if (n1 === '⠄') { out += '“'; i++; continue; }
         if (n1 === '⠆') { out += '※'; i++; continue; }
+        if (n1 === '⠶') { out += '（'; inner++; i++; continue; } // カッコの中のカッコ
         let j = i + 1, word = '', capAll = false, capNext = false;
         while (j < s.length && s[j] !== '⠀') {
           const d = s[j];
@@ -442,6 +528,12 @@
         out += word;
         i = j - 1; continue;
       }
+      // 外国語引用符 ⠦ … ⠴：中は英語の点字
+      if (c === '⠦' && s.indexOf('⠴', i + 1) > i) {
+        const end = s.indexOf('⠴', i + 1);
+        out += englishFromBraille(s.slice(i + 1, end));
+        i = end; continue;
+      }
       if (c === '⠤') {
         if (n1 === '⠆') { out += '』'; i++; continue; }
         if (n1 === '⠤') { out += '～'; i++; continue; }
@@ -449,6 +541,7 @@
       }
       if (c === '⠶' && n1 === '⠄' && ins) { out += '⦆'; ins = false; i++; continue; }
       if (c === '⠶') {
+        if (n1 === '⠆' && inner > 0) { out += '）'; inner--; i++; continue; }
         if (n1 === '⠂') { out += '〕'; i++; continue; }
         out += kakko ? '）' : '（'; kakko = !kakko; continue;
       }
@@ -561,6 +654,24 @@
         res.push({ surface_form: surf, pos: '名詞', pos_detail_1: '数', isNumber: true, reading: '*' });
         continue;
       }
+      // 辞書で分かれてしまう語（対償 → 対＋償）を、決まった読みの1語にまとめる
+      let joined = false;
+      for (const n of [3, 2]) {
+        const w = tokens.slice(i, i + n).map(x => x.surface_form).join('');
+        if (i + n <= tokens.length && WORD_READ[w]) { res.push({ surface_form: w, pos: '名詞', pos_detail_1: '一般', reading: WORD_READ[w] }); i += n - 1; joined = true; break; }
+      }
+      if (joined) continue;
+      // 連語の格助詞（に対して・について・として・という・による など）は、助詞と動詞の部分に分ける
+      // （点字では「ニ タイシテ」「ト シテ」のように、動詞の部分を区切って書く）
+      if (t.pos === '助詞' && t.pos_detail_2 === '連語') {
+        const m = /^(に|と|を)(.+)$/.exec(t.surface_form);
+        if (m && !/^(の|は|も|が|で|へ|から|まで|ほど|だけ|など|って|か|て)+$/.test(m[2])) {
+          const rd = t.reading && t.reading !== '*' ? t.reading : toKatakana(t.surface_form);
+          res.push({ surface_form: m[1], pos: '助詞', pos_detail_1: '格助詞', pos_detail_2: '一般', reading: rd.slice(0, 1), basic_form: m[1] });
+          res.push({ surface_form: m[2], pos: '動詞', pos_detail_1: '自立', reading: rd.slice(1), basic_form: m[2], fromRengo: true });
+          continue;
+        }
+      }
       res.push(t);
     }
     return res;
@@ -575,7 +686,7 @@
       const k = numberToKana(surf);
       if (k !== null) return { kana: k };
     }
-    if (isLatinWord(surf) || /^[0-9.,]+$/.test(surf)) return { kana: surf };
+    if (isLatinWord(surf) || /^[0-9.,]+$/.test(surf) || surf === '&') return { kana: surf };
     if (Array.from(surf).every(c => PUNCT[c] || c === '\u02bc')) return { kana: surf }; // 記号（辞書が名詞と見ることもある）
     if (t.pos === '記号' || PUNCTS.has(surf) || OPEN_BRACKETS.has(surf) || CLOSE_BRACKETS.has(surf)) {
       if (/^[ァ-ヺーぁ-ゖ]+$/.test(surf)) return { kana: toKatakana(surf) };
@@ -586,13 +697,21 @@
     if (COUNTER[surf] && prev && (isLatinWord(prev.surface_form) || prev.isNumber)) return { kana: COUNTER[surf] };
     // 数字のあとの「月」はガツ
     if (prev && prev.isNumber && surf === '月') return { kana: 'ガツ' };
+    // 数字のあとの助数詞は、最後の数字で読みが変わる（30分 → 30プン、3本 → 3ボン）
+    if (prev && prev.isNumber && COUNTER_SOUND[surf] && /[0-9]$/.test(prev.surface_form)) {
+      const d = +prev.surface_form.slice(-1), tens = /[0-9]0$/.test(prev.surface_form) && prev.surface_form.length > 1;
+      return { kana: COUNTER_SOUND[surf](d, tens) };
+    }
     // 推量・意志の助動詞「う」は長音符（書こう → カコー）
     if (t.pos === '助動詞' && surf === 'う' && prev && prev._kana && (O_ROW.has(prev._kana.slice(-1)) || U_ROW.has(prev._kana.slice(-1)))) return { kana: 'ー' };
     if (t.pos === '助詞') {
       if (surf === 'は') return { kana: 'ワ' };
       if (surf === 'へ') return { kana: 'エ' };
     }
+    if (WORD_READ[surf]) return { kana: WORD_READ[surf] };
     const R = t.reading && t.reading !== '*' ? t.reading : null;
+    // 接続詞・あいさつの「は」はワ（又は → マタワ、こんにちは → コンニチワ）
+    if (R && /^(接続詞|感動詞)$/.test(t.pos) && /は$/.test(surf)) return { kana: longVowel(R, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R, false).replace(/ハ$/, 'ワ') };
     if (R) {
       return { kana: longVowel(R, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R, t.pos === '動詞') };
     }
@@ -609,6 +728,7 @@
     const surf = t.surface_form, p = t.pos, d1 = t.pos_detail_1;
     const ps = prev.surface_form;
     if (CLOSE_BRACKETS.has(surf) || PUNCTS.has(surf)) return false;
+    if ((surf === '（' || surf === '(') && !PUNCTS.has(ps) && !OPEN_BRACKETS.has(ps) && prev.pos !== '助詞') return false; // 補足のカッコは前の語に続ける（ハイリョ（ホー…）
     if (OPEN_BRACKETS.has(surf)) return true;
     if (ATTACH.has(surf) || ATTACH.has(ps)) return false;
     if (SPACED.has(surf) || SPACED.has(ps)) return true;
@@ -618,21 +738,31 @@
     if (SPACED.has(surf) || SPACED.has(ps)) return true;
     if (prev.isNumber && (UNITS.has(surf) || (/^[A-Za-z]{1,3}$/.test(surf) && /^[a-zA-Z]+$/.test(surf) && /^(?:mm|cm|m|km|g|kg|mg|t|ml|l|L|kl|dl|cc|a|ha|W|kW|V|A|Hz|kHz|MHz|GHz|B|KB|MB|GB|TB|px|pt|dB|K)$/.test(surf)))) return false;
     if (p === '記号') return /[…‥―─—]/.test(surf);
-    if (p === '助詞' || p === '助動詞') return isLatinWord(ps);
+    // 「である」「でない」の ある・ない は補助用言なので区切る（デ アル、デ ナイ）
+    if (p === '助動詞' && ps === 'で' && prev.pos === '助動詞' && /^(ある|ない)$/.test(t.basic_form || '')) return true;
+    // 「ではない」「もない」「美しくない」の ない は区切る（デワ ナイ、ウツクシク ナイ）
+    if (t.basic_form === 'ない' && ((prev.pos === '助詞' && /^(は|も|こそ|さえ|しか)$/.test(ps)) || (prev.pos === '形容詞' && /く$/.test(ps)) || (prev.pos === '助動詞' && /^(たく|らしく)$/.test(ps)))) return true;
+    if (p === '助詞' || p === '助動詞') return false; // 英字の後の助詞も続ける（点字ではつなぎ符をはさむ：CDヲ）
     if (p === '名詞') {
+      // 「等（とう）」と「以上・以下・未満・以内・以外」は区切る（テアテ トー、50サイ ミマン）
+      if (surf === '等' || /^(以上|以下|未満|以内|以外|以降|以前|以後)$/.test(surf)) return true;
       if (d1 === '接尾') return false;
+      // 「ように」「そうだ」などの「よう・そう」は前に続ける（デキルヨーニ、ソチノヨーニ）
+      if (d1 === '非自立' && t.pos_detail_2 === '助動詞語幹') return false;
       if (d1 === '非自立') return !(surf === 'の' || surf === 'ん');
       if (prev.pos === '接頭詞') return false;
       if (prev.pos === '名詞' && !['接尾', '非自立', '数', '代名詞'].includes(prev.pos_detail_1) && !prev.isNumber && !t.isNumber) {
         if (prev.pos_detail_3 === '姓' && t.pos_detail_3 === '名') return true;
         if (isLatinWord(ps) || isLatinWord(surf)) return false;
-        return ctx.prevMora >= 3 && ctx.curMora >= 3; // 複合語の切れ続き
+        return Math.max(ctx.prevMora, ctx.segMora || 0) >= 3 && ctx.curMora >= 3; // 複合語の切れ続き（ザイエン キカン）
       }
       if (prev.isNumber && (d1 === '接尾' || d1 === '助数詞' || /^[\u4e00-\u9fff]$/.test(surf) || UNITS.has(surf))) return false;
       return true;
     }
     if (p === '動詞') {
       if (d1 === '接尾') return false;
+      // 名詞＋動詞の連用形で1つの名詞になっているもの（切り欠きを）は続ける
+      if (prev.pos === '名詞' && /^連用/.test(t.conjugated_form || '') && ctx.nextIsCase && /[りきしちみぎびい]$/.test(ps)) return false;
       if (t.basic_form === 'する' && prev.pos === '名詞' && /^[一-鿿]$/.test(ps)) return false; // 愛する
       if (['てる', 'でる', 'とく', 'どく', 'ちゃう', 'じゃう', 'ちまう'].includes(t.basic_form)) return false;
       if (t.basic_form === 'なさる' && prev.pos === '動詞') return false;
@@ -653,8 +783,21 @@
     return moraCount(kana);
   }
 
+  // 数字＋助数詞の読み（最後の数字 d、10・20… のときは tens）
+  const COUNTER_SOUND = {
+    '分': d => [1, 3, 4, 6, 8, 0].includes(d) ? 'プン' : 'フン',
+    '本': d => [1, 6, 8, 0].includes(d) ? 'ポン' : d === 3 ? 'ボン' : 'ホン',
+    '杯': d => [1, 6, 8, 0].includes(d) ? 'パイ' : d === 3 ? 'バイ' : 'ハイ',
+    '匹': d => [1, 6, 8, 0].includes(d) ? 'ピキ' : d === 3 ? 'ビキ' : 'ヒキ',
+    '発': d => [1, 6, 8, 0].includes(d) ? 'パツ' : 'ハツ',
+    '泊': d => [1, 3, 4, 6, 8, 0].includes(d) ? 'パク' : 'ハク',
+    '歩': d => [1, 6, 8, 0].includes(d) ? 'ポ' : d === 3 ? 'ボ' : 'ホ'
+  };
+  // 辞書の読みが、点訳のふつうの読みと違う語
+  const WORD_READ = { '毎年': 'マイネン', '如何': 'イカン', '上方': 'ジョーホー', '車いす': 'クルマ イス', '車椅子': 'クルマ イス', '対償': 'タイショー' };
   // 読みが割れる語（候補を出して、点訳者に選んでもらう）
   const AMBIG = {
+    '毎年': ['マイネン', 'マイトシ'], '如何': ['イカン', 'イカガ'], '上方': ['ジョーホー', 'カミガタ'],
     'その後': ['ソノゴ', 'ソノ アト', 'ソノ ノチ'], 'その他': ['ソノ ホカ', 'ソノタ'],
     '一日': ['イチニチ', 'ツイタチ'], '今日': ['キョー', 'コンニチ'], '明日': ['アシタ', 'アス', 'ミョーニチ'],
     '昨日': ['キノー', 'サクジツ'], '日本': ['ニホン', 'ニッポン'], '上手': ['ジョーズ', 'ウワテ', 'カミテ'],
@@ -664,6 +807,26 @@
     '何人': ['ナンニン', 'ナニジン'],
     '今月末': ['コンゲツマツ', 'コンゲツ スエ'], '一番': ['イチバン', 'イチ バン'], '行方': ['ユクエ', 'ギョーホー', 'イクエ'], '一時': ['イチジ', 'イットキ', 'イチ ジ']
   };
+
+  // 前後を見ないと読みが決まらない語。読みの候補を出す
+  function contextReading(tokens, i) {
+    const t = tokens[i], surf = t.surface_form, p1 = tokens[i - 1], p2 = tokens[i - 2], n1 = tokens[i + 1];
+    // 「〜の方」：人ならカタ、方向・方面ならホー
+    if (surf === '方' && p1 && p1.surface_form === 'の') {
+      const person = tokens.slice(Math.max(0, i - 5), i - 1).some(x => /者$|^歳$|^人$|^以外$|^未満$|^以上$|^様$|^皆/.test(x.surface_form));
+      const kana = person ? 'カタ' : 'ホー';
+      return { surface: 'の方', kana, options: person ? ['カタ', 'ホー'] : ['ホー', 'カタ'] };
+    }
+    // 「〜の下、」「〜の下で」：モト（認識の下、指導の下で）
+    if (surf === '下' && p1 && p1.surface_form === 'の' && n1 && /^(、|で|に)$/.test(n1.surface_form) && p2 && p2.pos === '名詞' && p2.pos_detail_1 === 'サ変接続') {
+      return { surface: 'の下', kana: 'モト', options: ['モト', 'シタ'] };
+    }
+    // 2字の漢語＋「前」：ゼンのこともある（就学前・使用前）
+    if (surf === '前' && p1 && p1.pos === '名詞' && /^[一-鿿]{2}$/.test(p1.surface_form) && p1.pos_detail_1 === 'サ変接続') {
+      return { surface: p1.surface_form + '前', kana: 'ゼン', options: ['ゼン', 'マエ'] };
+    }
+    return null;
+  }
 
   // 1行分の kuromoji トークン → 分かち書きした点字仮名
   function tokensToKana(rawTokens, opts) {
@@ -682,13 +845,17 @@
       if (surf === '・' && prev && nx && /^[ァ-ヺー]+$/.test(prev.surface_form) && /^[ァ-ヺー]+/.test(nx.surface_form)) {
         out += ' '; prev = null; ctx.attachNext = false; continue;
       }
-      const r = tokenKana(t, prev, tokens[i + 1], opts);
+      let r = tokenKana(t, prev, tokens[i + 1], opts);
+      const ctxCheck = contextReading(tokens, i);
+      if (ctxCheck) { r = { kana: ctxCheck.kana }; checks.push(ctxCheck); }
       if (r.unresolved) unresolved.push(surf);
       if (AMBIG[surf] && r.kana) checks.push({ surface: surf, kana: r.kana, options: AMBIG[surf] });
       else if (t.isNumber && tokens[i + 1] && tokens[i + 1].surface_form === '日') checks.push({ surface: surf + '日', kana: r.kana + 'ニチ', options: [r.kana + 'ニチ', r.kana + 'カ'] });
       ctx.curMora = moraOf(t, r.kana);
+      ctx.nextIsCase = !!(tokens[i + 1] && tokens[i + 1].pos === '助詞' && /^(を|が|に|の|は|も|で|と)$/.test(tokens[i + 1].surface_form));
       const brk = needsBreak(t, prev, ctx);
       if (brk && out && !out.endsWith(' ')) out += ' ';
+      ctx.segMora = brk || !out ? ctx.curMora : (ctx.segMora || 0) + ctx.curMora;
       out += r.kana;
       t._kana = r.kana;
       if (r.eatNext) i++;

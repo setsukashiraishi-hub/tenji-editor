@@ -31,6 +31,7 @@ jobs:
       - run: node test/layout.test.js
       - run: node test/figure.test.js
       - run: node test/bse.test.js
+      - run: node test/official.test.js
 
   deploy:
     if: github.event_name != 'pull_request'
