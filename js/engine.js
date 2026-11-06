@@ -95,6 +95,22 @@
   };
 
   // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
+  // 日本語・英語以外の外国語（点字の書き方が言語ごとに違うので、点訳者に確かめてもらう）
+  const FOREIGN = [
+    [/[A-Za-zÀ-ÖØ-öø-ɏ]*[À-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ]*/g, 'アクセント記号つきの外国語（フランス語・ドイツ語・スペイン語など）'],
+    [/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g, 'ハングル（韓国・朝鮮語）'],
+    [/[\u0400-\u04FF]+/g, 'キリル文字（ロシア語など）'],
+    [/[\u0600-\u06FF\u0750-\u077F]+/g, 'アラビア文字'],
+    [/[\u0590-\u05FF]+/g, 'ヘブライ文字'],
+    [/[\u0E00-\u0E7F]+/g, 'タイ文字'],
+    [/[\u0900-\u097F]+/g, 'デーヴァナーガリー（ヒンディー語など）']
+  ];
+  function foreignParts(text) {
+    const out = [];
+    for (const [re, kind] of FOREIGN) for (const m of text.matchAll(re)) out.push({ text: m[0], kind });
+    return out;
+  }
+
   // 行頭の番号・記号（見出しや箇条書きの「ア」「1」「（1）」「第1」）を、点字の書き方にする
   //  （1）→「（1）」＋1マス、ア／ア．→「ア。」＋1マス、1．→「1。」＋1マス、1・第1（後ろに空白）→＋2マス
   function lineLabel(text) {
@@ -110,7 +126,7 @@
     const lb = noLabel ? null : lineLabel(text);
     if (lb) {
       const r = sumijiToKana(lb.rest, tokenize, opts, true);
-      return { kana: lb.kana + lb.sep + r.kana, unresolved: r.unresolved, checks: r.checks };
+      return { kana: lb.kana + lb.sep + r.kana, unresolved: r.unresolved, checks: r.checks, foreign: r.foreign };
     }
     // 発音記号（[dʒæ̀pəníːz] など）は読まずに ⟦ ⟧ で囲んで残し、点字にするときに発音記号の点字にする
     const segs = [];
@@ -125,8 +141,9 @@
     }
     if (last < text.length) segs.push({ text: text.slice(last) });
     let kana = '';
-    const unresolved = [], checks = [];
+    const unresolved = [], checks = [], foreign = [];
     for (const sg of segs) {
+      if (sg.text) foreign.push(...foreignParts(sg.text)); // 発音記号の中は除く
       if (sg.ipa) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + sg.ipa + '⟧'; continue; }
       if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
       const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
@@ -136,7 +153,7 @@
       kana += k;
       res.forEach(r => { unresolved.push(...r.unresolved); checks.push(...r.checks); });
     }
-    return { kana: kana.replace(/ +$/, ''), unresolved, checks };
+    return { kana: kana.replace(/ +$/, ''), unresolved, checks, foreign };
   }
 
   // ---------- 点字に専用の記号がないものの読み替え ----------
@@ -237,7 +254,10 @@
   }
   const isKana = c => /[ァ-ヺー]/.test(c);
   const isDigit = c => c >= '0' && c <= '9';
-  const isLatin = c => /[A-Za-z]/.test(c);
+  // アクセント記号つきのラテン文字（é ü ñ ō など）。点字ではアクセント符（4の点 ⠈）を文字の前に付ける
+  const ACC_RE = /[À-ÖØ-öø-ɏ]/;
+  const accBase = c => { const d = c.normalize('NFD'); return /^[A-Za-z]/.test(d) && d.length > 1 ? d[0] : null; };
+  const isLatin = c => /[A-Za-z]/.test(c) || (ACC_RE.test(c) && !!accBase(c));
   const isSpace = c => c === ' ' || c === '　' || c === '⠀';
   const SMALL_KANA = new Set('ァィゥェォャュョヮ'.split(''));
 
@@ -297,22 +317,24 @@
   const EN_LETTER = { a: '⠁', b: '⠃', c: '⠉', d: '⠙', e: '⠑', f: '⠋', g: '⠛', h: '⠓', i: '⠊', j: '⠚', k: '⠅', l: '⠇', m: '⠍', n: '⠝', o: '⠕', p: '⠏', q: '⠟', r: '⠗', s: '⠎', t: '⠞', u: '⠥', v: '⠧', w: '⠺', x: '⠭', y: '⠽', z: '⠵' };
   const EN_DIGIT = { 1: '⠁', 2: '⠃', 3: '⠉', 4: '⠙', 5: '⠑', 6: '⠋', 7: '⠛', 8: '⠓', 9: '⠊', 0: '⠚' };
   const EN_PUNCT = { ',': '⠂', '.': '⠲', '?': '⠦', '!': '⠖', "'": '⠄', '’': '⠄', '\u02bc': '⠄', '-': '⠤', ':': '⠒', ';': '⠆', '&': '⠈⠯' };
-  const EN_PHRASE_RE = /[A-Za-z][A-Za-z0-9'’\u02bc.\-]*(?:,? +(?:&|[A-Za-z0-9][A-Za-z0-9'’\u02bc.\-]*))+[.?!]?/g;
+  const LAT = 'A-Za-zÀ-ÖØ-öø-ɏ';
+  const EN_PHRASE_RE = new RegExp(`[${LAT}][${LAT}0-9'’\u02bc.\\-]*(?:,? +(?:&|[${LAT}0-9][${LAT}0-9'’\u02bc.\\-]*))+[.?!]?`, 'g');
   function englishBraille(text) {
     let out = '';
     for (const word of text.split(/ +/)) {
       if (out) out += '⠀';
-      const letters = word.replace(/[^A-Za-z]/g, '');
+      const letters = word.normalize('NFD').replace(/[^A-Za-z]/g, '');
       const allCaps = letters.length >= 2 && letters === letters.toUpperCase();
       if (allCaps) out += '⠠⠠';
       let num = false;
       for (const ch of word) {
         if (/[0-9]/.test(ch)) { if (!num) out += '⠼'; num = true; out += EN_DIGIT[ch]; continue; }
-        if (/[A-Za-z]/.test(ch)) {
-          if (num && /[a-jA-J]/.test(ch)) out += '⠰'; // 数字のすぐ後の a〜j は、数字と区別する印
+        const base = /[A-Za-z]/.test(ch) ? ch : (ACC_RE.test(ch) ? accBase(ch) : null);
+        if (base) {
+          if (num && /[a-jA-J]/.test(base)) out += '⠰'; // 数字のすぐ後の a〜j は、数字と区別する印
           num = false;
           if (!allCaps && ch !== ch.toLowerCase()) out += '⠠';
-          out += EN_LETTER[ch.toLowerCase()];
+          out += (base !== ch ? '⠈' : '') + EN_LETTER[base.toLowerCase()];
           continue;
         }
         if (num && ch === '.' ) { out += '⠲'; continue; }
@@ -350,7 +372,7 @@
     // かなを手で直すときに [ ] や / / で発音記号を書いても、発音記号の点字にする
     line = String(line || '').replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; });
     // 2語以上の英語は外国語引用符で囲む
-    line = line.replace(EN_PHRASE_RE, m => /[A-Za-z]/.test(m.split(/ +/).pop()) || / [0-9]/.test(m) ? '⟪' + m + '⟫' : m);
+    line = line.replace(EN_PHRASE_RE, m => /[A-Za-zÀ-ÖØ-öø-ɏ]/.test(m.split(/ +/).pop()) || / [0-9]/.test(m) ? '⟪' + m + '⟫' : m);
     const s = Array.from(normalizeInput(toKatakana(line)));
     let out = '';
     const unknown = [];
@@ -408,7 +430,8 @@
         }
         inLatin = true; inNum = false;
         const upper = c !== c.toLowerCase();
-        out += (upper && !latinCapAll ? SIGN.CAP : '') + LETTER[c.toLowerCase()];
+        const base = /[A-Za-z]/.test(c) ? c : accBase(c);
+        out += (upper && !latinCapAll ? SIGN.CAP : '') + (base !== c ? '⠈' : '') + LETTER[base.toLowerCase()];
         if (next === '\u02bc') continue;
         if (next && !isLatin(next) && isKana(next)) out += SIGN.TSUNAGI; // 英字と仮名の間はつなぎ符
         continue;
@@ -633,7 +656,7 @@
   const SPACED = new Set(['→', '←', '↔', '＝']); // 前後を1マスあける記号
   const ATTACH = new Set(['/', '／', '+', '×', '÷', '−', '-', '－', '‐', '\u02bc']); // 前後を続ける記号
   const isKanji2 = s => /^[一-鿿々]{2}$/.test(s);
-  const isLatinWord = s => /^[A-Za-z][A-Za-z0-9.]*$/.test(s);
+  const isLatinWord = s => /^[A-Za-zÀ-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ0-9.]*$/.test(s);
 
   // kuromoji のトークンを語に整える（数の連続をまとめる）
   function prepareTokens(tokens) {

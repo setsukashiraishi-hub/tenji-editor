@@ -52,5 +52,11 @@ const words = k => k.replace(/⁑/g, 'ヲヲ').replace(/[（）()「」『』]/g
   assert.strictEqual(E.kanaToBraille('Japanese').cells, '⠰⠠⠚⠁⠏⠁⠝⠑⠎⠑', '1語の英語は外字符');
   const back = E.brailleToKana('⠶⠁⠰⠶⠃⠶⠆⠉⠶');
   assert.strictEqual(typeof back === 'string' ? back : back.kana, '（ア（イ）ウ）', 'カッコの中のカッコを読み戻す');
+  // 英語以外の外国語：アクセント記号つきの文字はアクセント符 ⠈ を前に付け、要確認にする。ほかの文字（ハングルなど）も要確認
+  const fr = E.sumijiToKana('カフェ（café）', t => tk.tokenize(t), {});
+  assert.ok(E.kanaToBraille(fr.kana).cells.includes('⠰⠉⠁⠋⠈⠑'), 'é はアクセント符＋e');
+  assert.strictEqual(fr.foreign.length, 1, '英語以外の外国語として知らせる');
+  assert.strictEqual(E.sumijiToKana('안녕하세요', t => tk.tokenize(t), {}).foreign[0].kind.slice(0, 4), 'ハングル');
+  assert.strictEqual(E.sumijiToKana('Japanese [dʒæ̀pəníːz]', t => tk.tokenize(t), {}).foreign.length, 0, '発音記号は外国語にしない');
   console.log('official: all passed');
 })().catch(e => { console.error(e); process.exit(1); });

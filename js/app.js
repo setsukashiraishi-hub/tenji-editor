@@ -143,13 +143,13 @@
   }
 
   function convertLine(text) {
-    let kana = text, unresolved = [], checks = [];
+    let kana = text, unresolved = [], checks = [], foreign = [];
     if (state.tokenizer) {
       const r = E.sumijiToKana(text, t => state.tokenizer.tokenize(t), { fallback: readByChar });
-      kana = r.kana; unresolved = r.unresolved; checks = r.checks;
+      kana = r.kana; unresolved = r.unresolved; checks = r.checks; foreign = r.foreign || [];
     }
     const b = E.kanaToBraille(kana);
-    return { kana, cells: b.cells, unknown: b.unknown, bad: b.bad, unresolved, checks };
+    return { kana, cells: b.cells, unknown: b.unknown, bad: b.bad, unresolved, checks, foreign };
   }
 
   function sumijiToRows(text, oldRows) {
@@ -186,7 +186,7 @@
         const kana = parts.map(p => p.kana).join('  ').replace(/ +$/, '');
         const b = E.kanaToBraille(kana);
         return { ...base, kana, cells: b.cells, unknown: b.unknown, bad: b.bad, tkana: parts.map(p => p.kana),
-          unresolved: parts.flatMap(p => p.unresolved), checks: parts.flatMap(p => p.checks) };
+          unresolved: parts.flatMap(p => p.unresolved), checks: parts.flatMap(p => p.checks), foreign: parts.flatMap(p => p.foreign || []) };
       }
       return { ...base, ...convertLine(src.replace(FRAME_SIDE_RE, '')) };
     });
@@ -250,7 +250,7 @@
   const cellLen = s => Array.from(s || '').length;
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
-    ((r.checks && r.checks.length) || (r.unknown && r.unknown.length) || (r.unresolved && r.unresolved.length));
+    ((r.checks && r.checks.length) || (r.unknown && r.unknown.length) || (r.unresolved && r.unresolved.length) || (r.foreign && r.foreign.length));
 
   // 要確認の理由（一覧・読み上げ用）
   function checkReasons(r) {
@@ -259,6 +259,8 @@
     const miss = [...new Set([...(r.unknown || []), ...(r.unresolved || [])])].filter(x => x !== '〓');
     if (miss.length) out.push('辞書にない語・点字にできない文字：' + miss.join(' '));
     if ((r.unresolved || []).includes('〓')) out.push('読めない点字');
+    // 外国語の点字は言語ごとに違う（英語の点字とは別）。その言語の点字で書くか、点訳者が決める
+    for (const f of (r.foreign || [])) out.push(`外国語「${f.text}」：${f.kind}。点字の書き方は言語ごとに違うので、書き方を確認してください`);
     return out;
   }
 
