@@ -145,7 +145,7 @@
   function convertLine(text) {
     let kana = text, unresolved = [], checks = [];
     if (state.tokenizer) {
-      const r = E.tokensToKana(state.tokenizer.tokenize(E.prepareSumiji(E.normalizeInput(text))), { fallback: readByChar });
+      const r = E.sumijiToKana(text, t => state.tokenizer.tokenize(t), { fallback: readByChar });
       kana = r.kana; unresolved = r.unresolved; checks = r.checks;
     }
     const b = E.kanaToBraille(kana);
@@ -199,6 +199,11 @@
       if (r.pagebreak) { out.push({ pagebreak: true }); continue; }
       // ページ行（右寄せの数符＋数字だけの行）は本文として読まない
       const pm = /^⠀*(?:⠼([⠁-⠚]+)⠀{2,})?⠀{6,}⠼([⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚]+)$/.exec(r.cells || '');
+      // BSE の各ページの1行目（ページ行）：空ならページ番号なし
+      if (r.pageLine && !pm && !(r.cells || '').replace(/⠀/g, '')) {
+        out.push({ src: '', type: 'pageno', fixed: true, cells: '', kana: '', page: '', para: false });
+        continue;
+      }
       if (pm) {
         const no = E.brailleToKana('⠼' + pm[2]);
         out.push({ src: r.cells, type: 'pageno', fixed: true, cells: r.cells, kana: '', page: no, para: false });
@@ -228,7 +233,7 @@
     if (state.mode === 'sumiji') {
       state.rows = sumijiToRows(els.src.value, state.rows);
     } else {
-      const parsed = F.parseRaw(els.raw.value, state.mode === 'braille-nabcc' ? 'nabcc' : 'unicode') || [];
+      const parsed = F.parseRaw(els.raw.value, state.mode === 'braille-nabcc' ? 'nabcc' : 'unicode', { pageLines: state.pageLines }) || [];
       const edited = new Map();
       state.rows.forEach(r => { if (r.edited && r.src) edited.set(r.src, r); });
       state.rows = brailleToRows(parsed).map(r => (!r.pagebreak && edited.has(r.src)) ? edited.get(r.src) : r);
@@ -285,7 +290,7 @@
     if (row._lines && !E.DECOR_TYPES.has(row.type)) {
       const n = Math.max(0, ...row._lines.map(cellLen));
       if (row._fit && row._fit.mode === 'list') meta.appendChild(chipEl(row._fit.head ? '表が1行に入らないため、列の名前の行' : `表が${opt.cols}マスに入らないため、項目ごとに${row._lines.length}行で書きます`, 'warn'));
-      else meta.appendChild(chipEl(`${n}マス` + (row._lines.length > 1 ? `・${row._lines.length}行に折り返し` : '') + (row._inFrame ? '・枠の中（3マス目から）' : '')));
+      else meta.appendChild(chipEl(`${n}マス` + (row._lines.length > 1 ? `・${row._lines.length}行に折り返し` : '')));
     } else if (cells && row.type !== 'figure') {
       const ind = E.HEAD_INDENT[row.type] || (row.para && opt.indent ? 2 : 0);
       const n = cellLen(cells) + ind;
@@ -446,7 +451,6 @@
     }
     if (type === 'blank') { el.appendChild(unitEl(SPACE_MARK, '⠀', { space: true })); return; }
     const gap = n => { for (let i = 0; i < n; i++) el.appendChild(unitEl('', '⠀', { space: true, decor: true })); };
-    if (row._inFrame && (type === 'body' || type === 'figure')) gap(2 + (type === 'body' && row.para && els.indent && els.indent.checked ? 2 : 0));
     const b = row.kana ? E.kanaToBraille(row.kana) : null;
     const bad = new Set(row.bad || []);
     if (E.HEAD_INDENT[type]) for (let i = 0; i < E.HEAD_INDENT[type]; i++) el.appendChild(unitEl('', '⠀', { space: true, decor: true }));
@@ -941,12 +945,19 @@
       if (res.mode === 'sumiji') {
         state.typeMap = new Map(res.types || []);
         state.figures = new Map(res.figures || []);
+        state.pageLines = false;
         setMode('sumiji');
         els.src.value = res.raw;
         if (!state.tokenizer) setNote('辞書の読み込みが終わると、漢字をかなに直して変換します。', true);
       } else {
         setMode(res.rawKind === 'nabcc' ? 'braille-nabcc' : 'braille-unicode');
         els.raw.value = res.raw;
+        // BSE のヘッダにあるマス数・行数に合わせる。各ページの1行目はページ行として読む
+        state.pageLines = !!res.layout;
+        if (res.layout) {
+          if (res.layout.cols) els.cols.value = res.layout.cols;
+          if (res.layout.lines) els.lines.value = res.layout.lines;
+        }
         els.hira.checked = true; // 墨字はひらがなで起こす（設定はいつでも切り替えられる）
       }
       convertAll();

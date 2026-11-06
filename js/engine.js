@@ -85,7 +85,7 @@
     '⦅': '⠠⠶', '⦆': '⠶⠄', // 点訳者挿入符
     '“': '⠰⠄', '”': '⠠⠆', '〈': '⠰⠄', '〉': '⠠⠆', '《': '⠰⠄', '》': '⠠⠆', '＜': '⠰⠄', '＞': '⠠⠆',
     '：': '⠐⠂', ':': '⠐⠂', '※': '⠰⠆', '-': '⠤', '－': '⠤', '‐': '⠤', '‑': '⠤', '–': '⠤',
-    '<': '⠰⠄', '>': '⠠⠆',
+    '<': '⠰⠄', '>': '⠠⠆', '⁑': '⠔⠔',
     // 斜線・矢印
     '/': '⠌', '／': '⠌', '→': '⠒⠒⠕', '←': '⠪⠒⠒', '↔': '⠪⠒⠒⠕',
     // 数式の中の記号（数字にはさまれたときだけ記号のまま残す。ほかは読み替える）
@@ -93,6 +93,13 @@
     // 英文の句読点
     '.': '⠲', ',': '⠰', ';': '⠆', '；': '⠆'
   };
+
+  // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
+  function sumijiToKana(text, tokenize, opts) {
+    const parts = prepareSumiji(normalizeInput(text)).split(WIDE_GAP);
+    const res = parts.map(p => tokensToKana(tokenize(p), opts));
+    return { kana: res.map(r => r.kana).join('  '), unresolved: res.flatMap(r => r.unresolved), checks: res.flatMap(r => r.checks) };
+  }
 
   // ---------- 点字に専用の記号がないものの読み替え ----------
   // 点訳のてびきの考え方に合わせて、読みに置き換えるか、飾りなら省く
@@ -122,7 +129,12 @@
     '\u3000': ' ', '\u00a0': ' ', '\u2002': ' ', '\u2003': ' ', '\u2009': ' '
   };
   // 箇条書きの頭の飾り（点訳では省く）
-  const BULLET_RE = /^[ 　]*(?:[●○◎◆◇■□▪▫•◦★☆✓✔✅☐☑▲△▼▽►▶▷▸➢➤❖◉◯⚫⚪・]|[-–—*＊][ 　])[ 　]*/;
+  // 箇条書きの頭の印。記号の印（○●■◆★▶など）は点字の「⠔⠔」＋マスあけにする（BSEの見本の書き方）。
+  // 中点・ハイフンの印は省く
+  const MARK_RE = /^[ 　]*[●○◎◆◇■□▪▫★☆✓✔✅☐☑▲△▼▽►▶▷▸➢➤❖◉◯⚫⚪][ 　]*/;
+  const BULLET_RE = /^[ 　]*(?:[•◦・]|[-–—*＊][ 　])[ 　]*/;
+  const MARK = '⁑'; // 行頭の印（点字では ⠔⠔）
+  const WIDE_GAP = '\ue020'; // 全角スペースの区切り（点字では2マスあけ）
   const CIRCLED = [[0x2460, 0x2473, 1], [0x3251, 0x325f, 21], [0x32b1, 0x32bf, 36], [0x2776, 0x277f, 1], [0x2780, 0x2789, 1], [0x278a, 0x2793, 1], [0x24eb, 0x24f4, 11], [0x24f5, 0x24fe, 1]];
   const circledNumber = cp => { for (const [a, b, n] of CIRCLED) if (cp >= a && cp <= b) return n + cp - a; return 0; };
   const isPictograph = c => /\p{Extended_Pictographic}/u.test(c) && !READ[c] && !PUNCT[c];
@@ -131,7 +143,9 @@
 
   // 墨字の1行を、形態素解析の前に整える（記号の読み替え・飾りの除去）
   function prepareSumiji(line) {
-    let s = line.replace(BULLET_RE, '');
+    let s = MARK_RE.test(line) ? line.replace(MARK_RE, MARK + ' ') : line.replace(BULLET_RE, '');
+    // 語と語の間の全角スペース（「第1　趣旨」「資料1　（福）…」）は2マスあけ
+    s = s.replace(/([^ 　])　+(?=[^ 　])/g, '$1' + WIDE_GAP);
     // 丸数字 → （1）
     s = s.replace(/[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf\u2776-\u2793\u24eb-\u24fe]/g, c => '（' + circledNumber(c.codePointAt(0)) + '）');
     s = s.replace(/℃|℉/g, m => READ[m]); // NFKC で °C にならないよう先に読む
@@ -634,11 +648,12 @@
   const HEAD_INDENT = { h1: 6, h2: 4, h3: 2 }; // 7・5・3マス目から書き出す
   const DECOR_TYPES = new Set(['rule', 'frame-start', 'frame-end']);
   // 枠線：第1種（⠖⠒⠲ / ⠓⠒⠚）。区切り線は棒線（⠒）を左右2マスあけて引く
+  // 枠線は、点字データの書き方（BSEの見本）に合わせて1マス目から行いっぱいに引く
   function decorCells(type, cols) {
-    const inner = Math.max(2, cols - 6);
+    const inner = Math.max(2, cols - 2);
     if (type === 'rule') return '⠀⠀' + '⠒'.repeat(Math.max(2, cols - 4));
-    if (type === 'frame-start') return '⠀⠀⠖' + '⠒'.repeat(inner) + '⠲';
-    if (type === 'frame-end') return '⠀⠀⠓' + '⠒'.repeat(inner) + '⠚';
+    if (type === 'frame-start') return '⠖' + '⠒'.repeat(inner) + '⠲';
+    if (type === 'frame-end') return '⠓' + '⠒'.repeat(inner) + '⠚';
     return '';
   }
   // 点字の飾り行を見分ける（点字→墨字のとき、読まずに飾りとして扱う）
@@ -696,29 +711,13 @@
       if (live[i].type !== 'table') { i++; continue; }
       let j = i;
       while (j < live.length && live[j].type === 'table') j++;
-      fitTable(live.slice(i, j), cols, live[i]._inFrame ? FRAME_IND : 0);
+      fitTable(live.slice(i, j), cols, 0);
       i = j;
     }
-    // 枠の中の文は3マス目から（段落の頭はさらに2マスあける）
+    // 枠線は行いっぱい。枠の中はふつうの書き方（段落は3マス目から、続きは1マス目から）
     for (const f of frames) {
-      let w = 0;
-      for (const r of f.rows) {
-        if (r.type === 'body' && r.cells) {
-          const ind = FRAME_IND + (r.para && opt.indent ? 2 : 0);
-          const body = (r.cells || '').replace(/^⠀+|⠀+$/g, '');
-          const ls = wrapCells('⠀'.repeat(ind - FRAME_IND) + body, cols - FRAME_IND).map(l => '⠀'.repeat(FRAME_IND) + l);
-          r._lines = ls;
-        }
-        if (r._lines) r._lines.forEach(l => { w = Math.max(w, clen(l)); });
-        else if (HEAD_INDENT[r.type] && r.cells) w = Math.max(w, Math.min(cols, HEAD_INDENT[r.type] + clen(r.cells)));
-        else if (r.type === 'figure' && r.figure && !r.noFigure) r.figure.forEach(l => { w = Math.max(w, Math.min(cols, clen(l))); });
-        else if (r.type === 'figure' && r.cells) w = Math.max(w, Math.min(cols, FRAME_IND + clen(r.cells)));
-      }
-      // 枠線は中身より1マス以上長く、短すぎないように
-      const W = Math.min(cols, Math.max(w + 1, 16));
-      const inner = Math.max(2, W - FRAME_IND - 2);
-      f.start._lines = ['⠀'.repeat(FRAME_IND) + '⠖' + '⠒'.repeat(inner) + '⠲'];
-      if (f.end) f.end._lines = ['⠀'.repeat(FRAME_IND) + '⠓' + '⠒'.repeat(inner) + '⠚'];
+      f.start._lines = [decorCells('frame-start', cols)];
+      if (f.end) f.end._lines = [decorCells('frame-end', cols)];
       f.start._block = 2 + f.rows.reduce((a, r) => a + estimateLines(r, cols), 0);
     }
     return rows;
@@ -727,7 +726,7 @@
     if (r._lines) return r._lines.length;
     if (r.type === 'blank') return 1;
     if (r.type === 'figure') return r.figure && !r.noFigure ? r.figure.length : 1;
-    if (HEAD_INDENT[r.type]) return wrapCells((r.cells || '').replace(/^⠀+/, ''), cols - HEAD_INDENT[r.type]).length + 1;
+    if (HEAD_INDENT[r.type]) return headingLines(r.cells || '', HEAD_INDENT[r.type], cols).length + 1;
     return r.cells ? wrapCells(r.cells, cols).length : 1;
   }
   // かなと点字を、表示でそろえられる単位（かな1つ・記号1つ）の並びにする
@@ -918,7 +917,7 @@
       if (cells === '') { pushLine(''); continue; }
       if (HEAD_INDENT[type]) {
         const ind = HEAD_INDENT[type];
-        const body = wrapCells(cells.replace(/^⠀+/, ''), cols - ind).map(l => '⠀'.repeat(ind) + l);
+        const body = headingLines(cells, ind, cols);
         // 見出しの前は1行あける。ページの最後に見出しだけが残らないようにする
         if (cur().length && cur()[cur().length - 1] !== '') {
           if (room() < body.length + 2) newPage(); else pushLine('');
@@ -935,6 +934,16 @@
       return pages.map((p, i) => [meta[i].pageLine !== undefined ? meta[i].pageLine : pageLine(startNo + i, meta[i].genpon, cols, opt), ...p]);
     }
     return pages;
+  }
+
+  // 見出し：1行目は決まったマス目から、2行目以降はさらに2マス下げる（7マス目→9マス目、5→7、3→5）
+  function headingLines(cells, ind, cols) {
+    const text = cells.replace(/^⠀+/, '');
+    const first = wrapCells(text, cols - ind)[0];
+    const rest = text.slice(first.length).replace(/^⠀+/, '');
+    const out = ['⠀'.repeat(ind) + first.replace(/⠀+$/, '')];
+    if (rest) wrapCells(rest, cols - ind - 2).forEach(l => out.push('⠀'.repeat(ind + 2) + l.replace(/⠀+$/, '')));
+    return out;
   }
 
   // 分かち書きの単位で行を折り返す（語の途中で切らない）
@@ -1005,7 +1014,7 @@
     ROW_TYPES, HEAD_INDENT, DECOR_TYPES, decorCells, detectDecor, decorText, looksLikeGraphic, pageLine, AMBIG,
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
-    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, READ
+    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, READ
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;

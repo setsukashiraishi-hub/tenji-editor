@@ -56,11 +56,13 @@
 
   // ---------- 点字行（rows）の表現 ----------
   // rows: [{cells}, {pagebreak:true}]
-  function nabccTextToRows(text) {
+  function nabccTextToRows(text, pageLines) {
     const rows = [];
     const lines = text.replace(/\r/g, '').split('\n');
+    let top = !!pageLines;
     for (let line of lines) {
-      if (line === PAGE_MARK) { rows.push({ pagebreak: true }); continue; }
+      if (line === PAGE_MARK) { rows.push({ pagebreak: true }); top = !!pageLines; continue; }
+      if (top) { top = false; rows.push({ cells: E.asciiToCells(line), pageLine: true }); continue; } // ページ行
       while (line.includes('\f')) {
         const k = line.indexOf('\f');
         const before = line.slice(0, k);
@@ -778,10 +780,26 @@
       note += decodeText(line.slice().buffer).replace(/\r/g, '') + '\n';
       start = end + 1;
     }
-    const text = latin1(u8.subarray(start));
-    const rows = nabccTextToRows(text);
+    let text = latin1(u8.subarray(start));
+    // BSE のヘッダ（ページ数・マス数・行数）。あれば、行数ごとにページを分ける（改ページの記号がないため）
+    const first = text.slice(0, text.search(/\r?\n|$/));
+    const hd = bseHeader(first);
+    let layout = null;
+    if (hd) {
+      text = text.slice(first.length).replace(/^\r?\n/, '');
+      if (!text.includes('\f') && hd.lines > 0) {
+        const ls = text.replace(/\r/g, '').replace(/\n$/, '').split('\n');
+        const pages = [];
+        for (let i = 0; i < ls.length; i += hd.lines) pages.push(ls.slice(i, i + hd.lines).join('\n'));
+        text = pages.join('\n' + PAGE_MARK + '\n');
+      }
+      layout = { cols: hd.cols, lines: hd.lines };
+      note += `BSEの書式：${hd.cols}マス×${hd.lines}行・${hd.pages}ページ（各ページの1行目はページ行）\n`;
+    }
+    const rows = nabccTextToRows(text, !!hd);
     const raw = text.replace(/\r/g, '').replace(/\f/g, '\n' + PAGE_MARK + '\n').replace(/\n\n(?=［改ページ］)/g, '\n');
-    return { kind: ext, mode: 'braille', raw, rawKind: 'nabcc', rows, note: note.trim() ? `先頭の書式情報：${note.trim()}` : '' };
+    return { kind: ext, mode: 'braille', raw, rawKind: 'nabcc', rows, layout,
+      note: note.trim() ? (hd ? note.trim() : `先頭の書式情報：${note.trim()}`) : '' };
   }
 
   /*
@@ -972,8 +990,8 @@
   }
 
   // 左ペインを編集したあとに読み直す
-  function parseRaw(raw, rawKind) {
-    if (rawKind === 'nabcc') return nabccTextToRows(raw);
+  function parseRaw(raw, rawKind, opt) {
+    if (rawKind === 'nabcc') return nabccTextToRows(raw, opt && opt.pageLines);
     if (rawKind === 'unicode') return unicodeTextToRows(raw);
     return null;
   }
@@ -981,6 +999,30 @@
   // ---------- 書き出し ----------
   const enc = s => new TextEncoder().encode(s);
   const withBOM = s => '﻿' + s;
+
+  /*
+   * BSE（BASE形式）：見本のファイルと同じ作りで書き出す
+   *  1行目   ヘッダ（512バイト）：空白504個 ＋ ページ数4けた ＋ マス数2けた ＋ 行数2けた（例 "00283218"）
+   *  2行目〜 本文。1ページは「行数」ぶんの行（足りない行は空行でうめる。最後のページはうめない）
+   *          各ページの1行目はページ行（ページ番号は28マス目から）
+   *  改行は CR LF、文字は大文字の NABCC。改ページの記号（FF）は使わない
+   */
+  function bseFile(pages, opt) {
+    const L = opt.lines || 18, C = opt.cols || 32;
+    const out = [];
+    pages.forEach((p, i) => {
+      const ls = p.map(l => E.cellsToAscii(l, false).replace(/ +$/, ''));
+      if (i < pages.length - 1) while (ls.length < L) ls.push('');
+      out.push(...ls);
+    });
+    const header = ' '.repeat(504) + String(pages.length).padStart(4, '0').slice(-4) + String(C).padStart(2, '0').slice(-2) + String(L).padStart(2, '0').slice(-2);
+    return enc([header, ...out].join('\r\n') + '\r\n');
+  }
+  // BSE のヘッダ行か（空白ばかりで、最後に 8けたの数字）
+  function bseHeader(line) {
+    const m = /^ {200,}(\d{4})(\d{2})(\d{2}) *$/.exec(line);
+    return m ? { pages: +m[1], cols: +m[2], lines: +m[3] } : null;
+  }
 
   function nabccFile(pages, lower) {
     return enc(pages.map(p => p.map(l => E.cellsToAscii(l, lower).replace(/ +$/, '')).join('\r\n')).join('\r\n\f') + '\r\n');
@@ -1080,7 +1122,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
   async function exportFile(id, rows, opt) {
     const pages = E.layoutPages(rows, opt);
     switch (id) {
-      case 'bse': return nabccFile(pages, true);
+      case 'bse': return bseFile(pages, opt);
       case 'brl': return nabccFile(pages, true);
       case 'brf': return nabccFile(pages, false);
       case 'pef': return pefFile(pages, opt);

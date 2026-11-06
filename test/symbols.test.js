@@ -16,7 +16,7 @@ const assert = require('assert');
     return out || null;
   };
   const conv = text => {
-    const r = E.tokensToKana(tk.tokenize(E.prepareSumiji(E.normalizeInput(text))), { fallback: readByChar });
+    const r = E.sumijiToKana(text, t => tk.tokenize(t), { fallback: readByChar });
     const b = E.kanaToBraille(r.kana);
     return { kana: r.kana, cells: b.cells, unknown: b.unknown };
   };
@@ -28,7 +28,9 @@ const assert = require('assert');
     ['価格は¥1,000（税込）、$20です。', null],
     ['①準備 ②実行 ③確認', null],
     ['1+2=3、10×3=30、8÷2=4', null],
-    ['■ お知らせ', 'オシラセ'],
+    ['■ お知らせ', '⁑ オシラセ'],
+    ['第1　趣旨', 'ダイ1  シュシ'],
+    ['○関係機関の連携', '⁑ カンケイ'],
     ['・項目その1', null],
     ['★☆○×△□◎●◆◇', null],
     ['〒100-0001 東京都千代田区', null],
