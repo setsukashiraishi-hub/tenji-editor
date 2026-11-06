@@ -18,16 +18,39 @@ assert.ok(col2.every(x => x === col2[0]), '2列目の頭がそろう');
 assert.ok(p.slice(1, 4).every(l => l.startsWith('⠀⠀') && L(l) < L(p[0])), '中身は枠の中に入る');
 assert.ok(L(p[0]) < 32, '枠線は中身に合わせて短くなる');
 
-// 2. 入らない表：項目ごと（見出し：値）
+// 2. 入らない表：1列目をくり返して2つの表に分け、それぞれ列の頭をそろえる
 rows = [{ type: 'frame-start' }, tableRow(['コーモク', 'ナイヨー', 'ヨート']), tableRow(['シャシン', 'フンイキヤ クーカンノ イメージ', 'シカクテキナ ソキュー']),
   tableRow(['グラフ', 'スーチヤ ケイコーオ ミヤスク セイリ', 'ヒカク・ブンセキ']), { type: 'frame-end' }];
 pages = E.layoutPages(rows, { cols: 32, lines: 18 });
 show(pages);
 p = pages[0];
 assert.ok(p.every(l => L(l) <= 32), '32マスをこえない');
-assert.ok(p.slice(1, -1).every(l => l.startsWith('⠀⠀')), '枠の中は3マス目から');
-assert.ok(p.some(l => l.includes(E.kanaToBraille('ナイヨー').cells + '⠐⠂')), '列の見出し：値 で書く');
-assert.ok(rows[2]._fit.mode === 'list');
+assert.ok(p.slice(1, -1).every(l => l === '' || l.startsWith('⠀⠀')), '枠の中は3マス目から');
+assert.strictEqual(rows[1]._table.mode, 'split');
+const T = rows[1]._table;
+for (let part = 0; part < 2; part++) {
+  const ls = T.lines.filter(l => l.part === part && l.row >= 0 && !l.cont).map(l => Array.from(l.cells));
+  // 2列目の頭（1列目のあとのマスあけが終わる位置）が、どの行も同じ
+  const starts = ls.map(a => { let i = 2; while (a[i] !== '⠀') i++; while (a[i] === '⠀') i++; return i; });
+  assert.ok(starts.every(x => x === starts[0]), `表${part + 1}の2列目がそろう`);
+}
+
+// 2b. 2列で、2列目が長い表：2列目の中で折り返し、続きの行も2列目の頭にそろえる
+rows = [tableRow(['ナマエ', 'セツメイ']), tableRow(['ア', 'コレワ トテモ ナガイ セツメイノ ブンショーデ、 ヒトツノ ランニ オサマリマセン'])];
+pages = E.layoutPages(rows, { cols: 32, lines: 18 });
+show(pages);
+assert.strictEqual(rows[0]._table.mode, 'wrap');
+const wl = rows[0]._table.lines;
+const a0 = Array.from(wl[0].cells);
+const c2 = a0.findIndex((c, i) => i > 0 && a0[i - 1] === '⠀' && c !== '⠀');
+const conts = wl.filter(l => l.cont);
+assert.ok(conts.length && conts.every(l => Array.from(l.cells).findIndex(c => c !== '⠀') === c2), '続きの行も2列目の頭から');
+
+// 2c. 長い表がページをまたぐと、続きのページの頭に見出しの行をくり返す
+rows = [tableRow(['ナマエ', 'カズ'])];
+for (let i = 0; i < 25; i++) rows.push(tableRow(['コーモク' + i, String(i)]));
+pages = E.layoutPages(rows, { cols: 32, lines: 18 });
+assert.strictEqual(pages[1][0], pages[0][0], '2ページ目の頭に見出しの行');
 
 // 3. 枠は、ページの終わりに入りきらなければ次のページへまとめて送る
 rows = [];

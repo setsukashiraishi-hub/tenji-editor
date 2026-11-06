@@ -389,3 +389,33 @@ textarea::placeholder { color: var(--muted); opacity: .8; }
 .fig-line.note-line { margin-top: 2px; }
 dialog.confirm.fig { border-top-color: var(--accent); }
 .sheet-small { margin: 0; font-size: 12px; color: var(--muted); line-height: 1.6; }
+
+/* 表のカード：列を縦にそろえ、列ごとに色を変える */
+.tbl-cap { font-size: 12px; color: var(--accent); font-weight: 600; margin-bottom: 2px; }
+.tbl { display: flex; flex-direction: column; gap: 0; overflow-x: auto; padding-bottom: 4px; }
+.tbl .align { min-height: 0; flex-wrap: nowrap; margin-left: 0; padding: 4px 6px; border-radius: 0; gap: 0 var(--cg); }
+.tbl-line { --cw: 24px; --cg: 3px; display: flex; flex-wrap: nowrap; gap: 0 var(--cg); padding: 4px 6px; }
+.tbl .align.static { cursor: default; }
+.tbl-line .u.col-a .c { background: color-mix(in srgb, var(--accent-soft) 55%, var(--surface)); }
+.tbl-line .u.col-b .c { background: color-mix(in srgb, #f3e4c4 55%, var(--surface)); }
+.tbl-head { border-bottom: 2px solid var(--accent); }
+.tbl-head .u-k { font-weight: 700; color: var(--accent); }
+.tbl-even { background: color-mix(in srgb, var(--bg) 70%, transparent); }
+.tbl-cont { padding-top: 0; }
+.tbl-note .u-k { color: var(--muted); }
+.tbl-gap { height: 12px; }
+.tbl-line.needs-check { box-shadow: inset 3px 0 0 var(--warn); }
+.tbl .align:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tbl-edit { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.tbl-edit-label { font-size: 12px; color: var(--muted); }
+.tbl-meta { display: flex; flex-direction: column; gap: 4px; }
+body.braille .tbl-line, body.braille .tbl .align { --cw: 22px; --cg: 2px; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tbl-line .u.col-b .c { background: color-mix(in srgb, #4a3d22 55%, var(--surface)); } }
+:root[data-theme="dark"] .tbl-line .u.col-b .c { background: color-mix(in srgb, #4a3d22 55%, var(--surface)); }
+.tbl-line .u.decor .c { border-color: transparent; background: transparent; }
+.tbl-line .u.decor .u-k { box-shadow: none; }
+@media (max-width: 600px) {
+  .tbl-line, .tbl .align { --cw: 15px; --cg: 1px; }
+  .tbl-line .c { height: 24px; font-size: 16px; }
+  .tbl-line .u-k { font-size: 10px; }
+}

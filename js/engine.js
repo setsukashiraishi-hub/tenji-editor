@@ -681,7 +681,7 @@
   function fitBlocks(rows, opt) {
     const cols = opt.cols || 32;
     const live = rows.filter(r => r && !r.pagebreak);
-    live.forEach(r => { r._lines = null; r._fit = null; r._inFrame = false; });
+    live.forEach(r => { r._lines = null; r._fit = null; r._inFrame = false; r._table = null; r._tableHead = null; });
     // 枠の中の行に印を付ける
     const frames = [];
     let open = null;
@@ -730,40 +730,114 @@
     if (HEAD_INDENT[r.type]) return wrapCells((r.cells || '').replace(/^⠀+/, ''), cols - HEAD_INDENT[r.type]).length + 1;
     return r.cells ? wrapCells(r.cells, cols).length : 1;
   }
-  function fitTable(trs, cols, ind) {
-    const grid = trs.map(r => tableKana(r).map(k => kanaToBraille(k.trim()).cells));
-    const nc = Math.max(...grid.map(g => g.length));
-    const w = Array(nc).fill(0);
-    grid.forEach(g => g.forEach((c, k) => { if (k < g.length - 1) w[k] = Math.max(w[k], clen(c)); }));
-    grid.forEach(g => { const k = g.length - 1; w[k] = Math.max(w[k], clen(g[k])); });
-    const total = ind + w.reduce((a, b) => a + b, 0) + 2 * (nc - 1);
-    if (total <= cols) {
-      trs.forEach((r, ri) => {
-        let line = '⠀'.repeat(ind);
-        grid[ri].forEach((c, k) => { line += k < grid[ri].length - 1 ? c + '⠀'.repeat(w[k] - clen(c) + 2) : c; });
-        r._lines = [line.replace(/⠀+$/, '')];
-        r._fit = { mode: 'grid', ind, widths: w };
-      });
-      return;
+  // かなと点字を、表示でそろえられる単位（かな1つ・記号1つ）の並びにする
+  function pieceUnits(kana) {
+    const b = kanaToBraille((kana || '').trim());
+    return b.units.map(u => ({ k: u.text, c: u.cells }));
+  }
+  const plen = a => a.reduce((n, p) => n + clen(p.c), 0);
+  const padPiece = n => ({ k: '', c: '⠀'.repeat(Math.max(0, n)), pad: true });
+  const isSpacePiece = p => /^⠀+$/.test(p.c) && /^[ 　]*$/.test(p.k);
+  // 単位の並びを、語の切れ目（マスあけ）で width マスごとに折り返す
+  function wrapPieces(pcs, width) {
+    const words = [];
+    let cur = [], sp = [];
+    for (const p of pcs) {
+      if (isSpacePiece(p)) { if (cur.length) { words.push({ sp, w: cur }); cur = []; sp = []; } sp.push(p); }
+      else cur.push(p);
     }
-    // 1行に入らない表：1行目を列の見出しにして、各行を「見出し：値」で書く
-    const head = trs.length > 1 ? grid[0] : null;
-    const wrapAt = (cells, at) => wrapCells(cells, cols - at).map(l => '⠀'.repeat(at) + l);
-    trs.forEach((r, ri) => {
-      const g = grid[ri];
-      let lines = [];
-      if (head && ri === 0) lines = wrapAt(g.filter(Boolean).join('⠀⠀'), ind);
-      else {
-        lines = wrapAt(g[0] || '', ind);
-        g.slice(1).forEach((c, k) => {
-          if (!c) return;
-          const label = head && head[k + 1] ? head[k + 1] + '⠐⠂' : '';
-          lines.push(...wrapAt(label + c, ind + 2));
-        });
+    if (cur.length) words.push({ sp, w: cur });
+    const lines = [];
+    let line = [], len = 0;
+    for (const { sp, w } of words) {
+      const wl = plen(w), sl = plen(sp);
+      if (len && len + sl + wl <= width) { line.push(...sp, ...w); len += sl + wl; continue; }
+      if (len) { lines.push(line); line = []; len = 0; }
+      if (wl <= width) { line = [...w]; len = wl; continue; }
+      for (const p of w) { const l = clen(p.c); if (len && len + l > width) { lines.push(line); line = []; len = 0; } line.push(p); len += l; }
+    }
+    if (line.length || !lines.length) lines.push(line);
+    return lines;
+  }
+  // 表を整える。列の頭を縦にそろえ、列の間は2マス以上あける。
+  //  grid  … そのまま入る
+  //  wrap  … 最後の列だけ、その列の中で折り返す（続きの行も列の頭にそろえる）
+  //  split … 1行に入らないので、1列目（行の名前）をくり返して、いくつかの表に分ける
+  //  list  … それでも入らないとき、「列の名前：値」で項目ごとに書く
+  const MIN_LAST = 8;
+  function fitTable(trs, cols, ind) {
+    const grid = trs.map(r => tableKana(r).map(k => pieceUnits(k)));
+    const nc = Math.max(...grid.map(g => g.length));
+    grid.forEach(g => { while (g.length < nc) g.push([]); });
+    const w = Array(nc).fill(0);
+    grid.forEach(g => g.forEach((c, k) => { w[k] = Math.max(w[k], plen(c)); }));
+    // 1行目を列の見出しとみなすのは、2行以上あり、1行目に数だけの欄がないとき
+    const numeric = k => /^[\s0-9.,%％\-−＋+]+$/.test(k.trim()) && /[0-9]/.test(k);
+    const hasHead = trs.length > 1 && !tableKana(trs[0]).some(numeric);
+    let parts, mode;
+    if (ind + w.reduce((a, b) => a + b, 0) + 2 * (nc - 1) <= cols) { parts = [[...Array(nc).keys()]]; mode = 'grid'; }
+    else {
+      parts = [];
+      let cur = [0], fixed = ind + w[0];
+      for (let k = 1; k < nc; k++) {
+        if (cur.length > 1 && fixed + 2 + Math.min(w[k], MIN_LAST) > cols) { parts.push(cur); cur = [0]; fixed = ind + w[0]; }
+        cur.push(k); fixed += 2 + w[k];
       }
-      r._lines = lines;
-      r._fit = { mode: 'list', ind, head: !!(head && ri === 0) };
+      parts.push(cur);
+      const fits = parts.every(p => {
+        const fx = ind + p.slice(0, -1).reduce((a, k) => a + w[k] + 2, 0);
+        return cols - fx >= Math.min(w[p[p.length - 1]], MIN_LAST);
+      });
+      mode = !fits ? 'list' : parts.length > 1 ? 'split' : 'wrap';
+    }
+    const lines = [];
+    if (mode !== 'list') {
+      parts.forEach((p, pi) => {
+        if (parts.length > 1) {
+          if (pi) lines.push({ pieces: [], row: -1, part: pi, gap: true });
+          lines.push({ pieces: [padPiece(ind), ...pieceUnits(`⦅ヒョー ソノ${pi + 1}⦆`)], row: -1, part: pi, note: true });
+        }
+        const starts = [];
+        let x = ind;
+        p.forEach(k => { starts.push(x); x += w[k] + 2; });
+        const lastK = p[p.length - 1], lastStart = starts[starts.length - 1];
+        const tag = (pcs, k) => pcs.map(pc => ({ ...pc, col: k })); // 表示で列ごとに色分けするための印
+        grid.forEach((g, ri) => {
+          wrapPieces(tag(g[lastK], lastK), cols - lastStart).forEach((ll, li) => {
+            const pcs = [];
+            if (li === 0) {
+              pcs.push(padPiece(ind));
+              p.slice(0, -1).forEach(k => { pcs.push(...tag(g[k], k), padPiece(w[k] - plen(g[k]) + 2)); });
+            } else pcs.push(padPiece(lastStart)); // 欄の中の折り返しは、その列の頭から
+            pcs.push(...ll);
+            lines.push({ pieces: pcs, row: ri, part: pi, header: hasHead && ri === 0, cont: li > 0 });
+          });
+        });
+      });
+    } else {
+      const colon = { k: '：', c: '⠐⠂' };
+      grid.forEach((g, ri) => {
+        if (hasHead && ri === 0) {
+          const all = [];
+          g.forEach((c, k) => { if (!c.length) return; if (all.length) all.push(padPiece(2)); all.push(...c); });
+          wrapPieces(all, cols - ind).forEach(l => lines.push({ pieces: [padPiece(ind), ...l], row: ri, header: true, part: 0 }));
+          return;
+        }
+        wrapPieces(g[0], cols - ind).forEach(l => lines.push({ pieces: [padPiece(ind), ...l], row: ri, part: 0 }));
+        g.slice(1).forEach((c, k) => {
+          if (!c.length) return;
+          const label = hasHead && grid[0][k + 1].length ? [...grid[0][k + 1], colon] : [];
+          wrapPieces([...label, ...c], cols - ind - 2).forEach(l => lines.push({ pieces: [padPiece(ind + 2), ...l], row: ri, part: 0, cont: true }));
+        });
+      });
+    }
+    lines.forEach(l => {
+      while (l.pieces.length && l.pieces[l.pieces.length - 1].pad) l.pieces.pop();
+      l.pieces = l.pieces.filter(p => p.c);
+      l.cells = l.pieces.map(p => p.c).join('');
     });
+    const T = { mode, parts: parts.length, nc, rows: trs.length, lines, ind, widths: w, hasHead };
+    trs.forEach((r, ri) => { r._lines = ri ? [] : lines.map(l => l.cells); r._fit = { mode }; r._table = ri ? null : T; r._tableHead = trs[0]; });
   }
 
   const digitsCells = n => '⠼' + String(n).split('').map(d => DIGIT[d]).join('');
@@ -809,6 +883,22 @@
         continue;
       }
       if (type === 'blank') { pushLine(''); continue; }
+      if (row._table) {
+        // 表：1ページに入るならまとめる。ページをまたぐときは、続きのページの頭に列の見出しの行をもう一度書く
+        const T = row._table;
+        if (cur().length && T.lines.length <= bodyLines && room() < T.lines.length) newPage();
+        const heads = {};
+        for (const l of T.lines) {
+          if (l.header) (heads[l.part] = heads[l.part] || []).push(l.cells);
+          if (room() <= 0) {
+            newPage();
+            if (l.gap) continue;
+            if (!l.header && !l.note && heads[l.part] && T.rows > 3) heads[l.part].forEach(h => pushLine(h));
+          }
+          pushLine(l.cells);
+        }
+        continue;
+      }
       if (row._lines) {
         // 枠は、1ページに入るならまとめて次のページへ送る。枠線だけがページの端に残らないようにする
         if (row._block && cur().length && (row._block <= bodyLines ? room() < row._block : room() < 3)) newPage();
