@@ -96,9 +96,31 @@
 
   // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
   function sumijiToKana(text, tokenize, opts) {
-    const parts = prepareSumiji(normalizeInput(text)).split(WIDE_GAP);
-    const res = parts.map(p => tokensToKana(tokenize(p), opts));
-    return { kana: res.map(r => r.kana).join('  '), unresolved: res.flatMap(r => r.unresolved), checks: res.flatMap(r => r.checks) };
+    // 発音記号（[dʒæ̀pəníːz] など）は読まずに ⟦ ⟧ で囲んで残し、点字にするときに発音記号の点字にする
+    const segs = [];
+    let last = 0, m;
+    IPA_RE.lastIndex = 0;
+    while ((m = IPA_RE.exec(text))) {
+      const inner = m[1] || m[2] || m[3] || m[4];
+      if (!isIpaText(inner)) continue;
+      if (m.index > last) segs.push({ text: text.slice(last, m.index) });
+      segs.push({ ipa: inner.normalize('NFC').trim() });
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) segs.push({ text: text.slice(last) });
+    let kana = '';
+    const unresolved = [], checks = [];
+    for (const sg of segs) {
+      if (sg.ipa) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + sg.ipa + '⟧'; continue; }
+      if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
+      const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
+      const res = parts.map(p => tokensToKana(tokenize(p), opts));
+      const k = res.map(r => r.kana).join('  ');
+      if (kana && k && !/^[。、，．？！?!」』）)〕］】”]/.test(k) && !/ $/.test(kana)) kana += ' ';
+      kana += k;
+      res.forEach(r => { unresolved.push(...r.unresolved); checks.push(...r.checks); });
+    }
+    return { kana: kana.replace(/ +$/, ''), unresolved, checks };
   }
 
   // ---------- 点字に専用の記号がないものの読み替え ----------
@@ -212,7 +234,50 @@
   const U_ROW = new Set('ウクスツヌフムユルグズヅブプュゥヴ'.split(''));
 
   // ---------- かな → 点字 ----------
+  // ---------- 英語の発音記号（万国音標文字） ----------
+  // 日本点字表記法 2018年版・文部科学省「点字学習指導の手引」の表による。
+  // 発音記号符 ⠰ … ⠆ で囲む。英字と同じ形の記号は英字の点字（外字符は付けない）。
+  // 第1ストレス符 ⠸（4 5 6の点）・第2ストレス符 ⠘（4 5の点）は、その母音の前に置く。長音符 ː は ⠒
+  const IPA_OPEN = '⠰', IPA_CLOSE = '⠆', STRESS1 = '⠸', STRESS2 = '⠘';
+  const IPA = {
+    a: '⠁', b: '⠃', c: '⠉', d: '⠙', e: '⠑', f: '⠋', g: '⠛', h: '⠓', i: '⠊', j: '⠚', k: '⠅', l: '⠇', m: '⠍',
+    n: '⠝', o: '⠕', p: '⠏', q: '⠟', r: '⠗', s: '⠎', t: '⠞', u: '⠥', v: '⠧', w: '⠺', x: '⠭', y: '⠽', z: '⠵',
+    'ɑ': '⠡', 'æ': '⠩', 'ʌ': '⠬', 'ɛ': '⠜', 'ɔ': '⠣', 'ə': '⠢', 'ɪ': '⠌', 'ᴜ': '⠷', 'ʊ': '⠷',
+    'ŋ': '⠫', 'θ': '⠹', 'ð': '⠻', 'ʃ': '⠱', 'ʒ': '⠮', 'ː': '⠒', ':': '⠒',
+    // 表にない記号は、近い記号で書く（辞書によって書き方が違うもの）
+    'ɡ': '⠛', 'ɒ': '⠡', 'ɜ': '⠢', 'ɚ': '⠢⠗', 'ɝ': '⠢⠗', 'ɐ': '⠬', 'ɹ': '⠗', 'ɫ': '⠇', 'ʤ': '⠙⠮', 'ʧ': '⠞⠱', 'ʍ': '⠓⠺',
+    '(': '⠶', ')': '⠶', '-': '⠤', ' ': '⠀'
+  };
+  const IPA_VOWEL = /[aeiouyɑæʌɛɔəɪʊᴜɒɜɚɝɐ]/;
+  const IPA_MARK = /[ɑæʌɛɔəɪʊᴜŋθðʃʒˈˌːɒɜɚɝɹɡʤʧʍɐ\u0300\u0301áéíóúàèìòùǽ]/;
+  function ipaToBraille(text) {
+    const chars = Array.from(text.normalize('NFD'));
+    let out = IPA_OPEN, pending = '';
+    const unknown = [];
+    for (let i = 0; i < chars.length; i++) {
+      const c = chars[i].toLowerCase();
+      if (c === 'ˈ' || c === "'") { pending = STRESS1; continue; } // 音節の頭のストレス記号は、次の母音の前に移す
+      if (c === 'ˌ') { pending = STRESS2; continue; }
+      if (/[\u0300-\u036f.ˑ]/.test(c)) continue; // アクセント記号は母音の前に出したので飛ばす。音節の区切りの点も書かない
+      // 母音の上のアクセント記号（í ＝ 第1、æ̀ ＝ 第2）
+      let mark = '';
+      for (let k = i + 1; k < chars.length && /[\u0300-\u036f]/.test(chars[k]); k++) {
+        if (chars[k] === '\u0301') mark = STRESS1;
+        if (chars[k] === '\u0300') mark = STRESS2;
+      }
+      if (IPA[c] === undefined) { unknown.push(chars[i]); out += SIGN.UNKNOWN; continue; }
+      if (IPA_VOWEL.test(c) && (mark || pending)) { out += mark || pending; pending = ''; }
+      out += IPA[c];
+    }
+    return { cells: out.replace(/⠀+$/, '') + IPA_CLOSE, unknown };
+  }
+  // 墨字の [ ] や / / の中の発音記号を見つける（英字だけの [ ] は発音記号とみなさない）
+  const IPA_RE = /\[([^\[\]\n]{1,80})\]|［([^［］\n]{1,80})］|\/([^\/\n]{1,80})\/|／([^／\n]{1,80})／/g;
+  const isIpaText = t => IPA_MARK.test(t.normalize('NFC')) && /^[a-zA-Zɑæʌɛɔəɪʊᴜŋθðʃʒˈˌːɒɜɚɝɹɡʤʧʍɐɫ\u0300-\u036f\u00c0-\u024f().ˑ' :-]+$/.test(t.normalize('NFC'));
+
   function kanaToBraille(line) {
+    // かなを手で直すときに [ ] や / / で発音記号を書いても、発音記号の点字にする
+    line = String(line || '').replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; });
     const s = Array.from(normalizeInput(toKatakana(line)));
     let out = '';
     const unknown = [];
@@ -229,6 +294,16 @@
       flush(i);
       const c = s[i];
       const next = s[i + 1];
+      if (c === '⟦') { // 発音記号（⟦ ⟧ の中）
+        let j = i + 1;
+        while (j < s.length && s[j] !== '⟧') j++;
+        const r = ipaToBraille(s.slice(i + 1, j).join(''));
+        if (r.unknown.length) { unknown.push(i); bad.push(Array.from(out).length); }
+        out += r.cells;
+        inNum = false; inLatin = false;
+        i = j;
+        continue;
+      }
       if (isSpace(c)) { out += SIGN.BLANK; inNum = false; inLatin = false; continue; }
       if (isDigit(c)) {
         if (!inNum) out += SIGN.NUM;
@@ -1014,7 +1089,7 @@
     ROW_TYPES, HEAD_INDENT, DECOR_TYPES, decorCells, detectDecor, decorText, looksLikeGraphic, pageLine, AMBIG,
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
-    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, READ
+    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;

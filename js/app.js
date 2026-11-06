@@ -245,7 +245,8 @@
   }
 
   // ---------- 描画 ----------
-  const displayKana = k => els.hira.checked ? E.toHiragana(k) : k;
+  // 発音記号の印 ⟦ ⟧ は、画面では [ ] で見せる（[ ] のまま直しても発音記号の点字になる）
+  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']');
   const cellLen = s => Array.from(s || '').length;
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&

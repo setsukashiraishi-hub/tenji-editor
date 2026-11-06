@@ -45,6 +45,10 @@ const assert = require('assert');
     ['A < B > C', null],
     ['ご確認ください。…以上', null],
     ['2020−2026年', null],
+    ['Japanese [dʒæ̀pəníːz] は日本の。', '⟦dʒæ̀pəníːz⟧'],
+    ['apple /ˈæpəl/ りんご', '⟦ˈæpəl⟧'],
+    ['［注］ 詳しくは [1] を見る', 'チュー'],
+    ['and/or', null],
   ];
   let bad = 0;
   for (const [src, want] of cases) {
@@ -54,5 +58,9 @@ const assert = require('assert');
     if (!ok) bad++;
   }
   assert.strictEqual(bad, 0, bad + ' cases failed');
+  // 発音記号：文部科学省の例と同じ点字（外るほ小くね五つ｜お三ま二）
+  assert.ok(conv('Japanese [dʒæ̀pəníːz]').cells.includes('⠰⠙⠮⠘⠩⠏⠢⠝⠸⠊⠒⠵⠆'), '発音記号の点字');
+  assert.ok(!conv('［注］ 詳しくは [1] を見る').kana.includes('⟦'), '発音記号でない [ ] はそのまま');
+  assert.strictEqual(E.ipaToBraille('ˌdʒæpəˈniːz').cells, E.ipaToBraille('dʒæ̀pəníːz').cells, 'ˈ ˌ は次の母音の前に');
   console.log('symbols: all passed');
 })().catch(e => { console.error(e); process.exit(1); });
