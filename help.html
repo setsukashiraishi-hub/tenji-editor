@@ -94,6 +94,16 @@
         <li>右上の「テキストで保存」か「Wordで保存」で保存します。漢字には戻せないので、ひらがな（またはカタカナ）の文章になります。</li>
       </ol>
 
+      <h3>たくさんのファイルをまとめて変換する</h3>
+      <ol>
+        <li>ファイルをZIPにまとめて「ファイルを開く」で選ぶか、画面にドラッグします。ファイルを複数選んで開いても同じです。ZIPの中のフォルダも見ます（読み込めない形式のファイルは飛ばします）。WindowsでつくったZIPの日本語のファイル名も読めます。</li>
+        <li>全部のファイルを順に変換します。終わると、変換した件数と要確認の合計をお知らせします。</li>
+        <li>上の帯の「‹ 前のファイル」「次のファイル ›」でめくります。一覧から選んで飛ぶこともできます。一覧には各ファイルの要確認の数が出ます。キーボードでは Alt＋PageDown（次のファイル）、Alt＋PageUp（前のファイル）。</li>
+        <li>かなの手直しや校正は、ファイルごとに覚えています。めくって戻っても残ります。</li>
+        <li>「まとめて書き出す…」で、全部のファイルを同じ形式で書き出し、1つのZIPにまとめて保存します（例：資料_bse.zip）。校正が残っているファイルがあればお知らせします。今のファイルだけを書き出すときは、いつもの「書き出す」を使います。</li>
+        <li>「まとめを閉じる」で、今のファイルだけを残して一覧を閉じます。</li>
+      </ol>
+
       <h2 id="screen">2. 画面の見かた</h2>
       <ul>
         <li><strong>上の帯</strong>：ファイルを開く、新規、校正箇所の一覧、変換の向き、マス数・行数などの設定、書き出す。</li>
@@ -121,6 +131,7 @@
             <tr><th scope="row">CSV（.csv・.tsv）</th><td class="mark">○</td><td class="mark">－</td><td>枠で囲んだ表にします</td></tr>
             <tr><th scope="row">PDF</th><td class="mark">○</td><td class="mark">○</td><td>文字・画像・スキャンしたページを読み込みます。横に並んだ文字は表や項目の並びに、くり返し出てくるヘッダー・フッターは省きます。書き出しは点図（点図プリンタ用・立体コピー用）</td></tr>
             <tr><th scope="row">画像（PNG・JPEG・GIF・WebP・HEICなど）</th><td class="mark">○</td><td class="mark">－</td><td>画像1枚を点図にします。スマホでは写真ライブラリからも選べます（HEICはSafariのみ）</td></tr>
+            <tr><th scope="row">ZIP</th><td class="mark">○</td><td class="mark">○</td><td>中のファイルをまとめて変換し、前・次でめくれます。「まとめて書き出す」で全部を1つのZIPに書き出します</td></tr>
             <tr><th scope="row">SVG</th><td class="mark">－</td><td class="mark">○</td><td>点図</td></tr>
           </tbody>
         </table>
@@ -281,6 +292,7 @@
             <tr><th scope="row"><kbd>Home</kbd>／<kbd>End</kbd></th><td>最初／最後の行</td></tr>
             <tr><th scope="row"><kbd>PageUp</kbd>／<kbd>PageDown</kbd></th><td>10行ずつ移動</td></tr>
             <tr><th scope="row"><kbd>Enter</kbd></th><td>行のかなを直し始める／確定する</td></tr>
+            <tr><th scope="row"><kbd>Alt</kbd>+<kbd>PageDown</kbd>／<kbd>Alt</kbd>+<kbd>PageUp</kbd></th><td>まとめて読み込んだとき、次／前のファイルへ</td></tr>
             <tr><th scope="row"><kbd>Esc</kbd></th><td>かなの修正を終える、メニューや一覧を閉じる</td></tr>
           </tbody>
         </table>

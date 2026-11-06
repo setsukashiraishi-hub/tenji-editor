@@ -19,8 +19,8 @@
 
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
-      <input type="file" id="file-input" hidden
-             accept=".txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.heic,.heif,.avif,image/*,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+      <input type="file" id="file-input" hidden multiple
+             accept=".zip,application/zip,.txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.heic,.heif,.avif,image/*,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
       <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
     </div>
@@ -59,6 +59,29 @@
       </div>
     </div>
   </header>
+
+  <nav class="docnav" id="docnav" aria-label="まとめて読み込んだファイルの切り替え" hidden>
+    <button type="button" class="btn" id="doc-prev" title="前のファイル（Alt＋PageUp）"><span aria-hidden="true">‹ </span>前のファイル</button>
+    <label class="docnav-pick" for="doc-select"><span class="sr-only">ファイルを選ぶ</span><select id="doc-select"></select></label>
+    <span class="docnav-pos" id="doc-pos" aria-hidden="true"></span>
+    <button type="button" class="btn" id="doc-next" title="次のファイル（Alt＋PageDown）">次のファイル<span aria-hidden="true"> ›</span></button>
+    <span class="docnav-gap"></span>
+    <button type="button" class="btn primary" id="doc-export-all" aria-haspopup="dialog">まとめて書き出す…</button>
+    <button type="button" class="btn" id="doc-close">まとめを閉じる</button>
+  </nav>
+
+  <dialog class="sheet confirm" id="batch-dlg" aria-labelledby="batch-head" aria-describedby="batch-desc">
+    <div class="sheet-body">
+      <h2 id="batch-head">まとめて書き出す</h2>
+      <p id="batch-desc">読み込んだ <span id="batch-count"></span> を、同じ形式で書き出して1つのZIPファイルにまとめます。</p>
+      <label class="field col" for="batch-format"><span>形式</span><select id="batch-format"></select></label>
+      <p class="batch-warn" id="batch-warn" hidden></p>
+      <div class="t-actions">
+        <button type="button" class="btn primary" id="batch-go">書き出す（Enter）</button>
+        <button type="button" class="btn" id="batch-back">戻る（Esc）</button>
+      </div>
+    </div>
+  </dialog>
 
   <main class="panes" id="drop-zone">
     <section class="pane pane-src" id="src-pane" tabindex="-1" aria-labelledby="src-title">

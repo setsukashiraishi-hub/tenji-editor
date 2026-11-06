@@ -229,7 +229,7 @@
     return out;
   }
 
-  function convertAll() {
+  function convertAll(noRender) {
     if (state.mode === 'sumiji') {
       state.rows = sumijiToRows(els.src.value, state.rows);
     } else {
@@ -238,7 +238,10 @@
       state.rows.forEach(r => { if (r.edited && r.src) edited.set(r.src, r); });
       state.rows = brailleToRows(parsed).map(r => (!r.pagebreak && edited.has(r.src)) ? edited.get(r.src) : r);
     }
-    render();
+    if (!noRender) render();
+    // まとめて読み込んだファイルの一覧（要確認の数）も新しくする
+    const d = state.docs && state.docs[state.docIndex];
+    if (!noRender && d && d.snap) { d.snap.rows = state.rows; updateDocNav(); }
   }
 
   // ---------- 描画 ----------
@@ -838,6 +841,9 @@
   els.rows.addEventListener('focus', () => setCurrentRow(state.currentRow || 0, true));
 
   function updateStatus() {
+    // まとめて読み込んだファイルの一覧（要確認の数）も新しくする
+    const doc = state.docs && state.docs[state.docIndex];
+    if (doc && doc.snap) { doc.snap.rows = state.rows; updateDocNav(); }
     const textRows = state.rows.filter(r => !r.pagebreak && r.type !== 'genpon' && r.type !== 'pageno');
     const opt = layoutOpt();
     const pages = E.layoutPages(state.rows, opt);
@@ -934,10 +940,22 @@
 
   // ---------- ファイル ----------
   async function openFile(file) {
+    closeDocs(true);
     try {
       const buf = await file.arrayBuffer();
       if (/\.pdf$/i.test(file.name)) toast('PDFを読み込んでいます…');
       const res = await F.readFile(file.name, buf, layoutOpt());
+      applyRead(file.name, res);
+      convertAll();
+      toast(`${file.name} を読み込みました`);
+    } catch (e) {
+      toast(e.message || 'ファイルを読み込めませんでした。', true);
+    }
+  }
+  // 読み込んだ結果を画面（左の欄・設定）に入れる。変換はしない
+  function applyRead(name, res) {
+    {
+      const file = { name };
       state.rows = [];
       state.fileBase = file.name.replace(/\.[^.]+$/, '') || '点訳';
       els.fileName.textContent = file.name;
@@ -960,12 +978,187 @@
         }
         els.hira.checked = true; // 墨字はひらがなで起こす（設定はいつでも切り替えられる）
       }
-      convertAll();
-      toast(`${file.name} を読み込みました`);
-    } catch (e) {
-      toast(e.message || 'ファイルを読み込めませんでした。', true);
     }
   }
+
+  // ---------- まとめて読み込む（ZIP・複数のファイル） ----------
+  // 1つずつ変換して覚えておき、「前のファイル／次のファイル」でめくる。直したかなも、めくって戻っても残る
+  const DOC = { nav: $('docnav'), prev: $('doc-prev'), next: $('doc-next'), select: $('doc-select'), pos: $('doc-pos'),
+    exportAll: $('doc-export-all'), close: $('doc-close'), dlg: $('batch-dlg'), count: $('batch-count'), format: $('batch-format'),
+    warn: $('batch-warn'), go: $('batch-go'), back: $('batch-back') };
+  state.docs = [];
+  state.docIndex = -1;
+  const OPENABLE = /\.(txt|docx|xlsx|xlsm|csv|tsv|pdf|edl|png|jpe?g|gif|bmp|webp|hei[cf]|avif|bse|brl|brf|pef|bes|besx|brt|txn)$/i;
+  // ZIP の中のファイル名：Windows で作った ZIP は Shift_JIS のことがある
+  const zipName = bytes => {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch (e) { /* UTF-8 でない */ }
+    try { return new TextDecoder('shift_jis').decode(bytes); } catch (e) { return String.fromCharCode(...bytes); }
+  };
+  async function expandFiles(files) {
+    const out = [];
+    for (const f of files) {
+      if (/\.zip$/i.test(f.name)) {
+        try {
+          const zip = await window.JSZip.loadAsync(await f.arrayBuffer(), { decodeFileName: zipName });
+          const ents = Object.values(zip.files)
+            .filter(z => !z.dir && !/(^|\/)(__MACOSX|\.)/.test(z.name) && OPENABLE.test(z.name))
+            .sort((a, b) => a.name.localeCompare(b.name, 'ja', { numeric: true }));
+          for (const z of ents) out.push({ name: z.name.split('/').pop(), path: z.name, from: f.name, load: () => z.async('arraybuffer') });
+          const skipped = Object.values(zip.files).filter(z => !z.dir && !/(^|\/)(__MACOSX|\.)/.test(z.name) && !OPENABLE.test(z.name)).length;
+          if (skipped) toast(`${f.name}：読み込めない形式のファイル ${skipped}件は飛ばしました`);
+        } catch (e) { toast(`${f.name} を開けませんでした（ZIPが壊れているかもしれません）`, true); }
+      } else out.push({ name: f.name, path: f.name, load: () => f.arrayBuffer() });
+    }
+    return out;
+  }
+  // 今の画面の中身を覚える
+  function snapshot() {
+    return { rows: state.rows, mode: state.mode, src: els.src.value, raw: els.raw.value, typeMap: state.typeMap, figures: state.figures,
+      fileBase: state.fileBase, pageLines: state.pageLines, note: els.note.textContent, noteWarn: els.note.classList.contains('warn'),
+      fileName: els.fileName.textContent, cols: els.cols.value, lines: els.lines.value, hira: els.hira.checked };
+  }
+  function restore(snap) {
+    state.rows = snap.rows; state.typeMap = snap.typeMap; state.figures = snap.figures; state.fileBase = snap.fileBase; state.pageLines = snap.pageLines;
+    setMode(snap.mode);
+    els.src.value = snap.src; els.raw.value = snap.raw;
+    els.fileName.textContent = snap.fileName;
+    els.cols.value = snap.cols; els.lines.value = snap.lines; els.hira.checked = snap.hira;
+    setNote(snap.note, snap.noteWarn);
+  }
+  const waitDict = () => new Promise(res => {
+    if (state.tokenizer || !window.kuromoji) return res();
+    const t = setInterval(() => { if (state.tokenizer || els.stDict.classList.contains('err')) { clearInterval(t); res(); } }, 200);
+  });
+  const docChecks = d => d.snap ? d.snap.rows.filter(needsCheck).length : 0;
+  function docLabel(d, i) {
+    const n = docChecks(d);
+    return `${i + 1}. ${d.name}` + (d.error ? '（読み込めませんでした）' : !d.snap ? '（変換中）' : n ? `（要確認 ${n}）` : '');
+  }
+  function updateDocNav() {
+    const docs = state.docs, i = state.docIndex;
+    DOC.nav.hidden = docs.length < 2;
+    if (docs.length < 2) return;
+    DOC.select.textContent = '';
+    docs.forEach((d, k) => { const o = document.createElement('option'); o.value = k; o.textContent = docLabel(d, k); DOC.select.appendChild(o); });
+    DOC.select.value = String(i);
+    DOC.pos.textContent = `${i + 1} / ${docs.length}`;
+    DOC.prev.disabled = i <= 0; DOC.next.disabled = i >= docs.length - 1;
+  }
+  async function openFiles(files) {
+    const list = await expandFiles(files);
+    if (!list.length) { toast('読み込めるファイルがありませんでした。', true); return; }
+    if (list.length === 1 && !/\.zip$/i.test(files[0].name)) { openFile(files[0]); return; }
+    closeDocs(true);
+    state.docs = list.map(x => ({ ...x, snap: null, error: null }));
+    state.docIndex = 0;
+    updateDocNav();
+    toast(`${list.length}件のファイルを、まとめて変換しています…`);
+    announce(`${list.length}件のファイルを変換しています`);
+    await waitDict();
+    // 1つずつ読み込んで変換し、覚えておく（画面には最後に1件目を出す）
+    for (let k = 0; k < state.docs.length; k++) {
+      const d = state.docs[k];
+      DOC.pos.textContent = `変換中 ${k + 1} / ${state.docs.length}`;
+      try {
+        const buf = await d.load();
+        const res = await F.readFile(d.name, buf, layoutOpt());
+        applyRead(d.name, res);
+        convertAll(true);
+        d.snap = snapshot();
+      } catch (e) { d.error = e.message || '読み込めませんでした'; }
+      d.load = null; // 中身は覚えたので、元のデータは放す
+    }
+    const ok = state.docs.filter(d => d.snap).length, bad = state.docs.length - ok;
+    const checks = state.docs.reduce((a, d) => a + docChecks(d), 0);
+    showDoc(state.docs.findIndex(d => d.snap) >= 0 ? state.docs.findIndex(d => d.snap) : 0, true);
+    const msg = `${ok}件を変換しました` + (bad ? `（${bad}件は読み込めませんでした）` : '') + (checks ? `。要確認は全部で${checks}か所です` : '');
+    toast(msg); announce(msg + '。Alt＋PageDownで次のファイル、Alt＋PageUpで前のファイルへ移ります');
+  }
+  function showDoc(k, quiet) {
+    const docs = state.docs;
+    if (!docs.length || k < 0 || k >= docs.length) return;
+    // 今のファイルの手直しを覚えてから切り替える
+    const cur = docs[state.docIndex];
+    if (cur && cur.snap && state.docIndex !== k) cur.snap = snapshot();
+    state.docIndex = k;
+    const d = docs[k];
+    if (d.snap) { restore(d.snap); render(); }
+    else {
+      state.rows = []; state.fileBase = d.name.replace(/\.[^.]+$/, ''); els.fileName.textContent = d.name;
+      setNote(d.error ? `${d.name}：${d.error}` : '変換中です…', true); render();
+    }
+    updateDocNav();
+    if (!quiet) {
+      const n = docChecks(d);
+      announce(`${k + 1}件目／${docs.length}件、${d.name}` + (d.error ? '、読み込めませんでした' : n ? `、要確認 ${n}か所` : ''));
+    }
+  }
+  function closeDocs(silent) {
+    if (!state.docs.length) return;
+    state.docs = []; state.docIndex = -1;
+    updateDocNav();
+    if (!silent) announce('まとめて読み込んだファイルを閉じました。今のファイルだけが残ります');
+  }
+  DOC.prev.addEventListener('click', () => showDoc(state.docIndex - 1));
+  DOC.next.addEventListener('click', () => showDoc(state.docIndex + 1));
+  DOC.select.addEventListener('change', () => showDoc(+DOC.select.value));
+  DOC.close.addEventListener('click', () => closeDocs());
+  document.addEventListener('keydown', ev => {
+    if (!state.docs.length || !ev.altKey || ev.ctrlKey || ev.metaKey) return;
+    if (ev.key === 'PageDown') { ev.preventDefault(); showDoc(state.docIndex + 1); }
+    if (ev.key === 'PageUp') { ev.preventDefault(); showDoc(state.docIndex - 1); }
+  });
+  // まとめて書き出す：同じ形式で全部書き出して、1つのZIPに
+  for (const fmt of F.EXPORTS) {
+    const o = document.createElement('option'); o.value = fmt.id; o.textContent = `${fmt.label}（.${fmt.ext}）`; DOC.format.appendChild(o);
+  }
+  try { const v = localStorage.getItem('tenji-editor-batchformat'); if (v) DOC.format.value = v; } catch (e) { /* 既定のまま */ }
+  DOC.format.addEventListener('change', () => { try { localStorage.setItem('tenji-editor-batchformat', DOC.format.value); } catch (e) { /* 何もしない */ } });
+  DOC.exportAll.addEventListener('click', () => {
+    const cur = state.docs[state.docIndex];
+    if (cur && cur.snap) cur.snap = snapshot();
+    const ok = state.docs.filter(d => d.snap);
+    DOC.count.textContent = `${ok.length}件のファイル`;
+    const left = ok.filter(d => docChecks(d) > 0);
+    DOC.warn.hidden = !left.length;
+    DOC.warn.textContent = left.length ? `校正されていない箇所が残っているファイルが${left.length}件あります（${left.slice(0, 5).map(d => d.name).join('、')}${left.length > 5 ? ' ほか' : ''}）。` : '';
+    DOC.dlg.showModal();
+    DOC.format.focus();
+  });
+  DOC.back.addEventListener('click', () => DOC.dlg.close());
+  DOC.dlg.addEventListener('close', () => DOC.exportAll.focus());
+  DOC.dlg.addEventListener('keydown', ev => { if (ev.key === 'Enter' && ev.target.tagName !== 'SELECT') { ev.preventDefault(); DOC.go.click(); } });
+  DOC.go.addEventListener('click', async () => {
+    const fmt = F.EXPORTS.find(f => f.id === DOC.format.value);
+    DOC.dlg.close();
+    if (!fmt) return;
+    const here = snapshot();
+    const zip = new window.JSZip();
+    const used = new Set();
+    let n = 0;
+    toast('まとめて書き出しています…');
+    try {
+      for (const d of state.docs) {
+        if (!d.snap) continue;
+        restore(d.snap);
+        E.fitBlocks(state.rows, layoutOpt());
+        if (!state.rows.some(r => r.cells || r.figure || E.DECOR_TYPES.has(r.type))) continue;
+        const rows = state.rows.map(r => ({ ...r, kana: r.kana ? displayKana(r.kana) : r.kana }));
+        const data = await F.exportFile(fmt.id, rows, layoutOpt());
+        const suffix = fmt.id.startsWith('txt-') || fmt.id.startsWith('docx-') ? '_' + fmt.id.split('-')[1] : '';
+        let name = `${d.snap.fileBase}${suffix}.${fmt.ext}`;
+        for (let k = 2; used.has(name); k++) name = `${d.snap.fileBase}_${k}${suffix}.${fmt.ext}`; // 同じ名前は番号を付ける
+        used.add(name);
+        zip.file(name, data); n++;
+      }
+    } catch (e) { toast(e.message || '書き出しに失敗しました。', true); }
+    restore(here); render();
+    if (!n) { toast('書き出す内容がありません。', true); return; }
+    const first = state.docs[0];
+    const base = (first && first.from ? first.from.replace(/\.zip$/i, '') : 'まとめ') + `_${fmt.ext}`;
+    const zdata = await zip.generateAsync({ type: 'uint8array' });
+    if (await saveFile(`${base}.zip`, zdata)) toast(`${base}.zip を保存しました（${n}ファイル）`);
+  });
 
   async function saveFile(name, data) {
     const blob = new Blob([data], { type: 'application/octet-stream' });
@@ -1702,11 +1895,12 @@
   // ---------- イベント ----------
   $('btn-open').addEventListener('click', () => $('file-input').click());
   $('file-input').addEventListener('change', ev => {
-    const f = ev.target.files && ev.target.files[0];
-    if (f) openFile(f);
+    const fs = ev.target.files ? [...ev.target.files] : [];
+    if (fs.length) openFiles(fs);
     ev.target.value = '';
   });
   $('btn-new').addEventListener('click', () => {
+    closeDocs(true);
     state.rows = [];
     state.typeMap = new Map();
     state.figures = new Map();
@@ -1765,8 +1959,8 @@
   window.addEventListener('dragover', ev => ev.preventDefault());
   window.addEventListener('drop', ev => {
     ev.preventDefault(); dragDepth = 0; els.dropHint.hidden = true;
-    const f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-    if (f) openFile(f);
+    const fs = ev.dataTransfer && ev.dataTransfer.files ? [...ev.dataTransfer.files] : [];
+    if (fs.length) openFiles(fs);
   });
 
   // ---------- 起動 ----------
