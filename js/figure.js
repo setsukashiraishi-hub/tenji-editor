@@ -31,7 +31,7 @@
 
   // ---------- 画像の処理（AIを使わない画像処理） ----------
   // proc（調整）：
-  //   mode     … 'auto'（写真は外形、図は塗り）| 'outline'（外形だけ）| 'edges'（輪郭線。中の線も）| 'fill'（塗りつぶし）| 'both'（外形＋薄い塗り）
+  //   mode     … 'auto'（透明な背景の絵・色のついたイラストは色の境目、写真は外形、白黒の図は塗り）| 'regions'（色の境目）| 'outline'（外形だけ）| 'edges'（輪郭線。中の線も）| 'fill'（塗りつぶし）| 'both'（外形＋薄い塗り）
   //   denoise  … ノイズ除去 0〜3（細かすぎる模様・小さな点を省く）
   //   contrast … コントラスト -50〜100
   //   level    … 点にする濃さの境目 -50（濃い部分だけ）〜 50（薄い部分も）
@@ -40,21 +40,264 @@
   //   fill     … 塗りの密度 'all' | 'half'（市松） | 'sparse'（まばら）
   //   invert   … 白黒を反転
   //   width    … 本文に描くときの幅（マス）。0 ならページの幅いっぱい
-  const DEFAULT_PROC = { mode: 'auto', denoise: 1, contrast: 0, level: 0, edge: 5, line: 1, fill: 'all', invert: false, width: 0 };
+  //   colors   … 色の境目のとき、まとめる色の数 3〜10
+  //   cues     … 色の境目で使う手がかり { color, silhouette（透明な背景の外形）, ink（線画）, edges（明るさの変化） }
+  //   colorModes … 色ごとの扱い [{ lab, mode: 'line'|'fill-all'|'fill-half'|'fill-sparse'|'omit' }]
+  const DEFAULT_PROC = { mode: 'auto', denoise: 1, contrast: 0, level: 0, edge: 5, line: 1, fill: 'all', invert: false, width: 0, colors: 6 };
   const procOf = p => ({ ...DEFAULT_PROC, ...(p || {}) });
 
-  async function loadGray(blob, W, H) {
+  // 画像を W×H で読み、明るさ・色（白の上に重ねたもの）・透明かどうかを取り出す
+  async function loadImage(blob, W, H) {
     const bmp = await createImageBitmap(blob);
     const canvas = document.createElement('canvas');
     canvas.width = W; canvas.height = H;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); // 透明部分は白として扱う
     ctx.imageSmoothingQuality = 'high';
+    ctx.clearRect(0, 0, W, H);
     ctx.drawImage(bmp, 0, 0, W, H);
-    const data = ctx.getImageData(0, 0, W, H).data;
-    const gray = new Float32Array(W * H);
-    for (let i = 0; i < W * H; i++) gray[i] = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
-    return gray;
+    const d = ctx.getImageData(0, 0, W, H).data;
+    const N = W * H, gray = new Float32Array(N), rgb = new Float32Array(N * 3), alpha = new Uint8Array(N);
+    let clear = 0;
+    for (let i = 0; i < N; i++) {
+      const a = d[i * 4 + 3] / 255;
+      const r = d[i * 4] * a + 255 * (1 - a), g = d[i * 4 + 1] * a + 255 * (1 - a), b = d[i * 4 + 2] * a + 255 * (1 - a); // 透明部分は白として扱う
+      rgb[i * 3] = r; rgb[i * 3 + 1] = g; rgb[i * 3 + 2] = b;
+      gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+      if (a >= 0.5) alpha[i] = 1; else clear++;
+    }
+    return { gray, rgb, alpha, hasAlpha: clear > N * 0.01 };
+  }
+  // 色のついた絵か（白・黒・灰色以外の、はっきりした色が多い）
+  function isColorful(img, N) {
+    let col = 0, ink = 0;
+    for (let i = 0; i < N; i += 7) {
+      const r = img.rgb[i * 3], g = img.rgb[i * 3 + 1], b = img.rgb[i * 3 + 2];
+      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+      if (mx > 245 && mn > 235) continue; // 白
+      ink++;
+      if (mx - mn > 40) col++;
+    }
+    return ink > 0 && col / ink > 0.25;
+  }
+
+  // 明るさが急に変わるところ（ソーベル＋細線化＋ヒステリシス。キャニー法の考え方）を w×h の線にする
+  function edgeLines(g, W, H, w, h, s, P, minArea) {
+    const N = W * H;
+    // 輪郭線：明るさが急に変わるところ（ソーベル）を、強い順に選ぶ
+    const mag = new Float32Array(N), dir = new Uint8Array(N);
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const gx = -g[i - W - 1] - 2 * g[i - 1] - g[i + W - 1] + g[i - W + 1] + 2 * g[i + 1] + g[i + W + 1];
+      const gy = -g[i - W - 1] - 2 * g[i - W] - g[i - W + 1] + g[i + W - 1] + 2 * g[i + W] + g[i + W + 1];
+      mag[i] = Math.hypot(gx, gy);
+      const a = (Math.atan2(gy, gx) * 180 / Math.PI + 180) % 180; // 明るさが変わる向き
+      dir[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
+    }
+    // 細線化（キャニー法と同じ考え方）：変わる向きで、両どなりより強いところだけ残す
+    const OFF = [[1, 0], [1, 1], [0, 1], [-1, 1]];
+    const thin = new Float32Array(N);
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x, m = mag[i];
+      if (!m) continue;
+      const [dx, dy] = OFF[dir[i]];
+      if (m >= mag[i + dy * W + dx] && m >= mag[i - dy * W - dx]) thin[i] = m;
+    }
+    const vals = [];
+    for (let i = 0; i < N; i++) if (thin[i] > 0) vals.push(thin[i]);
+    vals.sort((a, b) => a - b);
+    const keep = 0.15 + (Math.max(1, Math.min(10, P.edge)) - 1) * 0.08; // 細線のうち強い 15%〜87% を残す
+    const cut = Math.max(24, vals.length ? vals[Math.floor(vals.length * (1 - keep))] : 255);
+    let e = new Uint8Array(N);
+    // 強い線と、それにつながるやや弱い線を残す（ヒステリシス）
+    const stack = [];
+    for (let i = 0; i < N; i++) if (thin[i] >= cut) { e[i] = 1; stack.push(i); }
+    while (stack.length) {
+      const i = stack.pop();
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const j = i + dy * W + dx;
+        if (j >= 0 && j < N && !e[j] && thin[j] >= cut * 0.5) { e[j] = 1; stack.push(j); }
+      }
+    }
+    // 短い線のかけら（模様・ざらつき）を省く。ノイズ除去が強いほど長い線だけ残す
+    e = dropSmall(e, W, H, Math.max(s * 4, (W + H) * [0.01, 0.05, 0.1, 0.16][P.denoise | 0]), 1, true);
+    return shrink(e, W, H, w, h, s, true);
+  }
+  // 線画（黒い線）：まわりより暗い細い線を取り出す（アニメ・漫画の主線など）。長い線だけ残す
+  function inkLines(g, W, H, w, h, s) {
+    const N = W * H, r = Math.max(2, Math.round(s * 1.5));
+    const mean = blur(g, W, H, r);
+    let m = new Uint8Array(N);
+    for (let i = 0; i < N; i++) if (g[i] < 170 && g[i] < mean[i] - 18) m[i] = 1;
+    m = dropSmall(m, W, H, Math.max(s * 6, (W + H) * 0.04), 1, true);
+    const out = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      let n = 0;
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) n += m[(y * s + dy) * W + x * s + dx];
+      if (n * 5 >= s * s) out[y * w + x] = 1; // 2割以上が線なら点
+    }
+    return out;
+  }
+  // 足す線のうち、すでにある線のとなり（1点以内）にあるものは足さない（二重線にしない）
+  function addLines(base, extra, w, h) {
+    if (!extra) return base;
+    for (let i = 0; i < w * h; i++) {
+      if (!extra[i] || base[i]) continue;
+      const x = i % w, y = (i / w) | 0;
+      let near = false;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx, yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && base[yy * w + xx]) { near = true; break; }
+      }
+      if (!near) base[i] = 2; // 2＝この回で足した点（次の判定では「すでにある線」に数えない）
+    }
+    for (let i = 0; i < w * h; i++) if (base[i] === 2) base[i] = 1;
+    return base;
+  }
+
+  // ---------- 色の判定 ----------
+  function rgbToLab(r, g, b) {
+    const f = v => { v /= 255; return v > 0.04045 ? Math.pow((v + 0.055) / 1.055, 2.4) : v / 12.92; };
+    const R = f(r), G = f(g), B = f(b);
+    let X = (R * 0.4124 + G * 0.3576 + B * 0.1805) / 0.95047, Y = R * 0.2126 + G * 0.7152 + B * 0.0722, Z = (R * 0.0193 + G * 0.1192 + B * 0.9505) / 1.08883;
+    const t = v => v > 0.008856 ? Math.cbrt(v) : 7.787 * v + 16 / 116;
+    X = t(X); Y = t(Y); Z = t(Z);
+    return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
+  }
+  // 色の名前（日本語）
+  function colorName(rgb) {
+    const [r, g, b] = rgb, mx = Math.max(r, g, b), mn = Math.min(r, g, b), sat = mx ? (mx - mn) / mx : 0;
+    if (mx < 80) return '黒';
+    if (sat < 0.12 || mx - mn < 18) return mx > 228 ? '白' : mx < 110 ? 'こい灰色' : mx > 185 ? 'うすい灰色' : '灰色';
+    let h = 0;
+    if (mx === r) h = ((g - b) / (mx - mn)) * 60; else if (mx === g) h = ((b - r) / (mx - mn) + 2) * 60; else h = ((r - g) / (mx - mn) + 4) * 60;
+    if (h < 0) h += 360;
+    if (h >= 8 && h < 48) { if (mx > 200 && sat < 0.42) return '肌色'; if (mx < 170) return '茶色'; }
+    const pre = mx < 110 ? 'こい' : (mx > 215 && sat < 0.35) ? 'うすい' : '';
+    const base = h < 12 || h >= 340 ? '赤' : h < 45 ? 'だいだい' : h < 68 ? '黄色' : h < 95 ? '黄緑' : h < 165 ? '緑' : h < 200 ? '水色' : h < 255 ? '青' : h < 290 ? '紫' : 'ピンク';
+    return pre + base;
+  }
+  const paletteCache = new WeakMap(); // 画像ごとに、最後に見つけた色の一覧
+  const lastPalette = blob => paletteCache.get(blob) || null;
+
+  // ---------- 色の境目（イラスト・図向け） ----------
+  // 色を少ない数（k色）にまとめ、同じ色のまとまりの境目を1点の線にする。
+  // 明るさが似ていても色が違えば境目になる（白い背景と肌色など）。
+  // 色の境目：色を k 色（Lab の色空間で近い色どうし）にまとめ、まとまりの境目を1点の線にする。
+  // 色ごとの扱い（P.colorModes）：line＝境目の線だけ、fill-all／fill-half／fill-sparse＝中を塗る、omit＝省く（背景と同じ扱い）
+  function regionBits(img, W, H, w, h, s, P, blob) {
+    const N = W * H, k = Math.max(2, Math.min(10, P.colors | 0 || 6));
+    const use = i => !img.hasAlpha || img.alpha[i];
+    const lab = new Float32Array(N * 3);
+    for (let i = 0; i < N; i++) { const L = rgbToLab(img.rgb[i * 3], img.rgb[i * 3 + 1], img.rgb[i * 3 + 2]); lab[i * 3] = L[0]; lab[i * 3 + 1] = L[1]; lab[i * 3 + 2] = L[2]; }
+    const step = Math.max(1, Math.floor(N / 24000)), sm = [];
+    for (let i = 0; i < N; i += step) if (use(i)) sm.push(i);
+    if (!sm.length) return { inner: null, lines: new Uint8Array(w * h) };
+    const at = i => [lab[i * 3], lab[i * 3 + 1], lab[i * 3 + 2]];
+    const d2 = (a, b) => (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    let cen = [at(sm[Math.floor(sm.length / 2)])];
+    const minD = new Float64Array(sm.length).fill(Infinity);
+    while (cen.length < k) { // いちばん遠い色を次の代表にする
+      let best = 0, bi = 0;
+      sm.forEach((i, j) => { minD[j] = Math.min(minD[j], d2(at(i), cen[cen.length - 1])); if (minD[j] > best) { best = minD[j]; bi = j; } });
+      if (best < 25) break; // 色の差（ΔE）が5より小さい色は分けない
+      cen.push(at(sm[bi]));
+    }
+    let K = cen.length, rgbSum = [];
+    for (let it = 0; it < 12; it++) {
+      const acc = Array.from({ length: K }, () => [0, 0, 0, 0, 0, 0, 0]);
+      for (const i of sm) {
+        const p = at(i); let bi = 0, bd = Infinity;
+        for (let c = 0; c < K; c++) { const dd = d2(p, cen[c]); if (dd < bd) { bd = dd; bi = c; } }
+        const a = acc[bi]; a[0] += p[0]; a[1] += p[1]; a[2] += p[2]; a[3]++; a[4] += img.rgb[i * 3]; a[5] += img.rgb[i * 3 + 1]; a[6] += img.rgb[i * 3 + 2];
+      }
+      acc.forEach((a, c) => { if (a[3]) cen[c] = [a[0] / a[3], a[1] / a[3], a[2] / a[3]]; });
+      rgbSum = acc;
+    }
+    // 暗い順に並べる（色の番号を、細かさが変わっても同じにするため）
+    const order = cen.map((c, i) => i).sort((a, b) => cen[a][0] - cen[b][0]);
+    const share = rgbSum.map(a => a[3]);
+    const tot = share.reduce((x, y) => x + y, 0) || 1;
+    cen = order.map(i => cen[i]);
+    const pal = order.map(i => {
+      const a = rgbSum[i], rgb = a[3] ? [a[4] / a[3], a[5] / a[3], a[6] / a[3]] : [128, 128, 128];
+      return { lab: cen[order.indexOf(i)], rgb, name: colorName(rgb), share: a[3] / tot };
+    });
+    // 色ごとの扱い：覚えておいた色のうち、いちばん近い色（ΔE 20 以内）の扱いを使う
+    const modes = pal.map(p => {
+      let best = null, bd = 400;
+      for (const m of (P.colorModes || [])) { const dd = d2(p.lab, m.lab); if (dd < bd) { bd = dd; best = m.mode; } }
+      return best || 'line';
+    });
+    pal.forEach((p, i) => { p.mode = modes[i]; });
+    if (blob) paletteCache.set(blob, pal);
+    K = cen.length;
+    // 全部の画素に色の番号を付け、点の細かさに多数決で縮める（透明な所は K）
+    const T = new Int16Array(w * h), cnt = new Uint32Array(K + 1);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      cnt.fill(0);
+      for (let dy = 0; dy < s; dy++) for (let dx = 0; dx < s; dx++) {
+        const i = (y * s + dy) * W + x * s + dx;
+        if (!use(i)) { cnt[K]++; continue; }
+        const L = lab[i * 3], A = lab[i * 3 + 1], B = lab[i * 3 + 2];
+        let bi = 0, bd = Infinity;
+        for (let c = 0; c < K; c++) { const dd = (L - cen[c][0]) ** 2 + (A - cen[c][1]) ** 2 + (B - cen[c][2]) ** 2; if (dd < bd) { bd = dd; bi = c; } }
+        cnt[bi]++;
+      }
+      let m = 0; for (let c = 1; c <= K; c++) if (cnt[c] > cnt[m]) m = c;
+      T[y * w + x] = m;
+    }
+    // 背景：透明な画像は透明な所、そうでなければ画像のふちにいちばん多い色。「省く」にした色も背景と同じ
+    const isBg = new Uint8Array(K + 1);
+    if (img.hasAlpha) isBg[K] = 1;
+    else {
+      const bc = new Uint32Array(K + 1);
+      for (let x = 0; x < w; x++) { bc[T[x]]++; bc[T[(h - 1) * w + x]]++; }
+      for (let y = 0; y < h; y++) { bc[T[y * w]]++; bc[T[y * w + w - 1]]++; }
+      // 画像のふちの2割以上をしめる色は、どれも背景とみなす（模様のある背景が2色に分かれても線にしない）
+      const tot = bc.reduce((a, b) => a + b, 0);
+      let bg = 0; for (let c = 1; c <= K; c++) if (bc[c] > bc[bg]) bg = c;
+      for (let c = 0; c <= K; c++) if (c === bg || bc[c] >= tot * 0.2) { isBg[c] = 1; if (pal[c]) pal[c].background = true; }
+    }
+    modes.forEach((m, c) => { if (m === 'omit') isBg[c] = 1; });
+    // ノイズ除去：小さな色のまとまりは、まわりにいちばん多い色にまとめる
+    const minA = Math.max(2, [0, 0.0015, 0.004, 0.009][P.denoise | 0] * w * h);
+    for (let round = 0; round < 3 && P.denoise > 0; round++) {
+      const seen = new Uint8Array(w * h);
+      for (let i0 = 0; i0 < w * h; i0++) {
+        if (seen[i0]) continue;
+        const v = T[i0], comp = [i0]; seen[i0] = 1;
+        for (let q = 0; q < comp.length; q++) {
+          const i = comp[q], x = i % w;
+          for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) if (j >= 0 && j < w * h && !seen[j] && T[j] === v) { seen[j] = 1; comp.push(j); }
+        }
+        if (comp.length >= minA) continue;
+        const nb = new Uint32Array(K + 1);
+        for (const i of comp) { const x = i % w; for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, i - w, i + w]) if (j >= 0 && j < w * h && T[j] !== v) nb[T[j]]++; }
+        let m = -1; for (let c = 0; c <= K; c++) if (nb[c] && (m < 0 || nb[c] > nb[m])) m = c;
+        if (m >= 0) for (const i of comp) T[i] = m;
+      }
+    }
+    // 境目：色が変わるところの片側に1点。背景との境目は絵の内側に打つ
+    const lines = new Uint8Array(w * h), inner = new Uint8Array(w * h);
+    const bgAt = j => isBg[T[j]] || isBg[K] && T[j] === K;
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x, v = T[i];
+      if (isBg[v]) continue;
+      if ((x < w - 1 && T[i + 1] !== v && !bgAt(i + 1)) || (y < h - 1 && T[i + w] !== v && !bgAt(i + w))) lines[i] = 1;
+      if (x === 0 || y === 0 || x === w - 1 || y === h - 1 || bgAt(i - 1) || bgAt(i + 1) || bgAt(i - w) || bgAt(i + w)) lines[i] = 1;
+      // 塗る色：中を塗りの密度で
+      const m = modes[v];
+      if (m && m.startsWith('fill') && !lines[i]) inner[i] = m === 'fill-all' ? 1 : m === 'fill-half' ? 2 : 3;
+    }
+    return { lines, inner };
+  }
+  // 透明な背景の画像の外形（絵のまわりの線）
+  function silhouette(img, W, H, w, h, s) {
+    if (!img.hasAlpha) return null;
+    const m = shrink(img.alpha, W, H, w, h, s, false);
+    const out = new Uint8Array(w * h);
+    for (let i = 0; i < w * h; i++) if (m[i] && isEdgeOf(m, w, h, i)) out[i] = 1;
+    return out;
   }
   // 横・縦の箱型ぼかしを2回（ガウスぼかしの代わり）
   function blur(g, W, H, r) {
@@ -151,11 +394,33 @@
   // 画像を w×h の白黒（true＝点を打つ）にする。kind は 'photo' | 'drawing'
   async function imageToBits(blob, w, h, proc, kind) {
     const P = procOf(proc);
-    const mode = P.mode === 'auto' ? (kind === 'photo' ? 'outline' : 'fill') : P.mode; // おまかせ：写真は外形、図は塗り
     // 作業用は3倍（大きすぎるときは小さく）の細かさで処理してから縮める
     const s = Math.max(1, Math.min(6, Math.floor(Math.sqrt(1.6e6 / (w * h)))));
     const W = w * s, H = h * s, N = W * H;
-    let g = await loadGray(blob, W, H);
+    const img = await loadImage(blob, W, H);
+    paletteCache.delete(blob); // 色の一覧は、色の境目で作ったときだけ
+    // おまかせ：背景が透明な絵・色のついたイラストは色の境目、写真は外形、白黒の図は塗り
+    const mode = P.mode !== 'auto' ? P.mode
+      : (img.hasAlpha || (kind !== 'photo' && isColorful(img, N))) ? 'regions' : kind === 'photo' ? 'outline' : 'fill';
+    const sil = silhouette(img, W, H, w, h, s);
+    if (mode === 'regions') {
+      // 色の境目を土台に、ほかの手がかり（外形・線画・明るさの変化）で足りない線を足す
+      const cues = { color: true, silhouette: true, ink: true, edges: false, ...(P.cues || {}) };
+      const R = cues.color ? regionBits(img, W, H, w, h, s, P, blob) : { lines: new Uint8Array(w * h), inner: null };
+      let lines = R.lines;
+      if (cues.silhouette && sil) for (let i = 0; i < w * h; i++) if (sil[i]) lines[i] = 1;
+      if (cues.ink) lines = addLines(lines, inkLines(img.gray, W, H, w, h, s), w, h);
+      if (cues.edges) lines = addLines(lines, edgeLines(blur(img.gray, W, H, Math.round([0, 0.7, 1.3, 2.2][P.denoise | 0] * s)), W, H, w, h, s, P, [0, 0.0004, 0.0015, 0.004][P.denoise | 0] * N), w, h);
+      if (P.denoise >= 1) lines = dropIsolated(lines, w, h);
+      if (P.line >= 2) lines = dilate(lines, w, h);
+      const out = new Array(w * h);
+      for (let i = 0; i < w * h; i++) {
+        const x = i % w, y = (i / w) | 0, f = R.inner ? R.inner[i] : 0;
+        out[i] = !!lines[i] || f === 1 || (f === 2 && (x + y) % 2 === 0) || (f === 3 && x % 2 === 0 && y % 2 === 0);
+      }
+      return out;
+    }
+    let g = img.gray;
     // 明るさの幅を広げる（いちばん暗い2%〜明るい2%を0〜255に）＋コントラスト
     const hist = new Uint32Array(256);
     for (let i = 0; i < N; i++) hist[Math.max(0, Math.min(255, g[i] | 0))]++;
@@ -186,46 +451,9 @@
 
     let lines = null, inner = null;
     if (mode === 'edges') {
-      // 輪郭線：明るさが急に変わるところ（ソーベル）を、強い順に選ぶ
-      const mag = new Float32Array(N), dir = new Uint8Array(N);
-      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-        const i = y * W + x;
-        const gx = -g[i - W - 1] - 2 * g[i - 1] - g[i + W - 1] + g[i - W + 1] + 2 * g[i + 1] + g[i + W + 1];
-        const gy = -g[i - W - 1] - 2 * g[i - W] - g[i - W + 1] + g[i + W - 1] + 2 * g[i + W] + g[i + W + 1];
-        mag[i] = Math.hypot(gx, gy);
-        const a = (Math.atan2(gy, gx) * 180 / Math.PI + 180) % 180; // 明るさが変わる向き
-        dir[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
-      }
-      // 細線化（キャニー法と同じ考え方）：変わる向きで、両どなりより強いところだけ残す
-      const OFF = [[1, 0], [1, 1], [0, 1], [-1, 1]];
-      const thin = new Float32Array(N);
-      for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
-        const i = y * W + x, m = mag[i];
-        if (!m) continue;
-        const [dx, dy] = OFF[dir[i]];
-        if (m >= mag[i + dy * W + dx] && m >= mag[i - dy * W - dx]) thin[i] = m;
-      }
-      const vals = [];
-      for (let i = 0; i < N; i++) if (thin[i] > 0) vals.push(thin[i]);
-      vals.sort((a, b) => a - b);
-      const keep = 0.15 + (Math.max(1, Math.min(10, P.edge)) - 1) * 0.08; // 細線のうち強い 15%〜87% を残す
-      const cut = Math.max(24, vals.length ? vals[Math.floor(vals.length * (1 - keep))] : 255);
-      let e = new Uint8Array(N);
-      // 強い線と、それにつながるやや弱い線を残す（ヒステリシス）
-      const stack = [];
-      for (let i = 0; i < N; i++) if (thin[i] >= cut) { e[i] = 1; stack.push(i); }
-      while (stack.length) {
-        const i = stack.pop();
-        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-          const j = i + dy * W + dx;
-          if (j >= 0 && j < N && !e[j] && thin[j] >= cut * 0.5) { e[j] = 1; stack.push(j); }
-        }
-      }
-      // 短い線のかけら（模様・ざらつき）を省く。ノイズ除去が強いほど長い線だけ残す
-      e = dropSmall(e, W, H, Math.max(s * 4, (W + H) * [0.01, 0.05, 0.1, 0.16][P.denoise | 0]), 1, true);
-      lines = shrink(e, W, H, w, h, s, true);
+      lines = edgeLines(g, W, H, w, h, s, P, minArea);
     } else {
-      const m = shrink(mask, W, H, w, h, s, false);
+      const m = (mode === 'outline' && img.hasAlpha) ? shrink(img.alpha, W, H, w, h, s, false) : shrink(mask, W, H, w, h, s, false); // 透明な背景の絵は、絵の形がそのまま外形
       if (mode === 'outline' || mode === 'both') {
         lines = new Uint8Array(w * h);
         for (let i = 0; i < w * h; i++) if (m[i] && isEdgeOf(m, w, h, i)) lines[i] = 1;
@@ -236,6 +464,7 @@
         for (let i = 0; i < w * h; i++) if (m[i]) (isEdgeOf(m, w, h, i) ? lines : inner)[i] = 1;
       }
     }
+    if (sil) for (let i = 0; i < w * h; i++) if (sil[i]) lines[i] = 1; // 透明な背景の絵は、外形の線をいつも足す（肌など明るい部分の輪郭が消えないように）
     if (P.denoise >= 1) lines = dropIsolated(lines, w, h);
     if (P.line >= 2) lines = dilate(lines, w, h);
     const fill = mode === 'both' && P.fill === 'all' ? 'sparse' : P.fill; // 外形＋塗りは、塗りを薄く
@@ -568,5 +797,5 @@
     return scale;
   }
 
-  root.TenjiFigure = { imageToCells, dotsToCells, layoutTactile, toSVG, toPDF, drawPreview, classifyImage, imageToBits, imageToGrid, cellsToGrid, applyGridEdits, applyDotEdits, PAPERS, DOT_SIZES, DEFAULT_PROC, procOf };
+  root.TenjiFigure = { imageToCells, dotsToCells, layoutTactile, toSVG, toPDF, drawPreview, classifyImage, imageToBits, lastPalette, colorName, imageToGrid, cellsToGrid, applyGridEdits, applyDotEdits, PAPERS, DOT_SIZES, DEFAULT_PROC, procOf };
 })(typeof self !== 'undefined' ? self : this);

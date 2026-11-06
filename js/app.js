@@ -1248,7 +1248,7 @@
   const T = {
     dlg: $('tactile-dlg'), canvas: $('t-preview'), paper: $('t-paper'), landscape: $('t-landscape'),
     pitch: $('t-pitch'), size: $('t-size'), title: $('t-title'), info: $('t-info'), styleDots: $('t-style-dots'), styleSolid: $('t-style-solid'),
-    adjust: $('t-adjust'), mode: $('t-mode'), denoise: $('t-denoise'), contrast: $('t-contrast'), level: $('t-level'), edge: $('t-edge'),
+    adjust: $('t-adjust'), mode: $('t-mode'), denoise: $('t-denoise'), colors: $('t-colors'), cueColor: $('t-cue-color'), cueSil: $('t-cue-sil'), cueInk: $('t-cue-ink'), cueEdges: $('t-cue-edges'), palette: $('t-palette'), paletteList: $('t-palette-list'), cues: $('t-cues'), contrast: $('t-contrast'), level: $('t-level'), edge: $('t-edge'),
     line: $('t-line'), fill: $('t-fill'), invert: $('t-invert'), width: $('t-width'), reset: $('t-reset'), inline: $('t-inline'),
     targetFile: $('t-target-file'), targetCells: $('t-target-cells'), brush: $('t-brush'), undo: $('t-undo'), clearEdits: $('t-clear-edits')
   };
@@ -1321,7 +1321,10 @@
   const DENOISE = ['なし', '弱', '中', '強'];
   function showProc(P) {
     const opt = layoutOpt();
-    T.mode.value = P.mode; T.denoise.value = P.denoise; T.contrast.value = P.contrast; T.level.value = P.level; T.edge.value = P.edge;
+    T.mode.value = P.mode; T.denoise.value = P.denoise; T.colors.value = P.colors;
+    const cu = { color: true, silhouette: true, ink: true, edges: false, ...(P.cues || {}) };
+    T.cueColor.checked = cu.color; T.cueSil.checked = cu.silhouette; T.cueInk.checked = cu.ink; T.cueEdges.checked = cu.edges;
+    colorModes = (P.colorModes || []).slice(); T.contrast.value = P.contrast; T.level.value = P.level; T.edge.value = P.edge;
     T.line.value = String(P.line); T.fill.value = P.fill; T.invert.checked = !!P.invert;
     T.width.max = String(opt.cols - 4);
     T.width.value = String(P.width > 0 ? Math.min(P.width, opt.cols - 4) : opt.cols - 4);
@@ -1333,16 +1336,22 @@
     set('t-contrast-v', (+T.contrast.value > 0 ? '＋' : '') + T.contrast.value);
     set('t-level-v', (+T.level.value > 0 ? '＋' : '') + T.level.value);
     set('t-edge-v', T.edge.value);
+    set('t-colors-v', T.colors.value + '色');
     set('t-width-v', T.width.value + 'マス');
     set('t-pitch-v', (+T.pitch.value).toFixed(1) + 'mm');
     T.edge.disabled = !['edges'].includes(T.mode.value);
     T.fill.disabled = !['fill', 'both', 'auto'].includes(T.mode.value);
-    [T.denoise, T.contrast, T.level, T.edge, T.width, T.pitch].forEach(r => r.setAttribute('aria-valuetext', $(r.id + '-v').textContent));
+    T.colors.disabled = !['regions', 'auto'].includes(T.mode.value);
+    T.cues.disabled = !['regions', 'auto'].includes(T.mode.value);
+    T.level.disabled = T.mode.value === 'regions';
+    [T.denoise, T.contrast, T.level, T.edge, T.colors, T.width, T.pitch].forEach(r => r.setAttribute('aria-valuetext', $(r.id + '-v').textContent));
   }
+  let colorModes = []; // 色ごとの扱い（色の一覧で選んだもの）
   const readProc = () => {
     const opt = layoutOpt();
-    return { mode: T.mode.value, denoise: +T.denoise.value, contrast: +T.contrast.value, level: +T.level.value, edge: +T.edge.value,
-      line: +T.line.value, fill: T.fill.value, invert: T.invert.checked, width: +T.width.value >= opt.cols - 4 ? 0 : +T.width.value };
+    return { mode: T.mode.value, denoise: +T.denoise.value, colors: +T.colors.value, contrast: +T.contrast.value, level: +T.level.value, edge: +T.edge.value,
+      line: +T.line.value, fill: T.fill.value, invert: T.invert.checked, width: +T.width.value >= opt.cols - 4 ? 0 : +T.width.value,
+      cues: { color: T.cueColor.checked, silhouette: T.cueSil.checked, ink: T.cueInk.checked, edges: T.cueEdges.checked }, colorModes: colorModes.slice() };
   };
 
   // ---------- 表示と手直し ----------
@@ -1370,6 +1379,43 @@
     return `点図プリンタ用：点 ${v.lay.dots.length.toLocaleString()} 個・間隔 ${opt.pitch.toFixed(1)}mm${edTxt}` +
       (v.lay.dots.length > 2000 ? '（2,000点を超えるので、ソフトによっては読み込めないことがあります）' : '');
   }
+  // 見つけた色の一覧：色ごとに「線だけ／塗る／省く」を選ぶ
+  const COLOR_MODES = [['line', '線だけ（境目）'], ['fill-sparse', 'まばらに塗る'], ['fill-half', '半分塗る（市松）'], ['fill-all', '全部塗る'], ['omit', '省く（線も描かない）']];
+  function renderPalette() {
+    const row = tactileRow;
+    const pal = row && row.blob ? TF.lastPalette(row.blob) : null;
+    T.palette.hidden = !pal || !pal.length;
+    if (!pal) return;
+    const sig = pal.map(p => p.name + (p.background ? 'b' : '')).join('|');
+    if (T.paletteList.dataset.sig === sig) return; // 変わっていなければ作り直さない（選んでいる途中のフォーカスを保つ）
+    T.paletteList.dataset.sig = sig;
+    T.paletteList.textContent = '';
+    pal.forEach((p, i) => {
+      const line = document.createElement('div');
+      line.className = 't-pal-row';
+      const sw = document.createElement('span');
+      sw.className = 't-swatch';
+      sw.setAttribute('aria-hidden', 'true');
+      sw.style.background = `rgb(${p.rgb.map(v => Math.round(v)).join(',')})`;
+      const id = 't-pal-' + i;
+      const lab = document.createElement('label');
+      lab.htmlFor = id;
+      lab.textContent = `色${i + 1}　${p.name}（${Math.max(1, Math.round(p.share * 100))}%）${p.background ? '・背景' : ''}`;
+      const sel = document.createElement('select');
+      sel.id = id;
+      for (const [v, t] of COLOR_MODES) { const o = document.createElement('option'); o.value = v; o.textContent = t; sel.appendChild(o); }
+      sel.value = p.mode || 'line';
+      if (p.background) { sel.disabled = true; sel.title = '背景の色は描きません'; }
+      sel.addEventListener('change', () => {
+        colorModes = colorModes.filter(m => (m.lab[0] - p.lab[0]) ** 2 + (m.lab[1] - p.lab[1]) ** 2 + (m.lab[2] - p.lab[2]) ** 2 > 100);
+        if (sel.value !== 'line') colorModes.push({ lab: p.lab.slice(), mode: sel.value });
+        later(procChanged, 50);
+        announce(`${p.name}：${sel.options[sel.selectedIndex].text}`);
+      });
+      line.append(sw, lab, sel);
+      T.paletteList.appendChild(line);
+    });
+  }
   async function refreshTactile() {
     if (!tactileRow) return;
     const row = tactileRow, opt = tactileOpt();
@@ -1384,6 +1430,7 @@
         ed.view = { target, lay: await TF.layoutTactile(tactileSrc(row), opt) };
       }
       drawView();
+      renderPalette();
       T.info.textContent = infoText();
       T.canvas.setAttribute('aria-label', (target === 'cells' ? '本文の点図（マス）の手直し。' : '点図ファイルの手直し。') + T.info.textContent +
         '。矢印で移動、スペースで点を打つ・消す');
@@ -1419,9 +1466,9 @@
     await updateRowFigure(tactileRow);
     await refreshTactile();
   }
-  [T.mode, T.denoise, T.contrast, T.level, T.edge, T.line, T.fill, T.invert, T.width].forEach(el =>
+  [T.mode, T.denoise, T.colors, T.cueColor, T.cueSil, T.cueInk, T.cueEdges, T.contrast, T.level, T.edge, T.line, T.fill, T.invert, T.width].forEach(el =>
     el.addEventListener('input', () => { outputs(); later(procChanged); }));
-  T.reset.addEventListener('click', () => { showProc(TF.procOf(tactileRow && tactileRow.figKind === 'photo' ? { denoise: 2 } : {})); later(procChanged, 0); announce('調整を元に戻しました'); });
+  T.reset.addEventListener('click', () => { colorModes = []; showProc(TF.procOf(tactileRow && tactileRow.figKind === 'photo' ? { denoise: 2 } : {})); later(procChanged, 0); announce('調整を元に戻しました'); });
   T.inline.addEventListener('change', () => { if (!tactileRow) return; tactileRow.noFigure = !T.inline.checked; ed.changed = true; refreshTactile(); });
   [T.paper, T.landscape, T.pitch, T.size, T.title, T.styleDots, T.styleSolid].forEach(el =>
     el.addEventListener('input', () => { outputs(); later(refreshTactile); }));

@@ -444,3 +444,11 @@ body.braille .tbl-line, body.braille .tbl .align { --cw: 22px; --cg: 2px; }
   .tbl-line .c { height: 24px; font-size: 16px; }
   .tbl-line .u-k { font-size: 10px; }
 }
+
+/* 見つけた色の一覧 */
+.t-palette { display: flex; flex-direction: column; gap: 6px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; }
+.t-palette-head { margin: 0; font-size: 12px; color: var(--muted); }
+.t-pal-row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 13px; }
+.t-swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid var(--line); }
+.t-pal-row select { font-size: 12px; max-width: 9.5em; }
+fieldset:disabled { opacity: .5; }

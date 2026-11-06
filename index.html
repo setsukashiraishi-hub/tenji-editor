@@ -112,7 +112,8 @@
           <div class="t-sec-body">
             <label class="field col" for="t-mode"><span>描き方</span>
               <select id="t-mode">
-                <option value="auto">おまかせ（写真は外形、図は塗り）</option>
+                <option value="auto">おまかせ（イラストは色の境目、写真は外形、白黒の図は塗り）</option>
+                <option value="regions">色の境目（イラスト・色分けした図）</option>
                 <option value="outline">外形だけ（物の外側の線）</option>
                 <option value="edges">輪郭線（中の線も）</option>
                 <option value="fill">塗りつぶし</option>
@@ -124,6 +125,19 @@
               <input type="range" id="t-contrast" min="-50" max="100" step="10" value="0"><output id="t-contrast-v" for="t-contrast"></output></label>
             <label class="field range" for="t-level"><span>点にする濃さ（左：濃い所だけ／右：薄い所も）</span>
               <input type="range" id="t-level" min="-50" max="50" step="5" value="0"><output id="t-level-v" for="t-level"></output></label>
+            <label class="field range" for="t-colors"><span>色の数（色の境目のとき。多いほど細かく分ける）</span>
+              <input type="range" id="t-colors" min="3" max="10" step="1" value="6"><output id="t-colors-v" for="t-colors"></output></label>
+            <fieldset class="t-field" id="t-cues">
+              <legend>使う手がかり（色の境目のとき）</legend>
+              <label class="check" for="t-cue-color"><input type="checkbox" id="t-cue-color" checked> 色の境目（色の違うところ）</label>
+              <label class="check" for="t-cue-sil"><input type="checkbox" id="t-cue-sil" checked> 外形（透明な背景との境目）</label>
+              <label class="check" for="t-cue-ink"><input type="checkbox" id="t-cue-ink" checked> 線画（絵の黒い線）</label>
+              <label class="check" for="t-cue-edges"><input type="checkbox" id="t-cue-edges"> 明るさの変化</label>
+            </fieldset>
+            <div class="t-palette" id="t-palette" role="group" aria-labelledby="t-palette-head" hidden>
+              <p class="t-palette-head" id="t-palette-head">見つけた色と、色ごとの扱い</p>
+              <div id="t-palette-list"></div>
+            </div>
             <label class="field range" for="t-edge"><span>輪郭の感度（輪郭線のとき。右ほど線が多い）</span>
               <input type="range" id="t-edge" min="1" max="10" step="1" value="5"><output id="t-edge-v" for="t-edge"></output></label>
             <label class="field" for="t-line"><span>線の太さ</span>
