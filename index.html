@@ -20,7 +20,7 @@
     <div class="bar-group">
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
       <input type="file" id="file-input" hidden
-             accept=".txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+             accept=".txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.heic,.heif,.avif,image/*,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
       <button type="button" id="btn-new" class="btn">新規</button>
       <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
     </div>
@@ -105,19 +105,55 @@
   <dialog class="tactile" id="tactile-dlg" aria-labelledby="t-head">
     <div class="t-layout">
       <div class="t-side">
-        <h2 id="t-head">点図ファイルに書き出す</h2>
-        <p class="t-lead">本文のマス目に縛られずに、用紙全体へ等間隔に点を打ちます。エーデル形式は8×10インチの点字用紙・点で打つ形で書き出します。</p>
-        <fieldset class="t-field">
-          <legend>使い道</legend>
-          <label class="check" for="t-style-dots"><input type="radio" name="t-style" id="t-style-dots" checked> 点図プリンタ用（点で打つ。ViewPlus Tiger など）</label>
-          <label class="check" for="t-style-solid"><input type="radio" name="t-style" id="t-style-solid"> 立体コピー用（黒く塗る。カプセルペーパー）</label>
-        </fieldset>
-        <label class="field" for="t-paper"><span>用紙</span><select id="t-paper"></select></label>
-        <label class="check" for="t-landscape"><input type="checkbox" id="t-landscape"> 横向き</label>
-        <label class="field" for="t-pitch"><span>点の間隔（mm）</span><input type="number" id="t-pitch" min="1" max="5" step="0.1" value="2.5"></label>
-        <label class="field" for="t-size"><span>点の大きさ</span><select id="t-size"></select></label>
-        <label class="field col" for="t-title"><span>図の見出し（かなで。点字にして図の上に入れます）</span><input type="text" id="t-title" placeholder="例：ズ1 テンジノ シクミ"></label>
-        <p class="t-info" id="t-info"></p>
+        <h2 id="t-head" tabindex="-1">点図の調整・手直し・書き出し</h2>
+        <p class="t-lead">画像から点図を作るときの調整と、点の手直しができます。図をクリック（タップ）したり、なぞったりして直せます。</p>
+        <details class="t-sec" id="t-adjust" open>
+          <summary>画像の調整</summary>
+          <div class="t-sec-body">
+            <label class="field col" for="t-mode"><span>描き方</span>
+              <select id="t-mode">
+                <option value="auto">おまかせ（写真は外形、図は塗り）</option>
+                <option value="outline">外形だけ（物の外側の線）</option>
+                <option value="edges">輪郭線（中の線も）</option>
+                <option value="fill">塗りつぶし</option>
+                <option value="both">外形＋薄い塗り</option>
+              </select></label>
+            <label class="field range" for="t-denoise"><span>ノイズ除去（細かすぎる模様を省く）</span>
+              <input type="range" id="t-denoise" min="0" max="3" step="1" value="1"><output id="t-denoise-v" for="t-denoise"></output></label>
+            <label class="field range" for="t-contrast"><span>コントラスト（はっきりさせる）</span>
+              <input type="range" id="t-contrast" min="-50" max="100" step="10" value="0"><output id="t-contrast-v" for="t-contrast"></output></label>
+            <label class="field range" for="t-level"><span>点にする濃さ（左：濃い所だけ／右：薄い所も）</span>
+              <input type="range" id="t-level" min="-50" max="50" step="5" value="0"><output id="t-level-v" for="t-level"></output></label>
+            <label class="field range" for="t-edge"><span>輪郭の感度（輪郭線のとき。右ほど線が多い）</span>
+              <input type="range" id="t-edge" min="1" max="10" step="1" value="5"><output id="t-edge-v" for="t-edge"></output></label>
+            <label class="field" for="t-line"><span>線の太さ</span>
+              <select id="t-line"><option value="1">細い（1点）</option><option value="2">太い（2点）</option></select></label>
+            <label class="field" for="t-fill"><span>塗りの密度</span>
+              <select id="t-fill"><option value="all">すべて打つ</option><option value="half">半分（市松）</option><option value="sparse">まばら</option></select></label>
+            <label class="check" for="t-invert"><input type="checkbox" id="t-invert"> 白黒を反転</label>
+            <label class="field range" for="t-width"><span>本文に描くときの幅（マス）</span>
+              <input type="range" id="t-width" min="6" max="28" step="1" value="28"><output id="t-width-v" for="t-width"></output></label>
+            <button type="button" class="btn" id="t-reset">調整を元に戻す</button>
+          </div>
+        </details>
+        <label class="check" for="t-inline"><input type="checkbox" id="t-inline"> 本文の点字の中に描く（外すと点図は別ファイル）</label>
+        <details class="t-sec" open>
+          <summary>点図ファイル</summary>
+          <div class="t-sec-body">
+            <fieldset class="t-field">
+              <legend>使い道</legend>
+              <label class="check" for="t-style-dots"><input type="radio" name="t-style" id="t-style-dots" checked> 点図プリンタ用（点で打つ。ViewPlus Tiger など）</label>
+              <label class="check" for="t-style-solid"><input type="radio" name="t-style" id="t-style-solid"> 立体コピー用（黒く塗る。カプセルペーパー）</label>
+            </fieldset>
+            <label class="field" for="t-paper"><span>用紙</span><select id="t-paper"></select></label>
+            <label class="check" for="t-landscape"><input type="checkbox" id="t-landscape"> 横向き</label>
+            <label class="field range" for="t-pitch"><span>点の間隔（mm。広いほど点がまばらで触りやすい）</span>
+              <input type="range" id="t-pitch" min="1.5" max="5" step="0.1" value="2.5"><output id="t-pitch-v" for="t-pitch"></output></label>
+            <label class="field" for="t-size"><span>点の大きさ</span><select id="t-size"></select></label>
+            <label class="field col" for="t-title"><span>図の見出し（かなで。点字にして図の上に入れます）</span><input type="text" id="t-title" placeholder="例：ズ1 テンジノ シクミ"></label>
+          </div>
+        </details>
+        <p class="t-info" id="t-info" aria-live="polite"></p>
         <div class="t-actions">
           <button type="button" class="btn primary" id="t-pdf">PDFで保存</button>
           <button type="button" class="btn" id="t-svg">SVGで保存</button>
@@ -125,7 +161,25 @@
           <button type="button" class="btn" id="t-close">閉じる</button>
         </div>
       </div>
-      <div class="t-view"><canvas id="t-preview" aria-label="点図のプレビュー"></canvas></div>
+      <div class="t-view">
+        <div class="t-tools" role="toolbar" aria-label="点図の手直し">
+          <div class="seg" role="radiogroup" aria-label="直す点図">
+            <label><input type="radio" name="t-target" id="t-target-file" value="file" checked> 点図ファイル</label>
+            <label><input type="radio" name="t-target" id="t-target-cells" value="cells"> 本文の点図（マス）</label>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="道具">
+            <label><input type="radio" name="t-tool" value="toggle" checked> 1点ずつ</label>
+            <label><input type="radio" name="t-tool" value="pen"> ペン</label>
+            <label><input type="radio" name="t-tool" value="erase"> 消しゴム</label>
+          </div>
+          <label class="field mini" for="t-brush"><span>太さ</span>
+            <select id="t-brush"><option value="0">1点</option><option value="1">3点</option><option value="2">5点</option></select></label>
+          <button type="button" class="btn small-btn" id="t-undo" disabled>元に戻す</button>
+          <button type="button" class="btn small-btn" id="t-clear-edits" disabled>手直しを全部消す</button>
+        </div>
+        <p class="t-hint" id="t-hint">「1点ずつ」は点をクリック（タップ）で消す・打つ。「ペン」「消しゴム」はなぞってまとめて描く・消す。キーボードでは、図を選んで矢印で移動、スペースで点を打つ・消す。Ctrl＋Zで元に戻す。</p>
+        <div class="t-canvas-wrap"><canvas id="t-preview" tabindex="0" role="application" aria-roledescription="点図の手直し" aria-label="点図のプレビュー"></canvas></div>
+      </div>
     </div>
   </dialog>
 

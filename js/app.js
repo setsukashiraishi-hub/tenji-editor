@@ -175,6 +175,7 @@
         const b = E.kanaToBraille(kana);
         const old = state.figRows && state.figRows.get(src);
         return { ...base, figure: fig ? fig.lines : null, blob: fig ? fig.blob : null, tactile: fig ? fig.tactile : null,
+          proc: fig ? fig.proc : null, dotEdits: fig ? fig.dotEdits : null, baseFigure: fig ? fig.baseLines : null,
           figKind: photo ? 'photo' : 'drawing', figNo: no, srcAlt: fig ? fig.alt : '',
           noFigure: old ? old.noFigure : (photo || !(fig && fig.lines && fig.lines.length)),
           alt: m ? m[1] : '', kana, cells: b.cells, unknown: [], bad: [], checks: [], unresolved: [] };
@@ -303,8 +304,8 @@
     }
     if (row.type === 'figure' && (row.blob || row.tactile || (row.figure && row.figure.length))) {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'opt ok-btn'; b.textContent = '点図ファイルに書き出す…';
-      b.title = 'マス目に縛られない点図（点図プリンタ用・立体コピー用のPDF / SVG）にする';
+      b.type = 'button'; b.className = 'opt ok-btn fig-edit-btn'; b.textContent = '点図の調整・手直し・書き出し…';
+      b.title = '輪郭抽出・ノイズ除去などの調整、点を1つずつ・なぞって直す、点図ファイル（PDF / SVG / エーデル）に書き出す';
       b.addEventListener('click', ev => { ev.stopPropagation(); openTactile(row); });
       meta.appendChild(b);
     }
@@ -376,9 +377,9 @@
   async function drawRowTactile(row, canvas, info) {
     try {
       const opt = tactileOpt();
-      const key = JSON.stringify({ ...opt, titleCells: '', no: row.figNo });
+      const key = JSON.stringify({ ...opt, titleCells: '', no: row.figNo, proc: row.proc || null, e: editsOf(row, 'file').length });
       if (!row._tact || row._tactKey !== key) {
-        row._tact = await window.TenjiFigure.layoutTactile(row.tactile ? { dots: row.tactile } : { blob: row.blob },
+        row._tact = await window.TenjiFigure.layoutTactile(tactileSrc(row),
           { ...opt, titleCells: E.kanaToBraille(`ズ${row.figNo || ''}`).cells });
         row._tactKey = key;
       }
@@ -1235,13 +1236,17 @@
   // ---------- 点図ファイル（マス目に縛られない点図） ----------
   const T = {
     dlg: $('tactile-dlg'), canvas: $('t-preview'), paper: $('t-paper'), landscape: $('t-landscape'),
-    pitch: $('t-pitch'), size: $('t-size'), title: $('t-title'), info: $('t-info'), styleDots: $('t-style-dots'), styleSolid: $('t-style-solid')
+    pitch: $('t-pitch'), size: $('t-size'), title: $('t-title'), info: $('t-info'), styleDots: $('t-style-dots'), styleSolid: $('t-style-solid'),
+    adjust: $('t-adjust'), mode: $('t-mode'), denoise: $('t-denoise'), contrast: $('t-contrast'), level: $('t-level'), edge: $('t-edge'),
+    line: $('t-line'), fill: $('t-fill'), invert: $('t-invert'), width: $('t-width'), reset: $('t-reset'), inline: $('t-inline'),
+    targetFile: $('t-target-file'), targetCells: $('t-target-cells'), brush: $('t-brush'), undo: $('t-undo'), clearEdits: $('t-clear-edits')
   };
+  const TF = window.TenjiFigure;
   let tactileRow = null, tactileTimer = null;
-  for (const [k, v] of Object.entries(window.TenjiFigure ? window.TenjiFigure.PAPERS : {})) {
+  for (const [k, v] of Object.entries(TF ? TF.PAPERS : {})) {
     const o = document.createElement('option'); o.value = k; o.textContent = v.label; T.paper.appendChild(o);
   }
-  for (const [k, v] of Object.entries(window.TenjiFigure ? window.TenjiFigure.DOT_SIZES : {})) {
+  for (const [k, v] of Object.entries(TF ? TF.DOT_SIZES : {})) {
     const o = document.createElement('option'); o.value = k; o.textContent = `${v.label}（直径${v.d}mm）`; T.size.appendChild(o);
   }
   T.paper.value = 'a4'; T.size.value = 'medium';
@@ -1254,32 +1259,311 @@
       titleCells: titleKana ? E.kanaToBraille(titleKana).cells : ''
     };
   };
-  const tactileSrc = row => row.tactile ? { dots: row.tactile } : row.blob ? { blob: row.blob } : { cells: (row.figure || []).map(l => l.replace(/^⠀+/, '')) };
+  // 図ごとの調整・手直しは、行と読み込んだ図の両方に覚えておく（変換し直しても消えない）
+  const figOf = row => (row && row.alt && state.figures) ? state.figures.get(row.alt) : null;
+  const procFor = row => TF.procOf(row.proc || (row.figKind === 'photo' ? { denoise: 2 } : {}));
+  const editsOf = (row, target) => (row.dotEdits && row.dotEdits[target]) || [];
+  function setFigData(row, key, val) {
+    row[key] = val;
+    const f = figOf(row);
+    if (f) f[key] = val;
+  }
+  const tactileSrc = row => {
+    const edits = editsOf(row, 'file');
+    if (row.tactile) return { dots: row.tactile, edits };
+    if (row.blob) return { blob: row.blob, proc: procFor(row), kind: row.figKind, edits };
+    return { cells: (row.figure || []).map(l => l.replace(/^⠀⠀/, '')), edits };
+  };
+  // 本文に描く点図の格子（調整と手直しを当てはめたもの）
+  async function figureGrid(row) {
+    const opt = layoutOpt();
+    let g = null;
+    if (row.blob) g = await TF.imageToGrid(row.blob, { maxCols: opt.cols - 4, maxLines: opt.lines - 3, proc: procFor(row), kind: row.figKind });
+    else {
+      const f = figOf(row);
+      const base = row.baseFigure || (f && f.baseLines) || row.figure;
+      if (!base || !base.length) return null;
+      if (!row.baseFigure) setFigData(row, 'baseFigure', base.slice());
+      if (f && !f.baseLines) f.baseLines = base.slice();
+      g = TF.cellsToGrid(base.map(l => l.replace(/^⠀⠀/, '')));
+    }
+    return TF.applyGridEdits(g, editsOf(row, 'cells'));
+  }
+  async function updateRowFigure(row) {
+    const g = await figureGrid(row);
+    if (!g) return;
+    const lines = TF.dotsToCells(g.bits, g.w, g.h).map(l => '⠀⠀' + l);
+    setFigData(row, 'figure', lines);
+    const f = figOf(row);
+    if (f) f.lines = lines;
+  }
+  // 本文の点図（マス）を、手直し用に用紙の上の点として表す（1目盛り 2.5mm の仮の用紙）
+  const GP = 2.5;
+  function gridLayout(g) {
+    const dots = [];
+    for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) if (g.bits[y * g.w + x]) dots.push({ x: GP + x * GP, y: GP + y * GP, d: GP * 0.55 });
+    return { pageW: g.w * GP + 2 * GP, pageH: g.h * GP + 2 * GP, dots, rects: [], grid: { ox: GP, oy: GP, p: GP, cols: g.w, rows: g.h },
+      box: { x0: GP / 2, y0: GP / 2, w: g.w * GP, h: g.h * GP } };
+  }
+
+  // ---------- 調整のつまみ ----------
+  const DENOISE = ['なし', '弱', '中', '強'];
+  function showProc(P) {
+    const opt = layoutOpt();
+    T.mode.value = P.mode; T.denoise.value = P.denoise; T.contrast.value = P.contrast; T.level.value = P.level; T.edge.value = P.edge;
+    T.line.value = String(P.line); T.fill.value = P.fill; T.invert.checked = !!P.invert;
+    T.width.max = String(opt.cols - 4);
+    T.width.value = String(P.width > 0 ? Math.min(P.width, opt.cols - 4) : opt.cols - 4);
+    outputs();
+  }
+  function outputs() {
+    const set = (id, t) => { const o = $(id); o.textContent = t; };
+    set('t-denoise-v', DENOISE[+T.denoise.value]);
+    set('t-contrast-v', (+T.contrast.value > 0 ? '＋' : '') + T.contrast.value);
+    set('t-level-v', (+T.level.value > 0 ? '＋' : '') + T.level.value);
+    set('t-edge-v', T.edge.value);
+    set('t-width-v', T.width.value + 'マス');
+    set('t-pitch-v', (+T.pitch.value).toFixed(1) + 'mm');
+    T.edge.disabled = !['edges'].includes(T.mode.value);
+    T.fill.disabled = !['fill', 'both', 'auto'].includes(T.mode.value);
+    [T.denoise, T.contrast, T.level, T.edge, T.width, T.pitch].forEach(r => r.setAttribute('aria-valuetext', $(r.id + '-v').textContent));
+  }
+  const readProc = () => {
+    const opt = layoutOpt();
+    return { mode: T.mode.value, denoise: +T.denoise.value, contrast: +T.contrast.value, level: +T.level.value, edge: +T.edge.value,
+      line: +T.line.value, fill: T.fill.value, invert: T.invert.checked, width: +T.width.value >= opt.cols - 4 ? 0 : +T.width.value };
+  };
+
+  // ---------- 表示と手直し ----------
+  const ed = { tool: 'toggle', undo: [], drawing: false, last: null, cursor: null, changed: false, view: null };
+  const curTarget = () => (T.targetCells.checked ? 'cells' : 'file');
+  function drawView() {
+    const v = ed.view;
+    if (!v) return;
+    if (v.target === 'cells') v.lay = gridLayout(v.grid); // 格子を直したら点の並びも作り直す
+    const cur = ed.cursor && v.lay.grid ? { x: v.lay.grid.ox + ed.cursor.x * v.lay.grid.p, y: v.lay.grid.oy + ed.cursor.y * v.lay.grid.p } : null;
+    v.scale = TF.drawPreview(T.canvas, v.lay, { ghost: true, cellLines: v.target === 'cells', cursor: document.activeElement === T.canvas ? cur : null });
+  }
+  function infoText() {
+    const v = ed.view, row = tactileRow;
+    if (!v || !row) return '';
+    const nEd = editsOf(row, v.target).length;
+    const edTxt = nEd ? `・手直し ${nEd}か所` : '';
+    if (v.target === 'cells') {
+      const lines = TF.dotsToCells(v.grid.bits, v.grid.w, v.grid.h);
+      return `本文の点図：${Math.max(0, ...lines.map(l => Array.from(l).length))}マス×${lines.length}行・点 ${v.lay.dots.length.toLocaleString()} 個${edTxt}` +
+        (row.noFigure ? '（いまは本文に描かない設定です）' : '');
+    }
+    const opt = tactileOpt();
+    if (v.lay.rects.length) return '立体コピー（カプセルペーパー）用：黒い部分が浮き上がります。手直しは「点図プリンタ用」で使えます。';
+    return `点図プリンタ用：点 ${v.lay.dots.length.toLocaleString()} 個・間隔 ${opt.pitch.toFixed(1)}mm${edTxt}` +
+      (v.lay.dots.length > 2000 ? '（2,000点を超えるので、ソフトによっては読み込めないことがあります）' : '');
+  }
   async function refreshTactile() {
     if (!tactileRow) return;
-    const opt = tactileOpt();
-    T.pitch.disabled = opt.style === 'solid' && !!tactileRow.blob;
+    const row = tactileRow, opt = tactileOpt();
+    T.pitch.disabled = opt.style === 'solid' && !!row.blob;
+    const target = curTarget();
     try {
-      const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), opt);
-      window.TenjiFigure.drawPreview(T.canvas, lay);
-      T.canvas.setAttribute('aria-label', `点図のプレビュー：${lay.dots.length}個の点` + (lay.rects.length ? '、塗りの図' : ''));
-      T.info.textContent = opt.style === 'solid'
-        ? '立体コピー（カプセルペーパー）用：黒い部分が浮き上がります。見出しの点字も点で描きます。'
-        : `点図プリンタ用：点 ${lay.dots.length.toLocaleString()} 個` + (lay.dots.length > 2000 ? '（2,000点を超えるので、ソフトによっては読み込めないことがあります）' : '');
+      if (target === 'cells') {
+        const g = await figureGrid(row);
+        if (!g) { T.info.textContent = 'この図には、本文に描く点図がありません。'; return; }
+        ed.view = { target, grid: g, lay: gridLayout(g) };
+      } else {
+        ed.view = { target, lay: await TF.layoutTactile(tactileSrc(row), opt) };
+      }
+      drawView();
+      T.info.textContent = infoText();
+      T.canvas.setAttribute('aria-label', (target === 'cells' ? '本文の点図（マス）の手直し。' : '点図ファイルの手直し。') + T.info.textContent +
+        '。矢印で移動、スペースで点を打つ・消す');
+      T.undo.disabled = !ed.undo.length;
+      T.clearEdits.disabled = !editsOf(row, 'file').length && !editsOf(row, 'cells').length;
     } catch (e) { T.info.textContent = '図を作れませんでした：' + (e.message || e); }
   }
+  const later = (fn, ms) => { clearTimeout(tactileTimer); tactileTimer = setTimeout(fn, ms || 200); };
+
   let tactileOpener = null;
   function openTactile(row) {
     tactileRow = row;
     tactileOpener = document.activeElement;
+    ed.undo = []; ed.changed = false; ed.cursor = null;
     // エーデルなどの点図はもとから見出しを含むので、見出しは空にしておく
     T.title.value = row.tactile ? '' : (row.alt ? 'ズ' + row.alt.replace(/^図/, '').replace(/\.[^.]+$/, '') : 'ズ');
+    T.adjust.hidden = !row.blob;
+    showProc(procFor(row));
+    T.inline.checked = !row.noFigure;
+    T.inline.parentElement.hidden = !(row.blob || (row.figure && row.figure.length));
+    T.targetCells.disabled = !(row.blob || (row.figure && row.figure.length));
+    if (T.targetCells.disabled) T.targetFile.checked = true;
+    else if (!row.noFigure && !row.tactile) T.targetCells.checked = true; else T.targetFile.checked = true; // エーデルなどの点図は、点図ファイルを直す
     if (T.dlg.showModal) T.dlg.showModal(); else T.dlg.hidden = false;
-    T.styleDots.checked ? T.styleDots.focus() : T.styleSolid.focus();
+    $('t-head').focus(); // 見出しから読み始める（スマホでは図が上に見える）
     refreshTactile();
   }
+  // 調整を変えたら、点図ファイルと本文の点図の両方を作り直す
+  async function procChanged() {
+    if (!tactileRow) return;
+    setFigData(tactileRow, 'proc', readProc());
+    ed.changed = true;
+    await updateRowFigure(tactileRow);
+    await refreshTactile();
+  }
+  [T.mode, T.denoise, T.contrast, T.level, T.edge, T.line, T.fill, T.invert, T.width].forEach(el =>
+    el.addEventListener('input', () => { outputs(); later(procChanged); }));
+  T.reset.addEventListener('click', () => { showProc(TF.procOf(tactileRow && tactileRow.figKind === 'photo' ? { denoise: 2 } : {})); later(procChanged, 0); announce('調整を元に戻しました'); });
+  T.inline.addEventListener('change', () => { if (!tactileRow) return; tactileRow.noFigure = !T.inline.checked; ed.changed = true; refreshTactile(); });
   [T.paper, T.landscape, T.pitch, T.size, T.title, T.styleDots, T.styleSolid].forEach(el =>
-    el.addEventListener('input', () => { clearTimeout(tactileTimer); tactileTimer = setTimeout(refreshTactile, 200); }));
+    el.addEventListener('input', () => { outputs(); later(refreshTactile); }));
+  [T.targetFile, T.targetCells].forEach(el => el.addEventListener('change', () => { ed.cursor = null; refreshTactile(); }));
+  document.querySelectorAll('input[name="t-tool"]').forEach(el => el.addEventListener('change', () => { ed.tool = el.value; }));
+
+  // 画面の位置（CSSピクセル）→ 格子の位置
+  function gridAt(clientX, clientY) {
+    const v = ed.view;
+    if (!v || !v.scale || !v.lay.grid) return null;
+    const r = T.canvas.getBoundingClientRect();
+    const x = (clientX - r.left) / v.scale, y = (clientY - r.top) / v.scale;
+    const g = v.lay.grid;
+    return { x: Math.round((x - g.ox) / g.p), y: Math.round((y - g.oy) / g.p) };
+  }
+  const gridCols = () => { const g = ed.view.lay.grid, b = ed.view.lay.box; return g.cols || Math.max(1, Math.round(b.w / g.p) + 1); };
+  const gridRows = () => { const g = ed.view.lay.grid, b = ed.view.lay.box; return g.rows || Math.max(1, Math.round(b.h / g.p) + 1); };
+  function hasDot(gx, gy) {
+    const v = ed.view;
+    if (v.target === 'cells') return !!v.grid.bits[gy * v.grid.w + gx];
+    const g = v.lay.grid, x = g.ox + gx * g.p, y = g.oy + gy * g.p;
+    return v.lay.dots.some(d => Math.abs(d.x - x) < g.p * 0.5 && Math.abs(d.y - y) < g.p * 0.5);
+  }
+  // 1つの格子の位置に点を打つ・消す（手直しの記録にも足す）
+  function putDot(gx, gy, on) {
+    const v = ed.view, row = tactileRow;
+    if (gx < 0 || gy < 0 || gx >= gridCols() || gy >= gridRows()) return;
+    const g = v.lay.grid, b = v.lay.box;
+    let op;
+    if (v.target === 'cells') {
+      const i = gy * v.grid.w + gx;
+      if (v.grid.bits[i] === !!on) return;
+      v.grid.bits[i] = !!on;
+      op = [(gx + 0.5) / v.grid.w, (gy + 0.5) / v.grid.h, on ? 1 : 0];
+    } else {
+      const x = g.ox + gx * g.p, y = g.oy + gy * g.p;
+      op = [(x - b.x0) / b.w, (y - b.y0) / b.h, on ? 1 : 0];
+      TF.applyDotEdits(v.lay, [op]);
+    }
+    const all = (row.dotEdits && row.dotEdits[v.target]) ? row.dotEdits[v.target] : [];
+    all.push(op);
+    setFigData(row, 'dotEdits', { ...(row.dotEdits || {}), [v.target]: all });
+  }
+  function brushAt(gx, gy, on) {
+    const r = +T.brush.value;
+    for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r + r) putDot(gx + dx, gy + dy, on);
+  }
+  function pushUndo() {
+    const row = tactileRow;
+    ed.undo.push(JSON.stringify(row.dotEdits || {}));
+    if (ed.undo.length > 100) ed.undo.shift();
+    T.undo.disabled = false;
+  }
+  async function strokeDone() {
+    if (ed.view && ed.view.target === 'cells') {
+      const g = ed.view.grid;
+      const lines = TF.dotsToCells(g.bits, g.w, g.h).map(l => '⠀⠀' + l);
+      setFigData(tactileRow, 'figure', lines);
+      const f = figOf(tactileRow);
+      if (f) f.lines = lines;
+    }
+    ed.changed = true;
+    T.info.textContent = infoText();
+    T.clearEdits.disabled = false;
+  }
+  if (T.canvas) {
+    T.canvas.style.touchAction = 'none'; // 指でなぞっても画面がスクロールしないように
+    T.canvas.addEventListener('pointerdown', ev => {
+      if (!ed.view || ed.view.lay.rects.length) return;
+      const p = gridAt(ev.clientX, ev.clientY);
+      if (!p) return;
+      ev.preventDefault();
+      T.canvas.setPointerCapture(ev.pointerId);
+      pushUndo();
+      const on = ed.tool === 'pen' ? true : ed.tool === 'erase' ? false : !hasDot(p.x, p.y);
+      ed.drawing = { on, last: p };
+      brushAt(p.x, p.y, on);
+      drawView();
+      if (ed.tool === 'toggle') { ed.drawing = false; strokeDone(); }
+    });
+    T.canvas.addEventListener('pointermove', ev => {
+      if (!ed.drawing) return;
+      const p = gridAt(ev.clientX, ev.clientY);
+      if (!p) return;
+      // 速くなぞっても点が途切れないよう、前の位置からの間を埋める
+      const l = ed.drawing.last, n = Math.max(Math.abs(p.x - l.x), Math.abs(p.y - l.y));
+      for (let i = 1; i <= n; i++) brushAt(Math.round(l.x + (p.x - l.x) * i / n), Math.round(l.y + (p.y - l.y) * i / n), ed.drawing.on);
+      ed.drawing.last = p;
+      drawView();
+    });
+    const end = () => { if (ed.drawing) { ed.drawing = false; strokeDone(); } };
+    T.canvas.addEventListener('pointerup', end);
+    T.canvas.addEventListener('pointercancel', end);
+    // キーボード：矢印で移動、スペース・Enterで点を打つ・消す
+    const sayCursor = () => {
+      const c = ed.cursor, has = hasDot(c.x, c.y);
+      let where = `横${c.x + 1}、縦${c.y + 1}`;
+      if (ed.view.target === 'cells') {
+        const dot = [[1, 4], [2, 5], [3, 6]][c.y % 3][c.x % 2];
+        where = `${Math.floor(c.y / 3) + 1}行目 ${Math.floor(c.x / 2) + 1}マス目の${dot}の点`;
+      }
+      announce(`${where}、${has ? '点あり' : '点なし'}`);
+    };
+    T.canvas.addEventListener('focus', () => {
+      if (!ed.view || !ed.view.lay.grid) return;
+      if (!ed.cursor) ed.cursor = { x: 0, y: 0 };
+      drawView();
+    });
+    T.canvas.addEventListener('blur', () => drawView());
+    T.canvas.addEventListener('keydown', ev => {
+      if (!ed.view || !ed.view.lay.grid || ed.view.lay.rects.length) return;
+      const c = ed.cursor || (ed.cursor = { x: 0, y: 0 });
+      const step = ev.shiftKey ? 5 : 1;
+      const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] }[ev.key];
+      if (mv) {
+        ev.preventDefault();
+        c.x = Math.max(0, Math.min(gridCols() - 1, c.x + mv[0]));
+        c.y = Math.max(0, Math.min(gridRows() - 1, c.y + mv[1]));
+        // ペン・消しゴムのときは、動いた先にも打つ・消す
+        if (ed.tool !== 'toggle' && ev.ctrlKey) { pushUndo(); brushAt(c.x, c.y, ed.tool === 'pen'); strokeDone(); }
+        drawView(); sayCursor();
+        return;
+      }
+      if (ev.key === ' ' || ev.key === 'Enter') {
+        ev.preventDefault();
+        pushUndo();
+        const on = ed.tool === 'pen' ? true : ed.tool === 'erase' ? false : !hasDot(c.x, c.y);
+        brushAt(c.x, c.y, on);
+        drawView(); strokeDone();
+        announce(on ? '点を打ちました' : '点を消しました');
+      }
+    });
+  }
+  async function undoEdit() {
+    if (!ed.undo.length || !tactileRow) return;
+    setFigData(tactileRow, 'dotEdits', JSON.parse(ed.undo.pop()));
+    await updateRowFigure(tactileRow);
+    ed.changed = true;
+    await refreshTactile();
+    announce('元に戻しました');
+  }
+  T.undo.addEventListener('click', undoEdit);
+  T.dlg.addEventListener('keydown', ev => { if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === 'z' && ev.target.tagName !== 'INPUT') { ev.preventDefault(); undoEdit(); } });
+  T.clearEdits.addEventListener('click', async () => {
+    if (!tactileRow) return;
+    pushUndo();
+    setFigData(tactileRow, 'dotEdits', {});
+    await updateRowFigure(tactileRow);
+    ed.changed = true;
+    await refreshTactile();
+    announce('手直しを全部消しました');
+  });
+  window.addEventListener('resize', () => { if (T.dlg.open) drawView(); });
   async function exportTactile(kind) {
     if (!tactileRow) return;
     const lay = await window.TenjiFigure.layoutTactile(tactileSrc(tactileRow), tactileOpt());
@@ -1302,7 +1586,19 @@
   $('t-pdf').addEventListener('click', () => exportTactile('pdf'));
   $('t-svg').addEventListener('click', () => exportTactile('svg'));
   $('t-close').addEventListener('click', () => { if (T.dlg.close) T.dlg.close(); else T.dlg.hidden = true; });
-  T.dlg.addEventListener('close', () => { if (tactileOpener && tactileOpener.focus) tactileOpener.focus(); });
+  T.dlg.addEventListener('close', () => {
+    const row = tactileRow;
+    if (row && ed.changed) {
+      row._tact = null; row._tactKey = null;
+      const idx = state.rows.indexOf(row);
+      render();
+      updateSumiji(); updateStatus();
+      const li = els.rows.querySelector(`.row[data-idx="${idx}"]`);
+      const btn = li && li.querySelector('.fig-edit-btn');
+      if (btn) { btn.focus(); return; }
+    }
+    if (tactileOpener && tactileOpener.isConnected && tactileOpener.focus) tactileOpener.focus();
+  });
 
   // ---------- 6点入力（F D S J K L ＝ 1 2 3 4 5 6 の点） ----------
   const DOT_KEYS = { KeyF: 1, KeyD: 2, KeyS: 4, KeyJ: 8, KeyK: 16, KeyL: 32 };

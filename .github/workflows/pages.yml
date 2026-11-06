@@ -29,6 +29,7 @@ jobs:
       - run: node test/real.test.js
       - run: node test/symbols.test.js
       - run: node test/layout.test.js
+      - run: node test/figure.test.js
 
   deploy:
     if: github.event_name != 'pull_request'

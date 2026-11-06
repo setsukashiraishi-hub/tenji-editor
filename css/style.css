@@ -320,9 +320,34 @@ dialog.tactile::backdrop { background: rgba(10, 20, 24, .45); }
 .field.col input { width: 100%; }
 .t-info { margin: 0; font-size: 12px; color: var(--muted); min-height: 2.6em; }
 .t-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.t-view { padding: 18px; background: var(--bg); overflow: auto; display: flex; justify-content: center; align-items: flex-start; }
-.t-view canvas { width: min(520px, 100%); box-shadow: 0 2px 10px rgba(0,0,0,.15); background: #fff; }
-@media (max-width: 760px) { .t-layout { grid-template-columns: minmax(0, 1fr); } .t-side { border-right: 0; border-bottom: 1px solid var(--line); } }
+.t-view { padding: 14px 18px 18px; background: var(--bg); overflow: auto; display: flex; flex-direction: column; align-items: stretch; gap: 8px; min-width: 0; }
+.t-canvas-wrap { display: flex; justify-content: center; }
+.t-view canvas { width: min(560px, 100%); box-shadow: 0 2px 10px rgba(0,0,0,.15); background: #fff; cursor: crosshair; touch-action: none; }
+.t-view canvas:focus { outline: 3px solid var(--accent); outline-offset: 3px; }
+.t-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--surface); }
+.seg label { display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; font-size: 13px; cursor: pointer; border-right: 1px solid var(--line); }
+.seg label:last-child { border-right: 0; }
+.seg label:has(input:checked) { background: var(--accent); color: var(--accent-ink); }
+.seg label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+.seg input { margin: 0; }
+.seg label:has(input:disabled) { opacity: .45; cursor: not-allowed; }
+.field.mini { font-size: 13px; gap: 4px; }
+.t-hint { margin: 0; font-size: 12px; color: var(--muted); }
+.t-sec { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.t-sec > summary { cursor: pointer; padding: 8px 10px; font-size: 13px; font-weight: 600; }
+.t-sec-body { display: flex; flex-direction: column; gap: 8px; padding: 0 10px 10px; }
+.field.range { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; }
+.field.range span { grid-column: 1 / -1; font-size: 12px; }
+.field.range input { width: 100%; }
+.field.range output { font-size: 12px; min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; color: var(--accent); }
+.t-sec select:disabled, .t-sec input:disabled { opacity: .5; }
+@media (max-width: 760px) {
+  .t-layout { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .t-side { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
+  .t-view { order: -1; padding: 10px; overflow: visible; }
+  .seg label { padding: 6px 8px; }
+}
 
 /* スクリーンリーダー向け（画面には出さない） */
 .sr-only {

@@ -103,7 +103,7 @@
     if (ext === 'csv' || ext === 'tsv') return readCSV(name, buf);
     if (ext === 'pdf') return readPDF(buf, opt || {});
     if (ext === 'edl') return readEDL(name, buf, opt || {});
-    if (/^(png|jpe?g|gif|bmp|webp)$/.test(ext)) return readImage(name, buf, opt || {});
+    if (/^(png|jpe?g|gif|bmp|webp|hei[cf]|avif)$/.test(ext)) return readImage(name, buf, opt || {});
     return fromPlainText(decodeText(buf), 'txt');
   }
 
@@ -114,7 +114,8 @@
     if (!root.TenjiFigure || typeof Blob === 'undefined' || !blob) return info;
     try {
       info.kind = await root.TenjiFigure.classifyImage(blob);
-      const cells = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3 });
+      info.proc = info.kind === 'photo' ? { denoise: 2 } : null; // 写真は細かい模様が多いので、ノイズ除去を強めにする
+      const cells = await root.TenjiFigure.imageToCells(blob, { maxCols: (opt.cols || 32) - 4, maxLines: (opt.lines || 18) - 3, proc: info.proc, kind: info.kind });
       info.lines = cells.map(l => '⠀⠀' + l);
     } catch (e) { /* 読めない画像（EMF など）は点図にしない */ }
     return info;
@@ -341,7 +342,15 @@
   // ---------- 画像（1枚の図として読み込む） ----------
   async function readImage(name, buf, opt) {
     if (!root.TenjiFigure || typeof Blob === 'undefined') throw new Error('画像はブラウザ版・デスクトップ版でだけ読み込めます。');
-    const info = await makeFigure(new Blob([buf]), 1, name, opt);
+    const ext = (name.split('.').pop() || '').toLowerCase();
+    const type = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', gif: 'image/gif', bmp: 'image/bmp', webp: 'image/webp', heic: 'image/heic', heif: 'image/heif', avif: 'image/avif' }[ext] || '';
+    const blob = new Blob([buf], type ? { type } : {});
+    try { await createImageBitmap(blob); } catch (e) {
+      throw new Error(/^hei[cf]$/.test(ext)
+        ? 'この画像（HEIC）は、このブラウザでは開けません。iPhoneの写真はSafariで開くか、JPEGで保存し直してから読み込んでください。'
+        : 'この画像は開けませんでした。PNGかJPEGで保存し直してから読み込んでください。');
+    }
+    const info = await makeFigure(blob, 1, name.replace(/\.[^.]+$/, ''), opt);
     return { kind: 'image', mode: 'sumiji', raw: '［図：図1］', rawKind: 'text', types: [],
       figures: [['図1', info]], note: figureNote([['図1', info]], 0) };
   }
