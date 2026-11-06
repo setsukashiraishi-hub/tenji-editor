@@ -194,6 +194,7 @@
 
   function brailleToRows(rows) {
     const out = [];
+    const st = {}; // 行をまたぐ読み取りの状態（アドレスの続きの行）
     const DENSE = /^[⠀⠿⠾⠷⠯⠟⠻⠽⠸⠇⠼⠧⠏⠹⠳]+$/;
     for (const r of rows) {
       if (r.pagebreak) { out.push({ pagebreak: true }); continue; }
@@ -214,7 +215,7 @@
         out.push({ src: r.cells, type: decor, fixed: true, cells: r.cells, kana: E.decorText(decor, r.cells), para: false });
         continue;
       }
-      const kana = E.brailleToKana(r.cells);
+      const kana = E.brailleToKana(r.cells, st);
       const prevFig = out[out.length - 1] && out[out.length - 1].type === 'figure' && out[out.length - 1].fixed;
       if (E.looksLikeGraphic(r.cells, kana) || (prevFig && DENSE.test(r.cells))) {
         // 点図・模様の行は読まずに図として残す（墨字にも点の形のまま起こす）
@@ -246,7 +247,8 @@
 
   // ---------- 描画 ----------
   // 発音記号の印 ⟦ ⟧ は、画面では [ ] で見せる（[ ] のまま直しても発音記号の点字になる）
-  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']');
+  // 画面と墨字では、内部の印（英語の語句 ⟪ ⟫・アドレス ⟬ ⟭・続きの行 ↪）を見せない
+  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪]/g, '');
   const cellLen = s => Array.from(s || '').length;
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
@@ -911,7 +913,7 @@
       // 行頭に4マス以上あいている行は見出しとして独立させる。2マスなら新しい段落、それ以外は前の行に続ける
       if (/^[ 　]{4,}/.test(line)) { flush(); out.push(''); out.push(line.trim()); out.push(''); continue; }
       if (para === null || /^[ 　]/.test(line)) { flush(); para = line.replace(/^[ 　]+/, ''); }
-      else para += ' ' + line;
+      else para += ((r.kana || '').startsWith('⟬↪') ? '' : ' ') + line; // アドレスの続きの行は詰めてつなぐ
     }
     flush();
     return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();
