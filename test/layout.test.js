@@ -8,10 +8,17 @@ const show = pages => pages.forEach((p, i) => { console.log(`--- page ${i + 1}`)
 
 // 1. 入る表：列の頭がそろい、枠線は1マス目から行いっぱい
 let rows = [{ type: 'frame-start' }, tableRow(['セイサク・セッケイ', '82']), tableRow(['チョーサ', '68']), tableRow(['キョーユー・ハッシン', '55']), { type: 'frame-end' }];
-let pages = E.layoutPages(rows, { cols: 32, lines: 18 });
+let pages = E.layoutPages(rows, { cols: 32, lines: 18, frameFit: false });
 show(pages);
 let p = pages[0];
-assert.ok(p[0] === '⠖' + '⠒'.repeat(30) + '⠲' && p[4] === '⠓' + '⠒'.repeat(30) + '⠚', '枠線は1マス目から32マス');
+assert.ok(p[0] === '⠖' + '⠒'.repeat(30) + '⠲' && p[4] === '⠓' + '⠒'.repeat(30) + '⠚', '枠線を合わせない設定では1マス目から32マス（BSEの見本）');
+// 枠線を中身の幅に合わせる（初めの設定）：いちばん長い行と同じ長さ
+{
+  const q = E.layoutPages(rows, { cols: 32, lines: 18 })[0];
+  const w = Math.max(...q.slice(1, 4).map(l => L(l.replace(/⠀+$/, ''))));
+  assert.ok(L(q[0]) === w && L(q[4]) === w && q[0].startsWith('⠖') && q[0].endsWith('⠲') && q[4].endsWith('⠚'), '枠線は中身の幅（' + w + 'マス）');
+  assert.ok(w < 32, '表の空いた所まで線を引かない');
+}
 const col2 = p.slice(1, 4).map(l => l.indexOf('⠼'));
 assert.ok(col2.every(x => x === col2[0]), '2列目の頭がそろう');
 assert.ok(p.slice(1, 4).every(l => L(l) <= 32), '中身は32マスに入る');

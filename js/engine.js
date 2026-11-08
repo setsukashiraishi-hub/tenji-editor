@@ -1534,10 +1534,22 @@
       fitTable(live.slice(i, j), cols, 0);
       i = j;
     }
-    // 枠線は行いっぱい。枠の中はふつうの書き方（段落は3マス目から、続きは1マス目から）
+    // 枠の中はふつうの書き方（段落は3マス目から、続きは1マス目から）。
+    // 枠線は、opt.frameFit なら中身のいちばん長い行に合わせる（表の空いた所まで線を引かない）。そうでなければ行いっぱい（BSEの見本の形）
     for (const f of frames) {
-      f.start._lines = [decorCells('frame-start', cols)];
-      if (f.end) f.end._lines = [decorCells('frame-end', cols)];
+      let w = cols;
+      if (opt.frameFit !== false && f.rows.length) {
+        let m = 0;
+        for (const r of f.rows) {
+          const ls = r._lines ? r._lines
+            : HEAD_INDENT[r.type] ? headingLines(r.cells || '', HEAD_INDENT[r.type], cols)
+            : r.cells ? wrapCells((r.para && opt.indent !== false && !r.cells.startsWith('⠀') ? '⠀⠀' : '') + r.cells.replace(/⠀+$/, ''), cols) : [];
+          for (const l of ls) m = Math.max(m, Array.from(String(l).replace(/⠀+$/, '')).length);
+        }
+        w = Math.min(cols, Math.max(6, m));
+      }
+      f.start._lines = [decorCells('frame-start', w)];
+      if (f.end) f.end._lines = [decorCells('frame-end', w)];
       f.start._block = 2 + f.rows.reduce((a, r) => a + estimateLines(r, cols), 0);
     }
     return rows;

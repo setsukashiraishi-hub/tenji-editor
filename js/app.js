@@ -17,7 +17,7 @@
 
   const els = {
     src: $('src'), rows: $('rows'), mode: $('mode'), cols: $('cols'), lines: $('lines'),
-    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'),
+    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'),
     fileName: $('file-name'), note: $('file-note'),
     stDict: $('st-dict'), stCount: $('st-count'), stWarn: $('st-warn'), navCheck: $('nav-check'),
     exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
@@ -67,7 +67,7 @@
   }
 
   // ---------- 設定の保存（このブラウザだけ） ----------
-  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'srmode'];
+  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'framefit', 'srmode'];
   function loadPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem('tenji-editor-prefs') || '{}');
@@ -90,6 +90,7 @@
     lines: Math.max(5, Math.min(40, +els.lines.value || 18)),
     indent: els.indent.checked,
     pageNumbers: els.pagenum.checked,
+    frameFit: els.framefit.checked,
     genpon: els.genpon.checked,
     title: state.fileBase
   });
@@ -1955,7 +1956,7 @@
       if (await saveFile(name, await F.docxFromText(text))) toast(`${name} を保存しました`);
     } catch (e) { toast(e.message || '保存に失敗しました。', true); }
   });
-  [els.cols, els.lines, els.indent, els.hira, els.pagenum, els.genpon, els.srmode].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
+  [els.cols, els.lines, els.indent, els.hira, els.pagenum, els.genpon, els.framefit, els.srmode].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
 
   // ドラッグ＆ドロップ
   let dragDepth = 0;

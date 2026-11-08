@@ -8,7 +8,7 @@ const body = k => ({ type: 'body', kana: k, cells: E.kanaToBraille(k).cells, par
 const rows = [{ type: 'h2', kana: 'ダイ1  シュシ', cells: E.kanaToBraille('ダイ1  シュシ').cells }];
 for (let i = 0; i < 25; i++) rows.push(body('コレワ ホンブンノ ギョーデス。'));
 rows.splice(3, 0, { type: 'frame-start' }, body('ワクノ ナカ'), { type: 'frame-end' });
-const opt = { cols: 32, lines: 18, pageNumbers: true, indent: true };
+const opt = { cols: 32, lines: 18, pageNumbers: true, indent: true, frameFit: false }; // 枠線は行いっぱい（BSEの見本の形）で確かめる
 (async () => {
 const data = await F.exportFile('bse', rows, opt);
 const text = Buffer.from(data).toString('latin1');
