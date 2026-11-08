@@ -22,7 +22,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: npm install
+      # Electron のダウンロードが一時的に失敗（504 など）しても、少し待って3回までやり直す
+      - name: npm install（やり直しあり）
+        shell: bash
+        run: |
+          for n in 1 2 3; do
+            npm install && exit 0
+            echo "npm install に失敗（$n 回目）。60秒待ってやり直します"; sleep 60
+          done
+          exit 1
       - run: npm test
       - name: アプリを作る
         run: npx electron-builder --publish never
