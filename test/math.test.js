@@ -40,5 +40,23 @@ const { getTokenizer, engine: E } = require('./harness');
   }
   eq(E.brailleToKana('⠼⠁⠚⠰⠍⠣'), '10⟮m²⟯', '単位の2乗を読む');
   for (const [c, k] of [['⠼⠉⠡⠐⠫⠝', '3カゲツ'], ['⠼⠑⠣⠚', '5キロ'], ['⠰⠠⠠⠉⠙⠤⠔', 'CDヲ'], ['⠰⠄⠼⠉⠡⠐⠫⠝⠐⠳⠠⠆', '〈3カゲツジ〉']]) eq(E.brailleToKana(c), k, '数式と読まない: ' + k);
+  // 全角の記号・スペースの入った式・± ≦ ≧
+  eq(cells('3 × 4 = 12'), '⠼⠉⠡⠼⠙⠒⠒⠼⠁⠃', 'スペースの入った式（行頭の番号と読まない）');
+  eq(cells('5－2＝3'), '⠼⠑⠔⠼⠃⠒⠒⠼⠉', '全角の－＝');
+  eq(cells('（3＋4）×2＝14'), '⠰⠦⠼⠉⠢⠼⠙⠴⠡⠼⠃⠒⠒⠼⠁⠙', '全角のカッコと＋');
+  eq(cells('√25＝±5'), '⠰⠜⠼⠃⠑⠒⠒⠢⠔⠼⠑', '±（＋の下に－）');
+  eq(cells('0≦x≦15'), '⠼⠚⠔⠔⠒⠒⠭⠔⠔⠒⠒⠼⠁⠑', '≦');
+  eq(cells('縦×横'), '⠕⠟⠀⠡⠫⠙⠀⠜⠪', '語と語のあいだの×は伏せ字にしない');
+  eq(cells('A4の紙'), '⠰⠠⠁⠼⠙⠎⠀⠡⠷', 'A4 は続ける');
+  // 化学式（手引 第8章第4節の例）
+  eq(cells('H₂O'), '⠰⠠⠓⠆⠕', '化学式');
+  eq(cells('水はH2Oです'), '⠷⠐⠹⠄⠀⠰⠠⠓⠆⠕⠀⠐⠟⠹', '普通の数字で書いた化学式');
+  eq(cells('2H₂ + O₂ → 2H₂O'), '⠼⠃⠠⠓⠆⠀⠢⠀⠕⠆⠀⠒⠕⠀⠼⠃⠠⠓⠆⠕', '化学反応式');
+  eq(cells('H2SO4 + Ba(OH)2 → BaSO4 + 2H2O'), '⠰⠠⠓⠆⠎⠕⠲⠀⠢⠀⠃⠁⠣⠕⠓⠜⠆⠀⠒⠕⠀⠃⠁⠎⠕⠲⠀⠢⠀⠼⠃⠠⠓⠆⠕', '化学反応式（カッコは ⠣ ⠜）');
+  for (const k of ['x≦5', '√25=±5', 'H₂O', 'CO₂', 'Ca(OH)₂', '2H₂ + O₂ → 2H₂O']) {
+    const c = cells(k); const back = E.brailleToKana(c);
+    eq(E.kanaToBraille(back).cells, c, '読んで書き戻すと同じ: ' + k);
+  }
+  assert.ok(E.sumijiToKana('x≦5', x => tk.tokenize(x), { fallback }).checks.length > 0, '≦ は校正の一覧に出す'); n++;
   console.log(`math: all passed (${n})`);
 })().catch(e => { console.error(e); process.exit(1); });

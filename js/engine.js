@@ -125,7 +125,7 @@
     if ((m = /^[ 　]*[（(]([0-9０-９]+|[ア-ン])[）)][ 　]*(?=\S)/.exec(text))) return { kana: '（' + zen(m[1]) + '）', sep: ' ', rest: text.slice(m[0].length) };
     if ((m = /^[ 　]*([ア-ン])(?:[．.、][ 　]*|[ 　]+)(?=\S)/.exec(text))) return { kana: m[1] + '。', sep: ' ', rest: text.slice(m[0].length) };
     if ((m = /^[ 　]*([0-9０-９]+)[．.][ 　]*(?=\S)/.exec(text))) return { kana: zen(m[1]) + '。', sep: ' ', rest: text.slice(m[0].length) };
-    if ((m = /^[ 　]*(第?)([0-9０-９]+)[ 　]+(?=\S)/.exec(text))) return { kana: (m[1] ? 'ダイ' : '') + zen(m[2]), sep: '  ', rest: text.slice(m[0].length) };
+    if ((m = /^[ 　]*(第?)([0-9０-９]+)[ 　]+(?=\S)(?![+\-−×÷=＝<>＜＞＋－/^√²³])/.exec(text))) return { kana: (m[1] ? 'ダイ' : '') + zen(m[2]), sep: '  ', rest: text.slice(m[0].length) };
     return null;
   }
   function sumijiToKana(text, tokenize, opts, noLabel) {
@@ -184,7 +184,11 @@
       if (sg.ipa) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + sg.ipa + '⟧'; continue; }
       if (sg.url) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟬' + sg.url + '⟭'; continue; }
       // 単位（10m²）は数に続け、数式は前後を1マスあける
-      if (sg.math) { kana += (sg.unit || !kana || / $/.test(kana) ? '' : ' ') + '⟮' + sg.math + '⟯'; continue; }
+      if (sg.math) {
+        kana += (sg.unit || !kana || / $/.test(kana) ? '' : ' ') + '⟮' + sg.math + '⟯';
+        if (/[≦≤≧≥]/.test(sg.math)) checks.push({ surface: sg.math, kana: '⟮' + sg.math + '⟯', options: [], note: '≦ ≧ の点字（⠔⠔⠒⠒・⠢⠢⠒⠒）' });
+        continue;
+      }
       if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
       const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
       const res = parts.map(p => tokensToKana(tokenize(p), opts));
@@ -449,10 +453,40 @@
   const SUP = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' };
   const SUB = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9' };
   const LOW_DIGIT = { '1': '⠂', '2': '⠆', '3': '⠒', '4': '⠲', '5': '⠢', '6': '⠖', '7': '⠶', '8': '⠦', '9': '⠔', '0': '⠴' };
-  const MATH_OP = { '+': '⠢', '＋': '⠢', '-': '⠔', '−': '⠔', '–': '⠔', '×': '⠡', '÷': '⠌⠌', '=': '⠒⠒', '＝': '⠒⠒',
-    '<': '⠔⠔', '＜': '⠔⠔', '>': '⠢⠢', '＞': '⠢⠢' };
+  const MATH_OP = { '+': '⠢', '＋': '⠢', '-': '⠔', '−': '⠔', '–': '⠔', '－': '⠔', '×': '⠡', '÷': '⠌⠌', '=': '⠒⠒', '＝': '⠒⠒',
+    '<': '⠔⠔', '＜': '⠔⠔', '>': '⠢⠢', '＞': '⠢⠢',
+    // ± は「＋の下に－」の1つの記号（文部科学省 中学部点字教科書編集資料）なので ⠢⠔。
+    // ≦ ≧ は「＜・＞の下に＝」の形として ⠔⠔⠒⠒・⠢⠢⠒⠒ で書き、校正の一覧に出す
+    '±': '⠢⠔', '∓': '⠔⠢', '≦': '⠔⠔⠒⠒', '≤': '⠔⠔⠒⠒', '≧': '⠢⠢⠒⠒', '≥': '⠢⠢⠒⠒' };
+  // ---------- 化学式：化学式の指示符 ⠰⠠ から書き、元素記号に大文字符を付けず、右下の数は下がり数字、カッコは ⠣ ⠜（点字学習指導の手引 理科） ----------
+  const ELEMENTS = new Set('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pt Au Hg Pb Bi Rn Ra U Pu'.split(' '));
+  const CHEM_RE = /(?<![A-Za-z0-9])([0-9]*)((?:\(?(?:[A-Z][a-z]?[0-9₀-₉]*)+\)?[0-9₀-₉]*)+)(?![A-Za-z0-9])/g;
+  const isChem = body => {
+    const els = body.match(/[A-Z][a-z]?/g) || [];
+    if (!els.length || !els.every(e => ELEMENTS.has(e))) return false;
+    return /[₀-₉]/.test(body) || (els.length >= 2 && /[A-Za-z)][0-9]/.test(body)); // H₂O・CO2・H2SO4（A4・B5 は化学式にしない）
+  };
+  function chemBraille(raw) {
+    // 反応式：＋と→は前後を1マスあける。式の頭は ⠰⠠、係数があれば ⠼2⠠、2つめからの化学式は係数がなければそのまま（⠕⠆）
+    const parts = String(raw).split(/[ 　]*([+＋]|→|⟶|=)[ 　]*/);
+    if (parts.length > 1) return parts.map((p, k) => k % 2 ? (p === '→' || p === '⟶' ? '⠀⠒⠕⠀' : p === '=' ? '⠀⠒⠒⠀' : '⠀⠢⠀') : chemBraille1(p, k === 0)).join('');
+    return chemBraille1(raw, true);
+  }
+  function chemBraille1(raw, first) {
+    const m = /^([0-9]*)(.*)$/.exec(raw);
+    let out = m[1] ? numCells(m[1]) + SIGN.CAP : first ? SIGN.FOREIGN + SIGN.CAP : ''; // 係数のあとは ⠠ から（2H₂O → ⠼⠃⠠⠓⠆⠕）
+    for (const ch of m[2]) {
+      if (/[A-Za-z]/.test(ch)) out += LETTER[ch.toLowerCase()];
+      else if (SUB[ch] !== undefined) out += LOW_DIGIT[SUB[ch]];
+      else if (isDigit(ch)) out += LOW_DIGIT[ch];
+      else if (ch === '(') out += '⠣';
+      else if (ch === ')') out += '⠜';
+    }
+    return out;
+  }
   const numCells = n => SIGN.NUM + Array.from(String(n)).map(d => d === '.' ? '⠂' : DIGIT[d]).join('');
   function mathBraille(raw) {
+    if (String(raw).startsWith('\ue0f0')) return chemBraille(String(raw).slice(1));
     const s = Array.from(String(raw).replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')').replace(/⁄/g, '/'));
     let i = 0, last = '';
     const vul = c => '⠷' + numCells(VULGAR[c][0]) + '⠌' + numCells(VULGAR[c][1]) + '⠾';
@@ -516,12 +550,21 @@
   // 文の中の数式・単位（m² など）を探す。戻り値 [{ start, end, raw, unit }]
   const UNIT_POW_RE = /(?<![A-Za-z])(km|cm|mm|dm|m)([²³])/g;
   const COMPAT_UNIT = { '㎡': 'm²', '㎥': 'm³', '㎠': 'cm²', '㎤': 'cm³', '㎢': 'km²', '㎦': 'km³', '㎟': 'mm²', '㎣': 'mm³' };
-  const FORMULA_RUN_RE = /[0-9A-Za-z.+\-−–×÷=＝<>＜＞()（）\/⁄^_√²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞ ]+/g;
+  const FORMULA_RUN_RE = /[0-9A-Za-z.+\-−–×÷=＝<>＜＞()（）\/⁄^_√²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞ ＋－±∓≦≤≧≥]+/g;
   function findMath(text) {
     const spans = [];
     let m;
     UNIT_POW_RE.lastIndex = 0;
     while ((m = UNIT_POW_RE.exec(text))) spans.push({ start: m.index, end: m.index + m[0].length, raw: m[0], unit: true });
+    CHEM_RE.lastIndex = 0;
+    const chem = [];
+    while ((m = CHEM_RE.exec(text))) if (isChem(m[2])) chem.push({ start: m.index, end: m.index + m[0].length });
+    // 化学反応式（2H₂ + O₂ → 2H₂O）は1つにまとめる
+    for (let k = 0; k < chem.length; k++) {
+      let a = chem[k];
+      while (k + 1 < chem.length && /^[ 　]*(?:[+＋]|→|⟶|=)[ 　]*$/.test(text.slice(a.end, chem[k + 1].start))) { a = { start: a.start, end: chem[k + 1].end }; k++; }
+      spans.push({ start: a.start, end: a.end, raw: '\ue0f0' + text.slice(a.start, a.end), chem: true });
+    }
     FORMULA_RUN_RE.lastIndex = 0;
     while ((m = FORMULA_RUN_RE.exec(text))) {
       const lead = m[0].length - m[0].trimStart().length;
@@ -531,7 +574,7 @@
       if (spans.some(sp => sp.start < end && start < sp.end)) continue;
       // 数式のしるし：根号・累乗・添え字・分数の文字・÷、または「数か文字 演算記号 数か文字」（- だけの 2026-11-08・03-1234 は数式にしない）
       const strong = /[√^²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞÷]/.test(t);
-      const binary = /[0-9A-Za-z)²³½⅓⅔¼¾][+×=＝<>＜＞÷][-−]?[0-9A-Za-z(√½⅓⅔¼¾]/.test(t.replace(/ /g, ''));
+      const binary = /[0-9A-Za-z)²³½⅓⅔¼¾][+×=＝<>＜＞÷＋－±∓≦≤≧≥][-−－]?[0-9A-Za-z(√½⅓⅔¼¾]/.test(t.replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')'));
       if (!strong && !binary) continue;
       if (/[A-Za-z]{3,}/.test(t)) continue; // 英単語の入った語句は数式にしない
       if (/^\+\d/.test(t)) continue; // 国際電話番号
@@ -804,7 +847,7 @@
         return e;
       }
     }
-    const OPS = [['⠒⠒', '='], ['⠌⠌', '÷'], ['⠔⠔', '<'], ['⠢⠢', '>'], ['⠢', '+'], ['⠔', '-'], ['⠡', '×']];
+    const OPS = [['⠔⠔⠒⠒', '≦'], ['⠢⠢⠒⠒', '≧'], ['⠒⠒', '='], ['⠌⠌', '÷'], ['⠔⠔', '<'], ['⠢⠢', '>'], ['⠢⠔', '±'], ['⠔⠢', '∓'], ['⠢', '+'], ['⠔', '-'], ['⠡', '×']];
     function seq(end) {
       let out = '';
       while (i < w.length && w[i] !== end) {
@@ -818,6 +861,54 @@
       return out;
     }
     return seq();
+  }
+  // 化学式・化学反応式を読む。s[i] が ⠰⠠。戻り値 [文字列, 次の位置] か null
+  const CHEM_PREFER2 = new Set(['Si', 'Sn', 'Hg', 'Hf', 'Nb', 'Bi']); // 2文字の元素として読むもの（S と I などより多い）
+  const REV_LOW_CHEM = { '⠂': '1', '⠆': '2', '⠒': '3', '⠲': '4', '⠢': '5', '⠖': '6', '⠶': '7', '⠦': '8', '⠔': '9', '⠴': '0' };
+  function chemFromBraille(s, i0) {
+    let i = i0 + 2, out = '\ue0f0', seenLow = false;
+    if (s[i0] === '⠼') { // 係数から始まる（2H₂ + O₂ → 2H₂O）
+      i = i0 + 1; let d = '';
+      while (REV_DIGIT[s[i]] !== undefined) d += REV_DIGIT[s[i++]];
+      if (!d || s[i] !== '⠠' || !REV_LETTER[s[i + 1]]) return null;
+      out += d; i++;
+    }
+    const compound = () => {
+      let t = '', any = false;
+      while (i < s.length) {
+        const c = s[i];
+        if (REV_LETTER[c]) { // 元素記号：2文字の元素が成り立てば2文字目は小文字
+          const a = REV_LETTER[c].toUpperCase(), b = REV_LETTER[s[i + 1]];
+          // 点字では大文字・小文字の区別がないので、CO（C と O）と Co のように両方ありうるものは1文字ずつに読む
+          if (b && ELEMENTS.has(a + b) && !(ELEMENTS.has(a) && ELEMENTS.has(b.toUpperCase()) && !CHEM_PREFER2.has(a + b))) { t += a + b; i += 2; }
+          else { t += a; i++; }
+          any = true; continue;
+        }
+        if (REV_LOW_CHEM[c] !== undefined && any) { t += SUB_OF(REV_LOW_CHEM[c]); i++; seenLow = true; continue; }
+        if (c === '⠣') { t += '('; i++; continue; }
+        if (c === '⠜') { t += ')'; i++; continue; }
+        break;
+      }
+      return any ? t : null;
+    };
+    const first = compound();
+    if (!first) return null;
+    out += first;
+    for (;;) { // ＋ → の続き
+      let sym = null;
+      if (s.slice(i, i + 3).join('') === '⠀⠢⠀') sym = ' + ';
+      else if (s.slice(i, i + 4).join('') === '⠀⠒⠕⠀') sym = ' → ';
+      if (!sym) break;
+      const save = i; i += sym === ' + ' ? 3 : 4;
+      let coef = '';
+      if (s[i] === '⠼') { i++; while (REV_DIGIT[s[i]] !== undefined) coef += REV_DIGIT[s[i++]]; if (s[i] === '⠠') i++; }
+      const c2 = compound();
+      if (!c2) { i = save; break; }
+      out += sym + coef + c2;
+    }
+    if (!seenLow) return null;
+    if (i < s.length && !/[⠀⠲⠰⠴⠤]/.test(s[i])) return null; // 化学式のあとは区切りか句読点（V=RI の ⠒⠒ を下がり数字と読まない）
+    return [out, i];
   }
   // 数式の語か（演算記号・分数・根号が、数や文字のあいだに使われている）
   function isMathWord(w) {
@@ -859,6 +950,10 @@
       if (c === '⠰') { // 単位の2乗・3乗（10m²、100cm³）
         const um = /^⠰([⠅⠉⠍⠙]?⠍)([⠣⠩])(?=$|[⠀⠰⠲⠶⠴⠤])/.exec(s.slice(i, i + 5).join(''));
         if (um) { out += '⟮' + Array.from(um[1]).map(x => REV_LETTER[x]).join('') + (um[2] === '⠣' ? '²' : '³') + '⟯'; i += Array.from(um[0]).length - 1; continue; }
+      }
+      if (((c === '⠰' && n1 === '⠠') || (c === '⠼' && /^⠼[⠁-⠚]+⠠[⠁-⠵]/.test(s.slice(i, i + 8).join('')))) && atStart(i)) { // 化学式（⠰⠠ か 係数⠠ から。右下の数は下がり数字）
+        const r = chemFromBraille(s, i);
+        if (r) { out += '⟮' + r[0] + '⟯'; i = r[1] - 1; continue; }
       }
       if ((c === '⠰' || c === '⠼') && atStart(i)) { // 数式（1語まるごと）
         let j = i; while (j < s.length && s[j] !== '⠀') j++;
@@ -1067,7 +1162,7 @@
           if (n1 && /^[,.]$/.test(n1.surface_form) && n2 && /^[0-9]+$/.test(n2.surface_form) && /[0-9]$/.test(surf)) { i += 2; surf += n1.surface_form + n2.surface_form; continue; }
           break;
         }
-        res.push({ surface_form: surf, pos: '名詞', pos_detail_1: '数', isNumber: true, reading: '*' });
+        res.push({ surface_form: surf, pos: '名詞', pos_detail_1: '数', isNumber: true, reading: '*', word_position: t.word_position });
         continue;
       }
       // 辞書で分かれてしまう語（対償 → 対＋償）を、決まった読みの1語にまとめる
@@ -1180,6 +1275,8 @@
     if (ctx.attachNext) return false;
     const surf = t.surface_form, p = t.pos, d1 = t.pos_detail_1;
     const ps = prev.surface_form;
+    // A4・B5 のように英字にすぐ続く数字は続ける
+    if (t.isNumber && /^[A-Za-z]+$/.test(ps) && prev.word_position && t.word_position === prev.word_position + ps.length) return false;
     if (CLOSE_BRACKETS.has(surf) || PUNCTS.has(surf)) return false;
     if ((surf === '（' || surf === '(') && !PUNCTS.has(ps) && !OPEN_BRACKETS.has(ps) && prev.pos !== '助詞') return false; // 補足のカッコは前の語に続ける（ハイリョ（ホー…）
     if (OPEN_BRACKETS.has(surf)) return true;
