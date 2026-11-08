@@ -33,6 +33,7 @@ jobs:
       - run: node test/bse.test.js
       - run: node test/official.test.js
       - run: node test/corpus.test.js
+      - run: node test/math.test.js
 
   deploy:
     if: github.event_name != 'pull_request'

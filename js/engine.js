@@ -163,12 +163,28 @@
       if (p0 < t.length) parts.push({ text: t.slice(p0) });
       segs.splice(k, 1, ...parts);
     }
+    // 数式・単位（m²）は数学点字で書くので、読まずに ⟮ ⟯ で囲んで残す
+    for (let k = segs.length - 1; k >= 0; k--) {
+      if (!segs[k].text) continue;
+      const t = normalizeInput(segs[k].text).replace(/[㎡㎥㎠㎤㎢㎦㎟㎣]/g, c => COMPAT_UNIT[c]), sp = findMath(t);
+      if (!sp.length) continue;
+      const parts = []; let p0 = 0;
+      for (const x of sp) {
+        if (x.start > p0) parts.push({ text: t.slice(p0, x.start) });
+        parts.push({ math: x.raw, unit: !!x.unit });
+        p0 = x.end;
+      }
+      if (p0 < t.length) parts.push({ text: t.slice(p0) });
+      segs.splice(k, 1, ...parts);
+    }
     let kana = '';
     const unresolved = [], checks = [], foreign = [];
     for (const sg of segs) {
       if (sg.text) foreign.push(...foreignParts(sg.text)); // 発音記号の中は除く
       if (sg.ipa) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + sg.ipa + '⟧'; continue; }
       if (sg.url) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟬' + sg.url + '⟭'; continue; }
+      // 単位（10m²）は数に続け、数式は前後を1マスあける
+      if (sg.math) { kana += (sg.unit || !kana || / $/.test(kana) ? '' : ' ') + '⟮' + sg.math + '⟯'; continue; }
       if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
       const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
       const res = parts.map(p => tokensToKana(tokenize(p), opts));
@@ -256,7 +272,8 @@
       .replace(new RegExp(`(${D})[ 　]?÷[ 　]?${N}`, 'g'), '$1\ue004')
       .replace(new RegExp(`(${D})[ 　]?[−ー－][ 　]?(?=[0-9０-９(（][^0-9０-９]*[\ue001=＝])`, 'g'), '$1\ue005');
     s = s.replace(/([0-9０-９])[ 　]?−[ 　]?(?=[0-9０-９])/g, '$1-'); // 2020−2026 のような範囲
-    s = s.replace(/[=＝]/g, ' イコール ').replace(/[+＋]/g, 'プラス').replace(/÷/g, 'ワル').replace(/−/g, 'マイナス').replace(/×/g, 'バツ');
+    s = s.replace(/[=＝]/g, ' イコール ').replace(/[+＋]/g, 'プラス').replace(/÷/g, 'ワル').replace(/−/g, 'マイナス')
+      .replace(/(?<=[○◯])×|×(?=[印式])/g, 'バツ').replace(/×/g, ' カケル '); // ○×・×印はバツ、語と語のあいだ（縦×横）はカケル
     for (const k in MATH) s = s.split(MATH[k]).join(k);
     // 不等号：対になっていれば山カッコ、数の比較なら読み、それ以外は矢印として扱う
     const paired = /[<＜][^<＜>＞]+[>＞]/.test(s) && !/\d[ 　]*[<＜>＞][ 　]*\d/.test(s);
@@ -271,8 +288,10 @@
     // 注記符：※1・※ 2 → ⠰⠼⠁⠆
     s = s.replace(/[※＊*][ 　]?(?=[0-9０-９]{1,2}(?![0-9０-９一-鿿々]))/g, '※');
     // 伏せ字：○○市・△△さん・□年□月のような、語の代わりの印。○をつける・○×式は読む
-    s = s.replace(/(?<![0-9０-９.])[○◯△□×✕](?![×✕印型形0-9０-９])(?=[○◯△□×✕\u4e00-\u9fff々ァ-ヺ]|$)|(?<=[\u4e00-\u9fff々ァ-ヺ○△□╳])[○◯△□×✕](?![ぁ-ゖ×✕印型形0-9０-９])/g,
-      c => ({ '○': '\ue063○', '◯': '\ue063○', '△': '\ue063△', '□': '\ue063□', '×': '╳', '✕': '╳' })[c]);
+    // 伏せ字は「○○市」「△△さん」「××年」のように印が2つ以上続くときと、○年○月・○様のように数や名前の代わりになっているときだけ。
+    // ×が1つのとき（縦×横、a×b）はかけ算の記号（⠡）
+    s = s.replace(/[○◯△□×✕]{2,}|[○◯△□](?=[年月日時分秒市町村区県都道府さん様氏君号番回人個円歳])/g,
+      m => Array.from(m).map(c => ({ '○': '\ue063○', '◯': '\ue063○', '△': '\ue063△', '□': '\ue063□', '×': '╳', '✕': '╳' })[c]).join(''));
     // 英単語の中のアポストロフィ（don't）
     s = s.replace(/([A-Za-z])[’'](?=[A-Za-z])/g, '$1\u02bc');
     s = s.replace(/([A-Za-z]) *[&＆] *(?=[A-Za-z])/g, '$1 \ue030 '); // 英語のあいだの & は英語の点字で書く
@@ -419,6 +438,109 @@
     return out;
   }
 
+  // ---------- 数式（数学点字）：文部科学省「点字学習指導の手引」（令和5年）の書き方 ----------
+  // ・数式は前後を続けて書く（記号の前後をあけない）。数字で始まらない式の頭には数式指示符 ⠰
+  // ・＋ ⠢、－ ⠔、× ⠡、÷ ⠌⠌、＝ ⠒⠒、＜ ⠔⠔、＞ ⠢⠢、小カッコ ⠦ … ⠴、小数点 ⠂
+  // ・文字（x, a など）は外字符なしで書き、数字のすぐ後の a〜j の前だけ ⠰。大文字は ⠠
+  // ・分数は ⠷ 分子 ⠌ 分母 ⠾（帯分数は整数のすぐ後に続ける）、根号 √ は ⠜（中が2つ以上の要素ならカッコで囲む）
+  // ・2乗 ⠣、3乗 ⠩、ほかの累乗は ⠘＋要素、右下の1桁の添え字は ⠠＋下がり数字、それ以外の添え字は ⠰＋要素
+  const VULGAR = { '½': [1, 2], '⅓': [1, 3], '⅔': [2, 3], '¼': [1, 4], '¾': [3, 4], '⅕': [1, 5], '⅖': [2, 5], '⅗': [3, 5], '⅘': [4, 5],
+    '⅙': [1, 6], '⅚': [5, 6], '⅛': [1, 8], '⅜': [3, 8], '⅝': [5, 8], '⅞': [7, 8] };
+  const SUP = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9' };
+  const SUB = { '₀': '0', '₁': '1', '₂': '2', '₃': '3', '₄': '4', '₅': '5', '₆': '6', '₇': '7', '₈': '8', '₉': '9' };
+  const LOW_DIGIT = { '1': '⠂', '2': '⠆', '3': '⠒', '4': '⠲', '5': '⠢', '6': '⠖', '7': '⠶', '8': '⠦', '9': '⠔', '0': '⠴' };
+  const MATH_OP = { '+': '⠢', '＋': '⠢', '-': '⠔', '−': '⠔', '–': '⠔', '×': '⠡', '÷': '⠌⠌', '=': '⠒⠒', '＝': '⠒⠒',
+    '<': '⠔⠔', '＜': '⠔⠔', '>': '⠢⠢', '＞': '⠢⠢' };
+  const numCells = n => SIGN.NUM + Array.from(String(n)).map(d => d === '.' ? '⠂' : DIGIT[d]).join('');
+  function mathBraille(raw) {
+    const s = Array.from(String(raw).replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')').replace(/⁄/g, '/'));
+    let i = 0, last = '';
+    const vul = c => '⠷' + numCells(VULGAR[c][0]) + '⠌' + numCells(VULGAR[c][1]) + '⠾';
+    function post(e) { // 累乗・添え字
+      for (;;) {
+        const c = s[i];
+        if (c === '²') { e += '⠣'; i++; continue; }
+        if (c === '³') { e += '⠩'; i++; continue; }
+        if (SUP[c]) { let d = ''; while (SUP[s[i]]) d += SUP[s[i++]]; e += '⠘' + numCells(d); continue; }
+        if (SUB[c]) { let d = ''; while (SUB[s[i]]) d += SUB[s[i++]]; e += d.length === 1 ? SIGN.CAP + LOW_DIGIT[d] : SIGN.FOREIGN + numCells(d); continue; }
+        if (c === '^') {
+          i++;
+          if ((s[i] === '2' || s[i] === '3') && !isDigit(s[i + 1] || '') && s[i + 1] !== '.') { e += s[i] === '2' ? '⠣' : '⠩'; i++; continue; }
+          last = ''; e += '⠘' + (element() || ''); last = 'let'; continue;
+        }
+        if (c === '_') { i++; last = ''; e += SIGN.FOREIGN + (element() || ''); last = 'let'; continue; }
+        return e;
+      }
+    }
+    function element() {
+      const c = s[i];
+      if (c === undefined) return null;
+      if (isDigit(c)) {
+        let d = '';
+        while (i < s.length && (isDigit(s[i]) || (s[i] === '.' && isDigit(s[i + 1] || '')))) d += s[i++];
+        let e = numCells(d);
+        if (VULGAR[s[i]]) e += vul(s[i++]); // 帯分数 3½
+        last = 'num'; return post(e);
+      }
+      if (VULGAR[c]) { i++; last = 'num'; return post(vul(c)); }
+      if (/[A-Za-z]/.test(c)) {
+        i++; const lc = c.toLowerCase();
+        const e = (last === 'num' && 'abcdefghij'.includes(lc) ? SIGN.FOREIGN : '') + (c !== lc ? SIGN.CAP : '') + LETTER[lc];
+        last = 'let'; return post(e);
+      }
+      if (c === '(') { i++; last = ''; const inner = expr(')'); if (s[i] === ')') i++; last = 'let'; return post('⠦' + inner + '⠴'); }
+      if (c === '√') { i++; last = ''; const e = element(); last = 'let'; return '⠜' + (e || ''); }
+      return null;
+    }
+    function expr(end) {
+      const parts = [];
+      while (i < s.length && s[i] !== end) {
+        const c = s[i];
+        if (c === '/' && parts.length && parts[parts.length - 1].el !== undefined) { // 分数：直前の要素／直後の要素
+          i++; last = '';
+          const den = element() || '';
+          const unwrap = x => /^⠦/.test(x) && /⠴$/.test(x) && x.indexOf('⠴') === x.length - 1 ? x.slice(1, -1) : x; // (a+b)/2 の外側のカッコは分数囲みが代わる
+          const num = parts.pop().el;
+          parts.push({ el: post('⠷' + unwrap(num) + '⠌' + unwrap(den) + '⠾') }); last = 'let'; continue;
+        }
+        if (MATH_OP[c]) { parts.push({ op: MATH_OP[c] }); i++; last = 'op'; continue; }
+        const e = element();
+        if (e === null) { parts.push({ op: SIGN.UNKNOWN }); i++; continue; }
+        parts.push({ el: e });
+      }
+      return parts.map(p => p.el !== undefined ? p.el : p.op).join('');
+    }
+    const body = expr();
+    return (body.startsWith(SIGN.NUM) ? '' : SIGN.FOREIGN) + body; // 数字で始まらない式は数式指示符から
+  }
+  // 文の中の数式・単位（m² など）を探す。戻り値 [{ start, end, raw, unit }]
+  const UNIT_POW_RE = /(?<![A-Za-z])(km|cm|mm|dm|m)([²³])/g;
+  const COMPAT_UNIT = { '㎡': 'm²', '㎥': 'm³', '㎠': 'cm²', '㎤': 'cm³', '㎢': 'km²', '㎦': 'km³', '㎟': 'mm²', '㎣': 'mm³' };
+  const FORMULA_RUN_RE = /[0-9A-Za-z.+\-−–×÷=＝<>＜＞()（）\/⁄^_√²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞ ]+/g;
+  function findMath(text) {
+    const spans = [];
+    let m;
+    UNIT_POW_RE.lastIndex = 0;
+    while ((m = UNIT_POW_RE.exec(text))) spans.push({ start: m.index, end: m.index + m[0].length, raw: m[0], unit: true });
+    FORMULA_RUN_RE.lastIndex = 0;
+    while ((m = FORMULA_RUN_RE.exec(text))) {
+      const lead = m[0].length - m[0].trimStart().length;
+      const t = m[0].trim();
+      if (!t) continue;
+      const start = m.index + lead, end = start + t.length;
+      if (spans.some(sp => sp.start < end && start < sp.end)) continue;
+      // 数式のしるし：根号・累乗・添え字・分数の文字・÷、または「数か文字 演算記号 数か文字」（- だけの 2026-11-08・03-1234 は数式にしない）
+      const strong = /[√^²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞÷]/.test(t);
+      const binary = /[0-9A-Za-z)²³½⅓⅔¼¾][+×=＝<>＜＞÷][-−]?[0-9A-Za-z(√½⅓⅔¼¾]/.test(t.replace(/ /g, ''));
+      if (!strong && !binary) continue;
+      if (/[A-Za-z]{3,}/.test(t)) continue; // 英単語の入った語句は数式にしない
+      if (/^\+\d/.test(t)) continue; // 国際電話番号
+      if (!/[0-9A-Za-z½⅓⅔¼¾]/.test(t)) continue;
+      spans.push({ start, end, raw: t });
+    }
+    return spans.sort((a, b) => a.start - b.start);
+  }
+
   // ---------- URL・メールアドレス：アドレス囲み符号 ⠠⠦ … ⠠⠴ の中を情報処理用点字で書く ----------
   // 英字は外字符なし、数字は数符から。数字のあとの a〜j は ⠰ で英字に戻す。続きの行は ⠈ から書く
   const INFO_SYM = { ':': '⠐⠂', '/': '⠌', '.': '⠲', '-': '⠤', '_': '⠐⠤', '@': '⠪', '?': '⠐⠦', '=': '⠒⠒', '#': '⠩', '&': '⠯',
@@ -465,7 +587,9 @@
   function kanaToBraille(line) {
     // かなを手で直すときに [ ] や / / で発音記号を書いても、発音記号の点字にする
     // （すでに ⟪ ⟫・⟬ ⟭・⟦ ⟧ で囲んだところはそのまま）
-    line = String(line || '').split(/(⟪[^⟫]*⟫|⟬[^⟭]*⟭?|⟦[^⟧]*⟧)/).map((part, k) => k % 2 ? part : part
+    // かなを直接直したときも、数式（y=2x+1）は数学点字にする
+    const wrapMath = t => { const sp = findMath(t); let o = '', p0 = 0; for (const x of sp) { o += t.slice(p0, x.start) + '⟮' + x.raw + '⟯'; p0 = x.end; } return o + t.slice(p0); };
+    line = String(line || '').split(/(⟪[^⟫]*⟫|⟬[^⟭]*⟭?|⟦[^⟧]*⟧|⟮[^⟯]*⟯)/).map((part, k) => k % 2 ? part : (/https?:|www\.|@/.test(part) ? part : wrapMath(part))
       .replace(URL_RE, m => { const t = /[.,;:!?)\]]+$/.exec(m); const tail = t ? t[0] : ''; return '⟬' + m.slice(0, m.length - tail.length) + '⟭' + tail; }) // アドレス（手で書いたときも）
       .replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; })
       // 外国語引用符にするのは、2文字以上の英語の語が2つ以上ある語句だけ（A B C・FAX 261 は1語ずつ外字符）
@@ -493,6 +617,16 @@
         out += '⠦' + englishBraille(s.slice(i + 1, j).join('')) + '⠴';
         inNum = false; inLatin = false;
         i = j;
+        continue;
+      }
+      if (c === '⟮') { // 数式（⟮ ⟯ の中）
+        let j = i + 1;
+        while (j < s.length && s[j] !== '⟯') j++;
+        const cells = mathBraille(s.slice(i + 1, j).join(''));
+        units.push({ text: s.slice(i, j + 1).join(''), cells });
+        out += cells;
+        inNum = false; inLatin = false;
+        i = j; ui = j + 1; uo = out.length;
         continue;
       }
       if (c === '⟬') { // URL・メールアドレス（⟬ ⟭ の中）
@@ -628,6 +762,76 @@
   const REV_DIGIT = {}; for (const k in DIGIT) REV_DIGIT[DIGIT[k]] = k;
   const REV_LETTER = {}; for (const k in LETTER) REV_LETTER[LETTER[k]] = k;
 
+  // 数学点字の語を墨字の式に戻す（w は1語の点字の配列）
+  const REV_LOW = {}; for (const k in LOW_DIGIT) REV_LOW[LOW_DIGIT[k]] = k;
+  const SUB_OF = d => String.fromCharCode(0x2080 + +d);
+  const SUP_OF = d => ({ '1': '¹', '2': '²', '3': '³' })[d] || String.fromCharCode(0x2070 + +d);
+  const VULGAR_OF = {}; for (const k in VULGAR) VULGAR_OF[VULGAR[k].join('/')] = k;
+  function mathFromBraille(w) {
+    let i = w[0] === '⠰' ? 1 : 0;
+    function element(numMode) {
+      const c = w[i];
+      if (c === '⠼') {
+        i++; let d = '';
+        for (;;) {
+          if (REV_DIGIT[w[i]] !== undefined) d += REV_DIGIT[w[i++]];
+          else if (w[i] === '⠂' && REV_DIGIT[w[i + 1]] !== undefined) { d += '.'; i++; }
+          else break;
+        }
+        return d;
+      }
+      if (c === '⠦') { i++; const t = seq('⠴'); if (w[i] === '⠴') i++; return '(' + t + ')'; }
+      if (c === '⠷') { // 分数
+        i++; const a = seq('⠌'); if (w[i] === '⠌') i++; const b = seq('⠾'); if (w[i] === '⠾') i++;
+        if (VULGAR_OF[a + '/' + b]) return VULGAR_OF[a + '/' + b];
+        const g = x => /^[0-9A-Za-z.]+$/.test(x) ? x : '(' + x + ')';
+        return g(a) + '/' + g(b);
+      }
+      if (c === '⠜') { i++; return '√' + (element() || ''); }
+      if (c === '⠰' && REV_LETTER[w[i + 1]]) { i++; return element(); } // 数字のあとの a〜j
+      if (c === '⠠' && REV_LETTER[w[i + 1]]) { i += 2; return REV_LETTER[w[i - 1]].toUpperCase(); }
+      if (REV_LETTER[c]) { i++; return REV_LETTER[c]; }
+      return null;
+    }
+    function post(e) {
+      for (;;) {
+        const c = w[i];
+        if (c === '⠣') { e += '²'; i++; continue; }
+        if (c === '⠩') { e += '³'; i++; continue; }
+        if (c === '⠘') { i++; const x = element() || ''; e += /^[0-9]+$/.test(x) ? Array.from(x).map(SUP_OF).join('') : '^' + (x.length > 1 && !/^\(/.test(x) ? '(' + x + ')' : x); continue; }
+        if (c === '⠠' && REV_LOW[w[i + 1]] !== undefined) { e += SUB_OF(REV_LOW[w[i + 1]]); i += 2; continue; }
+        if (c === '⠰' && w[i + 1] === '⠼') { i++; const x = element() || ''; e += Array.from(x).map(SUB_OF).join(''); continue; }
+        return e;
+      }
+    }
+    const OPS = [['⠒⠒', '='], ['⠌⠌', '÷'], ['⠔⠔', '<'], ['⠢⠢', '>'], ['⠢', '+'], ['⠔', '-'], ['⠡', '×']];
+    function seq(end) {
+      let out = '';
+      while (i < w.length && w[i] !== end) {
+        const op = OPS.find(([b]) => w.slice(i, i + b.length).join('') === b);
+        if (op && out) { out += op[1]; i += op[0].length; continue; }
+        if (op && !out && op[1] === '-') { out += '-'; i++; continue; }
+        const e = element();
+        if (e === null) { out += '〓'; i++; continue; }
+        out += post(e);
+      }
+      return out;
+    }
+    return seq();
+  }
+  // 数式の語か（演算記号・分数・根号が、数や文字のあいだに使われている）
+  function isMathWord(w) {
+    const t = w.join('');
+    if (!/^[⠰⠼]/.test(t)) return false;
+    if (/(⠒⠒|⠌⠌|⠔⠔|⠢⠢|[⠢⠔⠡])[⠼⠦⠷⠜]/.test(t) || /⠷[^⠀]*⠌[^⠀]*⠾/.test(t) || /^⠰[⠜⠷⠦]/.test(t)) return true;
+    // ⠰ で始まる語で、英字のすぐ後に演算記号・累乗・添え字がある（一般の外字の語にはない形）
+    if (/^⠰⠠{0,2}[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]/.test(t)) {
+      const L = '[⠁⠃⠉⠙⠑⠋⠛⠓⠊⠚⠅⠇⠍⠝⠕⠏⠟⠗⠎⠞⠥⠧⠺⠭⠽⠵]';
+      return new RegExp(L + '(⠒⠒|⠌⠌|[⠢⠔⠡⠘⠣⠩]|⠠[⠂⠆⠒⠲⠢⠖⠶⠦⠔⠴])').test(t);
+    }
+    return false;
+  }
+
   // st：行をまたぐ状態（アドレス囲みの続きの行など）。同じオブジェクトを続けて渡す
   function brailleToKana(cellsLine, st) {
     const s = Array.from(cellsLine.replace(/ /g, '⠀'));
@@ -652,6 +856,16 @@
       const c = s[i], n1 = s[i + 1];
       if (c === '⠀') { out += ' '; continue; }
       if (c < '⠀' || c > '⣿') { out += c; continue; }
+      if (c === '⠰') { // 単位の2乗・3乗（10m²、100cm³）
+        const um = /^⠰([⠅⠉⠍⠙]?⠍)([⠣⠩])(?=$|[⠀⠰⠲⠶⠴⠤])/.exec(s.slice(i, i + 5).join(''));
+        if (um) { out += '⟮' + Array.from(um[1]).map(x => REV_LETTER[x]).join('') + (um[2] === '⠣' ? '²' : '³') + '⟯'; i += Array.from(um[0]).length - 1; continue; }
+      }
+      if ((c === '⠰' || c === '⠼') && atStart(i)) { // 数式（1語まるごと）
+        let j = i; while (j < s.length && s[j] !== '⠀') j++;
+        let w = s.slice(i, j), tail = '';
+        if (w.length > 1 && (w[w.length - 1] === '⠰' || w[w.length - 1] === '⠲')) { tail = w[w.length - 1] === '⠰' ? '、' : '。'; w = w.slice(0, -1); } // 式のあとの読点・句点
+        if (isMathWord(w)) { out += '⟮' + mathFromBraille(w) + '⟯' + tail; i = j - 1; continue; }
+      }
       if (c === '⠠' && n1 === '⠦') { // アドレス囲み符号
         const [t, j, closed] = infoFromBraille(s, i + 2);
         out += '⟬' + t + (closed ? '⟭' : '');
@@ -684,7 +898,7 @@
         if (n1 === '⠯') { out += '＆'; i++; continue; }
         if (n1 === '⠩') { out += '＃'; i++; continue; }
         if (n1 === '⠤') { out += '『'; i++; continue; }
-        if (n1 === '⠄') { out += '“'; i++; continue; }
+        if (n1 === '⠄') { out += '〈'; i++; continue; } // 第2カギ
         if (n1 === '⠆') { out += '※'; i++; continue; }
         if (n1 === '⠶') { const top = !kakko; out += top ? '｟' : '（'; innerTop.push(top); inner++; i++; continue; } // カッコの中のカッコ（外なら二重カッコ）
         let j = i + 1, word = '', capAll = false, capNext = false;
@@ -748,7 +962,7 @@
         out += c === '⠔' ? '⁑' : c === '⠢' ? '⁂' : '⁎'; i++; continue;
       }
       if (c === '⠠') {
-        if (n1 === '⠆') { out += '”'; i++; continue; }
+        if (n1 === '⠆') { out += '〉'; i++; continue; }
         if (REV_HANDAKU[n1]) { out += REV_HANDAKU[n1]; i++; continue; }
       }
       if (c === '⠢' && closer(i + 1)) { out += '？'; continue; }

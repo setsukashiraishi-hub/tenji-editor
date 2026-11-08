@@ -248,7 +248,7 @@
   // ---------- 描画 ----------
   // 発音記号の印 ⟦ ⟧ は、画面では [ ] で見せる（[ ] のまま直しても発音記号の点字になる）
   // 画面と墨字では、内部の印（英語の語句 ⟪ ⟫・アドレス ⟬ ⟭・続きの行 ↪）を見せない
-  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪]/g, '');
+  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪⟮⟯]/g, '');
   const cellLen = s => Array.from(s || '').length;
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
