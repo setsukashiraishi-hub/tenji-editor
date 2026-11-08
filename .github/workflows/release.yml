@@ -22,18 +22,28 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      # Electron のダウンロードが一時的に失敗（504 など）しても、少し待って3回までやり直す
+      # Electron のダウンロードが失敗（504 など）したら、少し待ってやり直す。
+      # 2回目からは Electron のミラー（npmmirror）から取る。以後の手順（アプリを作る）も同じミラーを使う
       - name: npm install（やり直しあり）
         shell: bash
         run: |
           for n in 1 2 3; do
+            if [ "$n" -ge 2 ]; then
+              export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+              echo "ELECTRON_MIRROR=$ELECTRON_MIRROR" >> "$GITHUB_ENV"
+              echo "Electron のミラーを使います"
+            fi
             npm install && exit 0
-            echo "npm install に失敗（$n 回目）。60秒待ってやり直します"; sleep 60
+            echo "npm install に失敗（$n 回目）。30秒待ってやり直します"; sleep 30
           done
           exit 1
       - run: npm test
       - name: アプリを作る
-        run: npx electron-builder --publish never
+        shell: bash
+        run: |
+          npx electron-builder --publish never && exit 0
+          echo "失敗したので Electron のミラーでやり直します"
+          ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npx electron-builder --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
       - uses: actions/upload-artifact@v4
