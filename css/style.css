@@ -526,3 +526,8 @@ fieldset:disabled { opacity: .5; }
 .pv-word.now { background: var(--accent-soft); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); } /* 枠の太さは変えない（強調が動いても画面がずれないように） */
 .pv-word.now .pv-k { text-decoration: underline; text-underline-offset: 3px; }
 .guide-echo { margin: 0; font: 15px/1.5 var(--font-ui); color: var(--muted); min-height: 1.5em; }
+
+/* 1つ前に戻る */
+.guide-back { align-self: flex-start; font-size: 15px; padding: 8px 16px; }
+.guide-back .key { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.no-keys .guide-back .key { display: none; }

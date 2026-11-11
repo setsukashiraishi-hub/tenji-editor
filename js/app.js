@@ -2093,6 +2093,20 @@
   quitBtn.type = 'button'; quitBtn.className = 'btn small-btn guide-quit'; quitBtn.textContent = '案内を終わってエディタへ';
   quitBtn.addEventListener('click', () => finishGuide('esc'));
   tapHint(quitBtn);
+  // 1つ前に戻る（ファイルか文章かを選ぶ画面より後の、すべての画面。パソコンは Alt＋← でも戻る）
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button'; backBtn.className = 'btn guide-back';
+  backBtn.innerHTML = '<span aria-hidden="true">← </span>1つ前に戻る<span class="key pc-only">（Alt＋←）</span>';
+  backBtn.addEventListener('click', () => guideBack());
+  tapHint(backBtn);
+  G.esc.before(backBtn);
+  function guideBack() {
+    const sc = guide.screen;
+    if (!sc || !sc.back) return;
+    if (G.input === document.activeElement) G.input.blur();
+    announce('1つ前に戻ります');
+    sc.back();
+  }
   G.esc.after(quitBtn);
 
   function guideShow(sc) {
@@ -2142,6 +2156,7 @@
       G.btns.appendChild(b);
     });
     quitBtn.hidden = !!sc.first;
+    backBtn.hidden = !sc.back;
     G.esc.hidden = !!sc.first;
     if (sc.input) {
       // キーの案内はパソコンのときだけ
@@ -2197,6 +2212,7 @@
     if (!guide.on || !guide.screen) return;
     const sc = guide.screen;
     if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finishGuide('esc'); return; }
+    if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); guideBack(); return; }
     if (ev.isComposing || ev.keyCode === 229) return; // 日本語入力の変換中
     if (sc.memo) {
       if (ev.key === 'Enter' && ev.shiftKey) {
@@ -2355,16 +2371,17 @@
     } catch (e) { /* 読めなかったときは下で知らせる */ }
     if (!state.rows.some(r => r.cells || r.figure)) {
       toast('ファイルを読み込めませんでした。', true);
-      guideShow({ msg: 'ファイルを読み込めませんでした。', sub: hasKeys ? '別のファイルを選ぶならエンター、文章を入力するならスペースです。' : '',
+      guideShow({ msg: 'ファイルを読み込めませんでした。', sub: hasKeys ? '別のファイルを選ぶならエンター、文章を入力するならスペースです。' : '', back: guideSource,
         choices: [{ label: '別のファイルを選ぶ', key: 'Enter', run: guidePickFile }, { label: '文章を入力する', key: 'Space', run: guideMemoNotice }] });
       return;
     }
+    guide.from = 'file';
     guideAfterTranslate();
   });
   function guideMemoNotice() {
     guideShow({
       msg: hasKeys ? 'シフトを押しながらエンターを3回押すと、自動点訳を行います。' : '文章を入力したら「点訳する」を押してください。',
-      auto: hasKeys ? 7000 : 4000, next: guideMemo,
+      auto: hasKeys ? 7000 : 4000, next: guideMemo, back: guideSource,
     });
   }
   function guideMemo() {
@@ -2373,7 +2390,7 @@
       step: '1. 文章の入力',
       msg: '文章を入力してください。',
       sub: hasKeys ? 'Shift＋Enterを3回で点訳、Escでエディタに移ります。' : '',
-      memo: true,
+      memo: true, back: guideSource,
       choices: [{ label: '点訳する', run: () => guideTranslate(G.memo.value) }],
     });
   }
@@ -2390,6 +2407,7 @@
     await waitDict();
     await new Promise(r => setTimeout(r, 50)); // 「点訳を行っています」を見せてから
     convertAll(true);
+    guide.from = 'text';
     guideAfterTranslate();
   }
   // 校正箇所を1つずつの項目にする（読みが複数・点訳できない語・点字にできない文字・外国語・記号）
@@ -2405,9 +2423,14 @@
     });
     return items;
   }
+  // 点訳した直後の画面に戻るとき（文章なら文章の画面、ファイルならファイルか文章かを選ぶ画面）
+  const backToSource = () => (guide.from === 'text' ? guideMemo() : guideSource());
   function guideAfterTranslate() {
     render();
     guide.items = guideItems();
+    guideCount();
+  }
+  function guideCount() {
     const n = guide.items.length;
     const braille = state.mode !== 'sumiji';
     const target = braille ? '墨字のファイル' : '点字ファイル';
@@ -2415,12 +2438,12 @@
       guidePreviewAsk('点訳が終わりました。校正箇所はありません。');
       return;
     }
-    guideShow({
+    guideShow({ back: backToSource,
       step: '3. 校正',
       msg: `校正箇所が${n}件あります。一つずつ確認しますか？`,
       sub: hasKeys ? `エンターを2回押すと、一つずつ確認します。スペースを2回押すと、手動校正をスキップして${target}を作成します。` : '',
       choices: [{ label: '一つずつ確認する', key: 'Enter', run: () => { guide.k = 0; guideItem(); } },
-        { label: `確認せずに${target}を作成する`, key: 'Space', run: guideMakeFile }],
+        { label: `確認せずに${target}を作成する`, key: 'Space', run: () => guideMakeFile(guideCount) }],
     });
   }
   const rowSrc = r => String(r.src || '').replace(/\t/g, ' ');
@@ -2435,8 +2458,9 @@
     const step = `校正 ${guide.k + 1} / ${items.length}`;
     const line = `${it.i + 1}行目：${rowSrc(it.r).slice(0, 80)}`;
     const done = v => { guideApply(it, v); guide.k++; guideItem(); };
+    const back = () => { if (guide.k > 0) { guide.k--; guideItem(); } else guideCount(); };
     if (it.kind === 'reading') {
-      guideShow({ step, msg: `「${it.ck.surface.length > 1 ? it.ck.surface.replace(/^の/, '') : it.ck.surface}」には読み方が複数あります。読み方を入力してください。`,
+      guideShow({ step, back, msg: `「${it.ck.surface.length > 1 ? it.ck.surface.replace(/^の/, '') : it.ck.surface}」には読み方が複数あります。読み方を入力してください。`,
         sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${line}\n候補：${it.ck.options.map(displayKana).join('、')}　／　今の読み：${displayKana(it.ck.kana)}`,
         input: { value: displayKana(it.ck.kana), options: it.ck.options.map(displayKana), done } });
     } else if (it.kind === 'fail') {
@@ -2444,14 +2468,14 @@
       const len = Array.from(it.surface).length;
       const where = pos < 0 ? `${it.i + 1}行目の文字は点訳できませんでした。`
         : len > 1 ? `${it.i + 1}行${pos + 1}番目から${pos + len}番目の文字は点訳できませんでした。` : `${it.i + 1}行${pos + 1}番目の文字は点訳できませんでした。`;
-      guideShow({ step, msg: `「${it.surface}」は点訳できませんでした。${where}確認して適切な文字を入力してください。`,
+      guideShow({ step, back, msg: `「${it.surface}」は点訳できませんでした。${where}確認して適切な文字を入力してください。`,
         sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${line}\n分からないときは、空のまま決定すると、そのままにします。`,
         input: { label: '適切な文字（かな・漢字。6点入力もできます）', value: '', done } });
     } else if (it.kind === 'foreign') {
-      guideShow({ step, msg: `「${it.f.text}」は外国語（${it.f.kind}）です。点字の書き方は言語ごとに違います。読み方を入力してください。（エンター2回で決定）`,
+      guideShow({ step, back, msg: `「${it.f.text}」は外国語（${it.f.kind}）です。点字の書き方は言語ごとに違います。読み方を入力してください。（エンター2回で決定）`,
         sub: `${line}\nそのままでよいときは、空のままエンターを2回押します。`, input: { value: '', done } });
     } else {
-      guideShow({ step, msg: `「${it.ck.surface}」の記号の点字を確認してください。`, sub: `${line}\n${it.ck.note}`,
+      guideShow({ step, back, msg: `「${it.ck.surface}」の記号の点字を確認してください。`, sub: `${line}\n${it.ck.note}`,
         choices: [{ label: 'このままにする', key: 'Enter', run: () => { it.ck.done = true; guideRowChecked(it.r); guide.k++; guideItem(); } }] });
     }
   }
@@ -2468,12 +2492,12 @@
       it.ck.done = true;
     } else if (it.kind === 'fail') {
       if (kana) {
-        const old = it.isChar ? it.surface : (readByChar(it.surface) || it.surface);
-        replaceKana(old, kana) || replaceKana(it.surface, kana);
+        const old = it.applied || (it.isChar ? it.surface : (readByChar(it.surface) || it.surface));
+        if (replaceKana(old, kana) || replaceKana(it.surface, kana)) it.applied = kana; // 戻ってやり直すときは、前に入れたものを差し替える
       }
       r.unresolved = (r.unresolved || []).filter(w => w !== it.surface);
     } else if (it.kind === 'foreign') {
-      if (kana) replaceKana(it.f.text, kana);
+      if (kana && (replaceKana(it.applied || it.f.text, kana))) it.applied = kana;
       r.foreign = (r.foreign || []).filter(f => f !== it.f);
     }
     const b = E.kanaToBraille(r.kana);
@@ -2524,10 +2548,13 @@
 
   // ---------- プレビュー：点字と文を出して、分かち書きごとに自動で送りながら読む ----------
   function guidePreviewAsk(head) {
+    if (head) guide.pvHead = head; else head = guide.pvHead || '';
     const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
-    guideShow({ step: '4. プレビュー', msg: `${head}プレビューを確認しますか？`,
+    // 戻る：校正したなら最後の項目、校正がなければ点訳した直後の画面
+    const back = () => { if (guide.items.length) { guide.k = guide.items.length - 1; guideItem(); } else backToSource(); };
+    guideShow({ step: '4. プレビュー', back, msg: `${head}プレビューを確認しますか？`,
       sub: hasKeys ? `確認するならエンター、確認せずに${target}を作成するならスペースです。\nプレビューでは、先頭から分かち書きごとに自動で読み進めます。スペースを2回押すと、今読んでいるところで止めて修正できます。` : 'プレビューでは、語を押すとそこを修正できます。',
-      choices: [{ label: 'プレビューを確認する', key: 'Enter', run: () => guidePreview(0) }, { label: `確認せずに${target}を作成する`, key: 'Space', run: guideMakeFile }] });
+      choices: [{ label: 'プレビューを確認する', key: 'Enter', run: () => guidePreview(0) }, { label: `確認せずに${target}を作成する`, key: 'Space', run: () => guideMakeFile(() => guidePreviewAsk()) }] });
   }
   // 語の一覧：[{ r: 行, n: 行の中の何語目, kana }]
   function guideWords() {
@@ -2564,11 +2591,11 @@
       line.appendChild(b);
     });
     const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
-    guideShow({ step: '4. プレビュー', preview: true,
+    guideShow({ step: '4. プレビュー', preview: true, back: () => guidePreviewAsk(),
       msg: from ? '続きから読みます。' : 'プレビューを読みます。',
       sub: hasKeys ? 'スペースを2回押すと、今読んでいるところで止めて修正できます。Escで案内を終わります。' : '語を押すと、そこを修正できます。',
       choices: [{ label: '今のところで止めて修正する', run: () => guidePreviewStop(guide.pvPos || 0) },
-        { label: `プレビューを終えて${target}を作成する`, run: guideMakeFile }] });
+        { label: `プレビューを終えて${target}を作成する`, run: () => guideMakeFile(() => guidePreviewAsk()) }] });
     guide.pvArm = null;
     guide.pvPos = from;
     // 決定した操作の中ですぐ声を出す（iPhone などは、操作の中で一度声を出すと、そのあとも読める）。読み終えたら語へ
@@ -2582,9 +2609,9 @@
       const ws = guide.pvWords;
       if (i >= ws.length) {
         const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
-        guideShow({ step: '4. プレビュー', msg: 'プレビューを最後まで読みました。',
+        guideShow({ step: '4. プレビュー', msg: 'プレビューを最後まで読みました。', back: () => guidePreviewAsk(),
           sub: hasKeys ? `${target}を作成するならエンター、もう一度最初から読むならスペースです。` : '',
-          choices: [{ label: `${target}を作成する`, key: 'Enter', run: guideMakeFile }, { label: 'もう一度最初から読む', key: 'Space', run: () => guidePreview(0) }] });
+          choices: [{ label: `${target}を作成する`, key: 'Enter', run: () => guideMakeFile(() => guidePreviewAsk()) }, { label: 'もう一度最初から読む', key: 'Space', run: () => guidePreview(0) }] });
         return;
       }
       guide.pvPos = i;
@@ -2610,7 +2637,7 @@
     // 語の後ろの句読点（。、？！）は直す欄に入れず、そのまま残す
     const pm = /[。、？！?!…]+$/.exec(w.kana);
     const tail = pm ? pm[0] : '', body = tail ? w.kana.slice(0, -tail.length) : w.kana;
-    guideShow({ step: '4. プレビュー（修正）', msg: `「${w.kana}」（${lineNo}行目）で止めました。修正してください。`,
+    guideShow({ step: '4. プレビュー（修正）', back: () => guidePreview(i), msg: `「${w.kana}」（${lineNo}行目）で止めました。修正してください。`,
       sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${lineNo}行目：${displayKana(w.r.kana)}\nそのままでよいときは、変えずに決定すると続きを読みます。`,
       input: { label: '読み（かな。6点入力もできます）', value: body, done: v => {
         let k = guideAnswerKana(v);
@@ -2631,7 +2658,8 @@
   }
 
   // 出力するファイル形式を選ぶ → 点図があれば出し方を選ぶ → 保存場所を選んで保存
-  function guideMakeFile() {
+  function guideMakeFile(back) {
+    if (typeof back === 'function') guide.formatBack = back;
     const braille = state.mode !== 'sumiji';
     const list = [];
     if (braille) {
@@ -2639,7 +2667,7 @@
       list.push({ label: '墨字のWord（.docx）', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-docx' }) });
     }
     for (const fmt of F.EXPORTS) list.push({ label: `${fmt.label}（.${fmt.ext}）`, note: fmt.note, run: () => guideFigures(fmt) });
-    guideShow({ step: '4. ファイルの作成', msg: '出力するファイル形式を選択してください。',
+    guideShow({ step: '4. ファイルの作成', msg: '出力するファイル形式を選択してください。', back: guide.formatBack || (() => guidePreviewAsk()),
       sub: hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。' : '形式を押すと決定します。',
       list, listLabel: '出力するファイル形式' });
   }
@@ -2647,19 +2675,21 @@
   function guideFigures(fmt) {
     const figs = figureRows();
     if (fmt.group !== '点字' || !figs.length) { guideBuild({ kind: 'body', fmt }); return; }
+    const back = () => guideMakeFile();
     const fk = FG.format.value;
     const figName = { edl: 'エーデル（EDL）', svg: 'SVG', 'pdf-dots': '点図のPDF', 'pdf-solid': '立体コピー用のPDF' }[fk] || fk;
-    guideShow({ step: '4. ファイルの作成', msg: `点図が${figs.length}点あります。どの形で出力しますか？`,
+    guideShow({ step: '4. ファイルの作成', back, msg: `点図が${figs.length}点あります。どの形で出力しますか？`,
       sub: (hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。\n' : '') + `点図の形式（${figName}）は、エディタの点図の画面で変えられます。`,
       listLabel: '出力のしかた',
       list: [
-        { label: 'ZIPでまとめて出力', note: `本文の点字（${fmt.label}）と点図（${figName}）を1つのZIPに入れる`, run: () => guideBuild({ kind: 'zip', fmt }) },
-        { label: `文字（本文の点字）だけ出力`, note: `${fmt.label} のファイル1つ`, run: () => guideBuild({ kind: 'body', fmt }) },
-        { label: `点図（${figName}）だけ出力`, note: figs.length > 1 && fk !== 'pdf-dots' && fk !== 'pdf-solid' ? `${figs.length}点の点図を1つのZIPに入れる` : '点図のファイル', run: () => guideBuild({ kind: 'figs', fmt }) },
+        { label: 'ZIPでまとめて出力', note: `本文の点字（${fmt.label}）と点図（${figName}）を1つのZIPに入れる`, run: () => guideBuild({ kind: 'zip', fmt, viaFig: true }) },
+        { label: `文字（本文の点字）だけ出力`, note: `${fmt.label} のファイル1つ`, run: () => guideBuild({ kind: 'body', fmt, viaFig: true }) },
+        { label: `点図（${figName}）だけ出力`, note: figs.length > 1 && fk !== 'pdf-dots' && fk !== 'pdf-solid' ? `${figs.length}点の点図を1つのZIPに入れる` : '点図のファイル', run: () => guideBuild({ kind: 'figs', fmt, viaFig: true }) },
       ] });
   }
   async function guideBuild(o) {
     const userGesture = !navigator.userActivation || navigator.userActivation.isActive;
+    const back = () => (o.viaFig ? guideFigures(o.fmt) : guideMakeFile());
     let name, data;
     try {
       const base = state.fileBase || (state.mode === 'sumiji' ? '点訳' : '墨字');
@@ -2683,7 +2713,7 @@
         }
       }
     } catch (e) {
-      guideShow({ msg: 'ファイルを作成できませんでした。', sub: e.message || '', choices: [{ label: 'エディタに移る', key: 'Enter', run: () => finishGuide('done') }] });
+      guideShow({ msg: 'ファイルを作成できませんでした。', sub: e.message || '', back, choices: [{ label: 'エディタに移る', key: 'Enter', run: () => finishGuide('done') }] });
       return;
     }
     guide.pending = { name, data };
@@ -2692,15 +2722,15 @@
     const pick = async () => {
       const ok = await saveFile(name, data);
       if (!ok) {
-        guideShow({ step: '4. ファイルの作成', msg: '保存をやめました。', sub: hasKeys ? 'もう一度保存場所を選ぶならエンター、形式を選び直すならスペースです。' : '',
-          choices: [{ label: 'もう一度保存場所を選ぶ', key: 'Enter', run: pick }, { label: '形式を選び直す', key: 'Space', run: guideMakeFile }] });
+        guideShow({ step: '4. ファイルの作成', msg: '保存をやめました。', back, sub: hasKeys ? 'もう一度保存場所を選ぶならエンター、形式を選び直すならスペースです。' : '',
+          choices: [{ label: 'もう一度保存場所を選ぶ', key: 'Enter', run: pick }, { label: '形式を選び直す', key: 'Space', run: () => guideMakeFile() }] });
         return;
       }
       toast(`${name} を保存しました`);
       guideShow({ step: '4. ファイルの作成', msg: canPick ? `「${name}」を保存しました。` : `「${name}」をダウンロードに保存しました。`,
         sub: 'エディタに切り替えます。', auto: 6000, next: () => finishGuide('done') });
     };
-    guideShow({ step: '4. ファイルの作成', msg: canPick ? 'ファイルの保存場所を選んでください。' : 'ファイルを保存します。',
+    guideShow({ step: '4. ファイルの作成', back, msg: canPick ? 'ファイルの保存場所を選んでください。' : 'ファイルを保存します。',
       sub: canPick ? `ファイル名：${name}` : `このブラウザでは保存場所を選べないため、ダウンロードのフォルダに「${name}」を保存します。` + (hasKeys ? 'エンターを2回押すと保存します。' : ''),
       choices: [{ label: canPick ? '保存場所を選ぶ' : '保存する', key: 'Enter', run: pick }] });
     if (canPick && userGesture && navigator.userActivation && navigator.userActivation.isActive) pick(); // 決定のキー操作のうちに、すぐ保存場所の画面を開く
