@@ -64,6 +64,8 @@ const { getTokenizer, engine: E } = require('./harness');
   eq(kana('当たつては'), 'アタッテワ', '法令の大きい「つ」');
   eq(kana('希望する方は'), 'キボー スル カタワ', '人の方');
   eq(kana('市町村長又は'), 'シチョーソンチョー マタワ', '長');
+  eq(kana('二行目です'), '2ギョーメデス', '行数の行はギョー');
+  eq(kana('銀行に行く'), 'ギンコーニ イク', '銀行はそのまま');
   eq(kana('第一項 の規定'), 'ダイ1コーノ キテイ', '組版のスペース');
   console.log(`corpus: all passed (${n})`);
 })().catch(e => { console.error(e); process.exit(1); });

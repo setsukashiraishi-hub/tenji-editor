@@ -45,6 +45,36 @@
     return n.join(' ') + 'の点';
   }
   const cellsDots = cells => Array.from(cells || '').map(cellDots).join('、');
+  // 6点入力：F D S J K L を同時に押して離すと1マス。onCell(bits) を呼ぶ。enabled() が偽のときは何もしない
+  const SIX_KEYS = { KeyF: 1, KeyD: 2, KeyS: 4, KeyJ: 8, KeyK: 16, KeyL: 32 };
+  function attachSixKey(el, onCell, enabled) {
+    const held = new Set();
+    let chord = 0;
+    el.addEventListener('keydown', ev => {
+      if ((enabled && !enabled()) || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
+      if (SIX_KEYS[ev.code]) {
+        ev.preventDefault();
+        if (!ev.repeat) { held.add(ev.code); chord |= SIX_KEYS[ev.code]; }
+        return;
+      }
+      if (ev.code === 'Space') { ev.preventDefault(); onCell(0); return; }
+      if (ev.key.length === 1) ev.preventDefault(); // ほかの文字キーは入れない（Enter・矢印・BackSpace は使える）
+    });
+    el.addEventListener('keyup', ev => {
+      if ((enabled && !enabled()) || !SIX_KEYS[ev.code]) return;
+      ev.preventDefault();
+      held.delete(ev.code);
+      if (!held.size && chord) { const b = chord; chord = 0; onCell(b); }
+    });
+    el.addEventListener('blur', () => { held.clear(); chord = 0; });
+  }
+  // 入れた1マスを読み上げる（かなと点の番号）
+  const speakCell = bits => {
+    const c = E.bitsCell(bits);
+    if (!bits) return 'マスあけ';
+    const kana = E.brailleToKana(c).replace(/〓/g, '').trim();
+    return (kana ? kana + '、' : '') + cellDots(c);
+  };
   // 行を読み上げ用の文にする
   function speakRow(row, n) {
     const type = row.type || 'body';
@@ -363,7 +393,7 @@
       ok.addEventListener('click', ev => { ev.stopPropagation(); row.reviewed = true; (row.checks || []).forEach(c => { c.done = true; }); onChange(); announce(`${row._n || ''}行目を確認済みにしました`); });
       meta.appendChild(ok);
     }
-    if (row.edited) meta.appendChild(chipEl('かなを手直し済み', 'edited'));
+    if (row.edited) meta.appendChild(chipEl(row.cellsEdited ? '点字を手直し済み' : 'かなを手直し済み', 'edited'));
   }
 
   // かなの1単位と点字のマスを縦にそろえて描く
@@ -518,10 +548,10 @@
     // 行はすべて矢印キーで移れるようにする（Tab で入るのは1行だけ）
     align.tabIndex = -1;
     align.setAttribute('role', editable ? 'button' : 'img');
-    if (editable) align.title = 'クリックでかなを直す';
+    if (editable) align.title = 'クリックでかな・点字を直す';
     else align.classList.add('static');
     const setLabel = () => {
-      align.setAttribute('aria-label', speakRow(row, idx + 1) + (editable ? '。Enterでかなを直せます' : ''));
+      align.setAttribute('aria-label', speakRow(row, idx + 1) + (editable ? (row.type !== 'table' && state.mode === 'sumiji' ? '。Enterでかな、Shift+Enterで点字を直せます' : '。Enterでかなを直せます') : ''));
     };
     paintAlign(align, row);
     // 点字のマスや、かなを1文字ずつ読ませない（行の読み上げ文にまとめる）
@@ -544,6 +574,45 @@
     insBtn.title = '点訳者挿入符（⠠⠶ … ⠶⠄）を入れる。選んだ文字があれば囲む';
     insBtn.setAttribute('aria-label', '点訳者注の記号を入れる');
     editWrap.append(edit, insBtn);
+    // 点字を直接直す欄（6点入力）。表の行は列をそろえるため、かなで直す
+    const brWrap = document.createElement('div');
+    brWrap.className = 'edit-wrap braille-edit-wrap';
+    brWrap.hidden = true;
+    const brEdit = document.createElement('input');
+    brEdit.type = 'text';
+    brEdit.className = 'kana-edit braille-edit';
+    brEdit.id = 'cells-' + idx;
+    brEdit.setAttribute('inputmode', 'none');
+    brEdit.setAttribute('aria-label', `${idx + 1}行目の点字。F D S J K L を同時に押して1マス、スペースでマスあけ、BackSpaceで消す`);
+    brEdit.spellcheck = false;
+    brEdit.autocomplete = 'off';
+    const pad = document.createElement('div');
+    pad.className = 'dot-pad';
+    pad.setAttribute('role', 'group');
+    pad.setAttribute('aria-label', '点を選んで入れる');
+    let padBits = 0;
+    const padBtns = [1, 4, 2, 5, 3, 6].map(n => { // 点字のマスと同じ並び（左 1 2 3、右 4 5 6）
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'dot-btn'; b.textContent = n; b.dataset.n = n;
+      b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', n + 'の点');
+      b.addEventListener('mousedown', ev => ev.preventDefault());
+      b.addEventListener('click', () => { padBits ^= 1 << (n - 1); b.setAttribute('aria-pressed', String(!!(padBits & (1 << (n - 1))))); });
+      return b;
+    });
+    const padBtn = (label, aria, fn) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'btn small-btn'; b.textContent = label; b.setAttribute('aria-label', aria);
+      b.addEventListener('mousedown', ev => ev.preventDefault());
+      b.addEventListener('click', fn);
+      return b;
+    };
+    const dots = document.createElement('div'); dots.className = 'dot-grid'; dots.append(...padBtns);
+    const clearPad = () => { padBits = 0; padBtns.forEach(b => b.setAttribute('aria-pressed', 'false')); };
+    pad.append(dots,
+      padBtn('入れる', '選んだ点の1マスを入れる', () => { if (padBits) { putCell(padBits); clearPad(); } brEdit.focus(); }),
+      padBtn('マスあけ', 'マスあけを入れる', () => { putCell(0); brEdit.focus(); }),
+      padBtn('1マス消す', '前の1マスを消す', () => { delCell(); brEdit.focus(); }));
+    brWrap.append(brEdit, pad);
 
     const meta = document.createElement('div');
     meta.className = 'meta';
@@ -559,12 +628,65 @@
     };
     fillMeta(meta, row, refresh);
 
-    const openEdit = () => {
+    const brEditable = editable && row.type !== 'table' && state.mode === 'sumiji';
+    const openEdit = (toBraille) => {
       if (!editable) return;
       edit.value = showSpaces(displayKana(row.kana || ''));
       editWrap.hidden = false;
-      edit.focus();
+      if (brEditable) { brEdit.value = row.cells || ''; brWrap.hidden = false; }
+      (toBraille === true && brEditable ? brEdit : edit).focus();
     };
+    // 点字を直したら、かなは点字から読み直す（かなの欄も合わせる）
+    const applyCells = (cells, caret) => {
+      row.cells = cells;
+      const k = E.brailleToKana(cells);
+      row.kana = typeof k === 'string' ? k : k.kana;
+      if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
+      row.unknown = []; row.bad = []; row.unresolved = []; row.edited = true; row.reviewed = true; row.cellsEdited = true;
+      brEdit.value = cells;
+      if (caret !== undefined) brEdit.setSelectionRange(caret, caret);
+      edit.value = showSpaces(displayKana(row.kana || ''));
+      refresh();
+    };
+    const putCell = bits => {
+      const v = Array.from(brEdit.value);
+      const pre = Array.from(brEdit.value.slice(0, brEdit.selectionStart || 0)).length;
+      const post = Array.from(brEdit.value.slice(0, brEdit.selectionEnd || 0)).length;
+      const c = E.bitsCell(bits);
+      const next = v.slice(0, pre).join('') + c + v.slice(post).join('');
+      applyCells(next, (v.slice(0, pre).join('') + c).length);
+      announce(speakCell(bits));
+    };
+    const delCell = () => {
+      const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
+      if (a === z && a === 0) return;
+      const from = a === z ? a - 1 : a;
+      const gone = brEdit.value.slice(from, z);
+      applyCells(brEdit.value.slice(0, from) + brEdit.value.slice(z), from);
+      announce(gone.length === 1 ? cellDots(gone) + 'を消しました' : `${gone.length}マス消しました`);
+    };
+    attachSixKey(brEdit, putCell);
+    brEdit.addEventListener('keydown', ev => {
+      if (ev.key === 'Backspace') { ev.preventDefault(); delCell(); }
+      else if (ev.key === 'Delete') {
+        ev.preventDefault();
+        const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
+        if (a === z && a >= brEdit.value.length) return;
+        applyCells(brEdit.value.slice(0, a) + brEdit.value.slice(a === z ? a + 1 : z), a);
+      } else if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); }
+      else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { // 動いた先のマスを読む
+        setTimeout(() => { const c = brEdit.value[brEdit.selectionStart] || ''; if (c) announce(cellDots(c)); }, 0);
+      }
+    });
+    // 点字（Unicode）の貼り付けはそのまま入れる
+    brEdit.addEventListener('paste', ev => {
+      const t = (ev.clipboardData && ev.clipboardData.getData('text')) || '';
+      ev.preventDefault();
+      const cells = Array.from(t.replace(/ /g, '⠀')).filter(ch => ch >= '⠀' && ch <= '⣿').join('');
+      if (!cells) { toast('点字（⠿ のような文字）だけ貼り付けられます。', true); return; }
+      const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
+      applyCells(brEdit.value.slice(0, a) + cells + brEdit.value.slice(z), a + cells.length);
+    });
     const applyEdit = () => {
       const pos = edit.selectionStart;
       const v = showSpaces(edit.value);
@@ -581,9 +703,15 @@
       }, 700);
     };
     align.addEventListener('click', openEdit);
-    align.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEdit(); } });
-    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; align.focus(); } });
-    edit.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== insBtn && document.activeElement !== edit) editWrap.hidden = true; }, 0); });
+    // Enter：かなを直す、Shift+Enter：点字を直す（6点入力）
+    align.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEdit(ev.shiftKey); } });
+    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); } });
+    // 欄の外にフォーカスが出たら閉じる（かなの欄・点字の欄・ボタンのあいだは閉じない）
+    const closeIfOutside = () => setTimeout(() => {
+      if (!body.contains(document.activeElement) || document.activeElement === align) { editWrap.hidden = true; brWrap.hidden = true; }
+    }, 0);
+    edit.addEventListener('blur', closeIfOutside);
+    brEdit.addEventListener('blur', closeIfOutside);
     edit.addEventListener('input', applyEdit);
     insBtn.addEventListener('mousedown', ev => ev.preventDefault()); // 入力欄のフォーカスを保つ
     insBtn.addEventListener('click', () => {
@@ -595,7 +723,7 @@
       applyEdit();
     });
 
-    body.append(align, editWrap, meta);
+    body.append(align, editWrap, brWrap, meta);
     li.append(no, body);
     li.dataset.idx = String(state.rows.indexOf(row));
     return li;
@@ -941,7 +1069,7 @@
     els.outTitle.textContent = braille ? '点字' : '変換データ';
     els.outLegend.textContent = braille
       ? '上段：読み（□＝マスあけ）／下段：6点　行を押すと読みを直せます'
-      : '上段：かな（□＝マスあけ）／下段：6点　行を押すとかなを直せます';
+      : '上段：かな（□＝マスあけ）／下段：6点　行を押すと、かなと点字（6点入力）を直せます';
   }
 
   // ---------- ファイル ----------
@@ -1858,9 +1986,6 @@
   });
 
   // ---------- 6点入力（F D S J K L ＝ 1 2 3 4 5 6 の点） ----------
-  const DOT_KEYS = { KeyF: 1, KeyD: 2, KeyS: 4, KeyJ: 8, KeyK: 16, KeyL: 32 };
-  const held = new Set();
-  let chord = 0;
   function insertAtCaret(ta, text) {
     const a = ta.selectionStart, z = ta.selectionEnd;
     ta.value = ta.value.slice(0, a) + text + ta.value.slice(z);
@@ -1868,34 +1993,12 @@
     ta.dispatchEvent(new Event('input'));
   }
   const cellFor = bits => state.mode === 'braille-nabcc' ? E.cellsToAscii(E.bitsCell(bits), true) : E.bitsCell(bits);
-  els.raw.addEventListener('keydown', ev => {
-    if (!els.sixdot.checked || ev.ctrlKey || ev.metaKey || ev.altKey || ev.isComposing) return;
-    if (DOT_KEYS[ev.code]) {
-      ev.preventDefault();
-      if (!ev.repeat) { held.add(ev.code); chord |= DOT_KEYS[ev.code]; }
-      return;
-    }
-    if (ev.code === 'Space') { ev.preventDefault(); insertAtCaret(els.raw, cellFor(0)); announce('マスあけ'); return; }
-    // そのほかの文字キーは 6点入力中は無視（Enter・矢印・BackSpace は使える）
-    if (ev.key.length === 1) ev.preventDefault();
-  });
-  els.raw.addEventListener('keyup', ev => {
-    if (!els.sixdot.checked || !DOT_KEYS[ev.code]) return;
-    ev.preventDefault();
-    held.delete(ev.code);
-    if (!held.size && chord) {
-      insertAtCaret(els.raw, cellFor(chord));
-      const kana = E.brailleToKana(E.bitsCell(chord)).replace(/〓/g, '');
-      announce((kana && kana !== ' ' ? kana + '、' : '') + cellDots(E.bitsCell(chord)));
-      chord = 0;
-    }
-  });
+  attachSixKey(els.raw, bits => { insertAtCaret(els.raw, cellFor(bits)); announce(speakCell(bits)); }, () => els.sixdot.checked);
   els.sixdot.addEventListener('change', () => {
     if (els.sixdot.checked) {
       els.raw.hidden = false; els.btnRaw.setAttribute('aria-expanded', 'true'); els.raw.focus();
       toast('6点入力：F D S J K L を同時に押して離すと1マス入ります（1の点＝F … 6の点＝L、スペースでマスあけ）');
     }
-    held.clear(); chord = 0;
   });
 
   // ---------- イベント ----------

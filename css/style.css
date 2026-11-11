@@ -296,6 +296,13 @@ body.braille .c { height: 32px; font-size: 22px; }
 .fig-line .c.blank { background: transparent; }
 .edit-wrap { display: flex; gap: 6px; align-items: center; }
 .edit-wrap .kana-edit { flex: 1; min-width: 0; }
+/* 点字を直す欄（6点入力）と、点を選んで入れるボタン */
+.braille-edit-wrap { flex-wrap: wrap; margin-top: 4px; }
+.braille-edit { font: 22px/1.4 var(--font-cells); letter-spacing: .08em; color: var(--cells); }
+.dot-pad { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.dot-grid { display: grid; grid-template-columns: repeat(2, 30px); grid-auto-rows: 26px; gap: 3px; }
+.dot-btn { border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--muted); font: 11px var(--font-ui); cursor: pointer; padding: 0; }
+.dot-btn[aria-pressed="true"] { background: var(--cells); color: var(--surface); border-color: var(--cells); }
 .row.genpon .pb { letter-spacing: .1em; color: var(--accent); border-top-style: dotted; }
 .nav-check { display: inline-flex; gap: 6px; }
 /* 区切り線・枠の行は折り返さずに1行で見せる */

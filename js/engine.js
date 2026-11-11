@@ -1243,6 +1243,8 @@
     }
     if (COUNTER[surf] && prev && (isLatinWord(prev.surface_form) || prev.isNumber)) return { kana: COUNTER[surf] };
     // 数字のあとの「月」はガツ
+    // 数のあとの「行」は行数（2行目 → 2ギョーメ、1行あける → 1ギョー アケル）
+    if (surf === '行' && ((prev && prev.isNumber) || (next && next.surface_form === '目'))) return { kana: 'ギョー' };
     // 「3月を経過」「6月以内」のような期間はゲツ
     if (prev && prev.isNumber && surf === '月') return { kana: next && /^(を|以内|以上|未満|間|後|ごと|毎)$/.test(next.surface_form) ? 'ゲツ' : 'ガツ' };
     // 数字のあとの助数詞は、最後の数字で読みが変わる（30分 → 30プン、3本 → 3ボン）
