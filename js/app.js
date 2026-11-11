@@ -2220,7 +2220,7 @@
   document.addEventListener('keydown', ev => {
     if (!guide.on || !guide.screen) return;
     const sc = guide.screen;
-    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finishGuide('esc'); return; }
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); if (!guide.finishing) finishGuide('esc'); return; }
     if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); guideBack(); return; }
     // 案内だけの画面：エンターかスペースを続けて押すと、待たずに次へ
     if (sc.auto && (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space')) {
@@ -2769,12 +2769,31 @@
       choices: [{ label: canPick ? '保存場所を選ぶ' : '保存する', key: 'Enter', run: pick }] });
     if (canPick && userGesture && navigator.userActivation && navigator.userActivation.isActive) pick(); // 決定のキー操作のうちに、すぐ保存場所の画面を開く
   }
-  function finishGuide(how) {
-    if (!guide.on) return;
+  // 案内を終えてエディタへ。「利用しない」や途中でやめたときも、辞書を読み込んでから移る
+  async function finishGuide(how, scr) {
+    if (!guide.on || guide.finishing) return;
     clearTimeout(guide.timer);
     clearTimeout(guide.pvTimer);
     ttsStop();
-    const sc = guide.screen || {};
+    const sc = scr || guide.screen || {};
+    if (!state.tokenizer && window.kuromoji && !guide.leaveNoDict) {
+      guide.finishing = true;
+      // 書きかけの文章は、待っているあいだも消えないように取っておく
+      guideShow({ msg: '辞書を読み込んでいます。読み込みが終わったら、エディタに移ります。', sub: '漢字を正しく読むための辞書です。初めて開いたときや、通信が遅いときは時間がかかります。', busy: true });
+      const ok = await (state.dictLoading || loadDict());
+      guide.finishing = false;
+      if (!ok && !state.tokenizer) {
+        guideShow({ msg: '辞書を読み込めませんでした。',
+          sub: (hasKeys ? 'もう一度読み込むならエンター、辞書なしでエディタに移るならスペースです。\n' : '') + '辞書なしでは漢字が読めません。あとで読み込めると、自動で変換し直します。',
+          choices: [{ label: 'もう一度読み込む', key: 'Enter', run: () => finishGuide(how, sc) },
+            { label: '辞書なしでエディタに移る', key: 'Space', run: () => { guide.leaveNoDict = true; finishGuide(how, sc); } }] });
+        return;
+      }
+    }
+    finishGuideNow(how, sc);
+  }
+  function finishGuideNow(how, sc) {
+    if (!guide.on) return;
     // メモ帳の画面から抜けるときは、途中まで書いた文章をエディタに入れる
     if (sc.memo && G.memo.value.trim()) {
       closeDocs(true);
@@ -2783,6 +2802,8 @@
       G.memo.value = '';
       convertAll(true);
     }
+    // 辞書なしで点訳していたら、辞書が使えるようになった今、変換し直す
+    if (state.tokenizer && guide.noDict && state.mode === 'sumiji') { state.rows = state.rows.filter(r => r.edited); convertAll(true); }
     guide.on = false;
     guide.screen = null;
     G.el.hidden = true;
