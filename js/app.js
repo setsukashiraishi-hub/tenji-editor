@@ -2129,7 +2129,6 @@
     G.msg.textContent = sc.msg;
     G.msg.classList.toggle('guide-busy', !!sc.busy);
     G.sub.textContent = sc.sub || '';
-    G.msg.setAttribute('aria-describedby', sc.sub ? 'guide-sub' : '');
     G.memo.hidden = !sc.memo;
     G.field.hidden = !sc.input;
     G.btns.textContent = '';
@@ -2198,10 +2197,10 @@
     } else if (sc.memo) {
       G.memo.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
       G.memo.focus();
-    } else if (document.activeElement !== G.box) {
-      G.box.focus(); // 案内の枠に入ると、質問文と説明が読まれる
     } else {
-      // 同じ枠のまま画面だけ変わったときは、読み上げソフトに文を渡す
+      // 案内の枠の名前は「案内」のまま変えない（名前が変わると、読み上げソフトがその名前と知らせの両方を読んで2回になる）。
+      // 画面の文は、知らせとして1回だけ渡す
+      if (document.activeElement !== G.box) G.box.focus();
       announce([sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1'));
     }
     if (sc.auto) guide.timer = setTimeout(sc.next, sc.auto);
@@ -2378,11 +2377,15 @@
     guide.picking = false;
     const fs = G.file.files ? [...G.file.files] : [];
     if (!fs.length) { guideSource(); return; }
+    guideTranslateFile(fs);
+  });
+  async function guideTranslateFile(fs) {
+    // 先に辞書を待つ（墨字のファイルは辞書がないと漢字が読めない）
+    if (!guide.noDict && !(await guideEnsureDict(() => guideTranslateFile(fs), guideSource))) return;
     guideShow({ step: '2. 点訳', msg: 'ファイルを読み込んで、点訳を行っています。', busy: true });
     try {
       if (fs.length === 1 && !/\.zip$/i.test(fs[0].name)) await openFile(fs[0]);
       else await openFiles(fs);
-      await waitDict();
       if (state.mode === 'sumiji') convertAll(true);
     } catch (e) { /* 読めなかったときは下で知らせる */ }
     if (!state.rows.some(r => r.cells || r.figure)) {
@@ -2393,7 +2396,7 @@
     }
     guide.from = 'file';
     guideAfterTranslate();
-  });
+  }
   function guideMemoNotice() {
     guideShow({
       msg: hasKeys ? 'シフトを押しながらエンターを3回押すと、自動点訳を行います。' : '文章を入力したら「点訳する」を押してください。',
@@ -2410,8 +2413,23 @@
       choices: [{ label: '点訳する', run: () => guideTranslate(G.memo.value) }],
     });
   }
+  // 点訳の前に辞書を待つ。読み込めなかったら、読み込み直すか、辞書なしで進むかを選ぶ
+  async function guideEnsureDict(retry, back) {
+    if (state.tokenizer) return true;
+    if (!window.kuromoji) return true;
+    guideShow({ step: '2. 点訳', msg: '辞書を読み込んでいます。少しお待ちください。', sub: '漢字を正しく読むための辞書です。初めて開いたときや、通信が遅いときは時間がかかります。', busy: true });
+    const ok = state.dictLoading ? await state.dictLoading : state.tokenizer ? true : await loadDict();
+    if (ok || state.tokenizer) return true;
+    guideShow({ step: '2. 点訳', msg: '辞書を読み込めませんでした。', back,
+      sub: (hasKeys ? 'もう一度読み込むならエンター、辞書なしで点訳するならスペースです。\n' : '') + '辞書なしで点訳すると、漢字が読めず、校正箇所がとても多くなります。通信のよいところで、もう一度読み込むのがおすすめです。',
+      choices: [{ label: 'もう一度読み込む', key: 'Enter', run: () => { loadDict(); retry(); } },
+        { label: '辞書なしで点訳する', key: 'Space', run: () => { guide.noDict = true; retry(); } }] });
+    return false;
+  }
   async function guideTranslate(text) {
     if (!String(text).trim()) { announce('文章が入っていません'); G.memo.focus(); return; }
+    G.memo.value = text;
+    if (!guide.noDict && !(await guideEnsureDict(() => guideTranslate(text), guideMemo))) return;
     guideShow({ step: '2. 点訳', msg: '点訳を行っています。', busy: true });
     closeDocs(true);
     if (state.mode !== 'sumiji') setMode('sumiji');
@@ -2638,7 +2656,7 @@
       const w = ws[i];
       // 行が変わったら行番号も読む
       const say = (i === 0 || ws[i - 1].r !== w.r ? `${state.rows.indexOf(w.r) + 1}行目、` : '') + w.kana;
-      announce(say); // 点字ディスプレイ・読み上げソフトにも渡す
+      // 読み上げソフトには渡さない（ブラウザの声と2回になるため）
       // ブラウザの声で読み、読み終えたら次の語へ（行が変わるところは少し間をあける）
       ttsSay(say, () => guidePreviewStep(i + 1, i + 1 < ws.length && ws[i + 1].r !== w.r ? 400 : 0));
     }, wait);
@@ -2784,25 +2802,42 @@
   convertAll();
   if (!/[?&]guide=0\b/.test(location.search)) startGuide();
 
-  if (window.kuromoji) {
-    window.kuromoji.builder({ dicPath: 'dict/' }).build((err, tokenizer) => {
-      if (err) {
-        els.stDict.textContent = '辞書を読み込めませんでした（漢字は変換されません）';
-        els.stDict.className = 'pill err';
-        return;
-      }
-      state.tokenizer = tokenizer;
-      els.stDict.textContent = '辞書 準備完了';
-      announce('辞書の準備ができました');
-      els.stDict.className = 'pill ok';
-      if (state.mode === 'sumiji') {
-        state.rows = state.rows.filter(r => r.edited);
-        convertAll();
-        if (els.note.classList.contains('warn')) setNote('');
-      }
+  // ---------- 辞書の読み込み（失敗したら読み込み直せる） ----------
+  // 案内の途中で読み終わったときは、案内が自分で点訳するので、ここでは変換し直さず、読み上げもしない
+  function loadDict() {
+    if (!window.kuromoji) {
+      els.stDict.textContent = '辞書ライブラリがありません';
+      els.stDict.className = 'pill err';
+      return Promise.resolve(false);
+    }
+    if (state.dictLoading) return state.dictLoading;
+    els.stDict.textContent = '辞書を読み込み中…';
+    els.stDict.className = 'pill';
+    state.dictLoading = new Promise(resolve => {
+      window.kuromoji.builder({ dicPath: 'dict/' }).build((err, tokenizer) => {
+        state.dictLoading = null;
+        if (err || !tokenizer) {
+          els.stDict.textContent = '辞書を読み込めませんでした（漢字は変換されません）';
+          els.stDict.className = 'pill err';
+          resolve(false);
+          return;
+        }
+        state.tokenizer = tokenizer;
+        els.stDict.textContent = '辞書 準備完了';
+        els.stDict.className = 'pill ok';
+        if (!guide.on) {
+          announce('辞書の準備ができました');
+          if (state.mode === 'sumiji') {
+            state.rows = state.rows.filter(r => r.edited);
+            convertAll();
+            if (els.note.classList.contains('warn')) setNote('');
+          }
+        }
+        resolve(true);
+      });
     });
-  } else {
-    els.stDict.textContent = '辞書ライブラリがありません';
-    els.stDict.className = 'pill err';
+    return state.dictLoading;
   }
+
+  loadDict();
 })();
