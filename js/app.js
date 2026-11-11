@@ -17,7 +17,7 @@
 
   const els = {
     src: $('src'), rows: $('rows'), mode: $('mode'), cols: $('cols'), lines: $('lines'),
-    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'),
+    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'), eng2: $('eng2'),
     fileName: $('file-name'), note: $('file-note'),
     stDict: $('st-dict'), stCount: $('st-count'), stWarn: $('st-warn'), navCheck: $('nav-check'),
     exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
@@ -97,7 +97,7 @@
   }
 
   // ---------- 設定の保存（このブラウザだけ） ----------
-  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'framefit', 'srmode', 'enueb'];
+  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'framefit', 'srmode', 'enueb', 'eng2'];
   function loadPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem('tenji-editor-prefs') || '{}');
@@ -2061,8 +2061,10 @@
   });
   [els.cols, els.lines, els.indent, els.hira, els.pagenum, els.genpon, els.framefit, els.srmode].forEach(el => el.addEventListener('change', () => { savePrefs(); render(); }));
   // 英語の点字の書き方（一般の文章／英語の教科書 UEB）：点訳し直す
-  E.setEnglishMode(els.enueb.checked);
-  els.enueb.addEventListener('change', () => { E.setEnglishMode(els.enueb.checked); savePrefs(); if (state.mode === 'sumiji') convertAll(); else render(); });
+  // 縮約（グレード２）は UEB の書き方の上で使う
+  const applyEnglishMode = () => { E.setEnglishMode(els.enueb.checked, els.eng2.checked); };
+  els.enueb.addEventListener('change', () => { if (!els.enueb.checked) els.eng2.checked = false; applyEnglishMode(); savePrefs(); convertAll(); });
+  els.eng2.addEventListener('change', () => { if (els.eng2.checked) els.enueb.checked = true; applyEnglishMode(); savePrefs(); convertAll(); });
 
   // ドラッグ＆ドロップ
   let dragDepth = 0;
@@ -2823,7 +2825,8 @@
 
   // ---------- 起動 ----------
   loadPrefs();
-  E.setEnglishMode(els.enueb.checked);
+  if (els.eng2.checked) els.enueb.checked = true;
+  E.setEnglishMode(els.enueb.checked, els.eng2.checked);
   buildMenu();
   setMode('sumiji');
   els.src.value = '';

@@ -63,5 +63,23 @@ const { getTokenizer, engine: E } = require('./harness');
   // グレード２（liblouis の表で書いた英文を読み戻せる）
   eq(E.englishFromBraille2('⠠⠝⠕⠗⠀⠔⠀⠮⠀⠠⠎⠏⠻⠍⠀⠠⠱⠁⠇⠑⠀⠜⠑⠀⠐⠮⠀⠁⠝⠽⠀⠷⠀⠘⠹⠀⠃⠇⠎⠀⠷⠀⠃⠐⠕⠆'), 'Nor in the Sperm Whale are there any of those blinds of bone;');
   eq(E.englishFromBraille2('⠠⠊⠄⠇⠇⠀⠞⠑⠇⠇⠀⠽⠀⠭⠄⠎⠀⠛⠗⠞⠻⠀⠹⠁⠝⠀⠽⠗⠎⠲'), "I'll tell you it's greater than yours.");
+  // グレード２（縮約）：文部科学省の手引の例と、UEB の縮約を使わない決まり
+  const U2 = t => E.englishBraille(t, true, true);
+  eq(U2('Learn from yesterday'), '⠠⠇⠑⠜⠝⠀⠋⠀⠽⠑⠌⠻⠐⠙', '手引の例');
+  eq(U2('sandwich(es)'), '⠎⠯⠺⠊⠡⠐⠣⠑⠎⠐⠜');
+  eq(U2('I like traveling.'), '⠠⠊⠀⠇⠀⠞⠗⠁⠧⠑⠇⠬⠲');
+  eq(U2('I am in Nara.'), '⠠⠊⠀⠁⠍⠀⠔⠀⠠⠝⠜⠁⠲');
+  eq(U2('in,'), '⠊⠝⠂', '下がり記号だけの語が句読符に接するときは縮約しない');
+  eq(U2('being better best began'), '⠆⠬⠀⠃⠑⠞⠞⠻⠀⠃⠑⠌⠀⠆⠛⠁⠝', 'be は語の頭の音節のときだけ');
+  eq(U2('hear dear'), '⠓⠑⠜⠀⠙⠑⠜', 'マスが同じなら下がり記号の少ない方（ear は e＋ar）');
+  eq(U2('prisoner reckoned money'), '⠏⠗⠊⠎⠕⠝⠻⠀⠗⠑⠉⠅⠕⠝⠫⠀⠍⠐⠕⠽', 'one は語の区切りをまたがない');
+  eq(U2('disappeared react reach reapply'), '⠲⠁⠏⠏⠑⠜⠫⠀⠗⠑⠁⠉⠞⠀⠗⠂⠡⠀⠗⠑⠁⠏⠏⠇⠽', 'dis＋母音、re-act・re-apply の ea は使わない');
+  eq(U2("couldn't friends received quickly"), '⠉⠙⠝⠄⠞⠀⠋⠗⠎⠀⠗⠉⠧⠙⠀⠟⠅⠇⠽', '短形語から作った語');
+  eq(U2('blinded goodness'), '⠃⠇⠔⠙⠫⠀⠛⠙⠰⠎', 'blind は母音の前では短形語にしない');
+  eq(U2('St. b ab'), '⠠⠎⠞⠲⠀⠰⠃⠀⠰⠁⠃', '縮約語・短形語と同じ形になる文字');
+  eq(U2('constructors'), '⠒⠌⠗⠥⠉⠞⠕⠗⠎');
+  eq(U2('abbé Château'), '⠁⠆⠘⠌⠑⠀⠠⠡⠘⠩⠁⠞⠂⠥', 'アクセント付きの文字は縮約にふくめない');
+  for (const t of ['Learn from yesterday', 'It was the best of times, it was the worst of times.', "I couldn't have said it better myself.", 'THE SOUND OF MUSIC', 'goodness gracious'])
+    eq(E.englishFromBraille2(U2(t)), t, '縮約の読み戻し ' + t);
   console.log(`english: all passed (${n})`);
 })().catch(e => { console.error(e); process.exit(1); });

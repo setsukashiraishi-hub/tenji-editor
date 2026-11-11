@@ -53,6 +53,8 @@
       <label class="check" for="framefit"><input id="framefit" type="checkbox" checked> 枠線を中身の幅に合わせる</label>
       <label class="check" for="enueb"><input id="enueb" type="checkbox" aria-describedby="enueb-hint"> 英語を英語の教科書の書き方（UEB）にする</label>
       <span id="enueb-hint" class="sr-only">オフのときは一般の文章の書き方で、アクセント記号の付いた文字はアクセント符を前に付けます。オンにすると UEB の修飾符を使います。</span>
+      <label class="check" for="eng2"><input id="eng2" type="checkbox" aria-describedby="eng2-hint"> 英語に縮約（グレード２）を使う</label>
+      <span id="eng2-hint" class="sr-only">英語の教科書（中学部2年以降）の書き方です。オンにすると英語の教科書の書き方（UEB）もオンになります。</span>
     </div>
 
     <div class="bar-group end">
@@ -303,6 +305,7 @@
 
   <script src="vendor/kuromoji.js"></script>
   <script src="vendor/jszip.min.js"></script>
+  <script src="js/ueb-g2-rules.js"></script>
   <script src="js/engine.js"></script>
   <script src="js/figure.js"></script>
   <script src="js/formats.js"></script>

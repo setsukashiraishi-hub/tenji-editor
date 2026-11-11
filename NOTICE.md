@@ -27,7 +27,10 @@
 - 英語の点字（UEB）と、日本語の文中の英語（外字符・外国語引用符）は、文部科学省「点字学習指導の手引」（令和5年）第8章第5節と、
   日本点字委員会「日本点字表記法 2018年版 第1編第4章第6節の一部修正」（2023年）によります。
   英語の点字は、liblouis（https://github.com/liblouis/liblouis 、LGPL）の UEB の表とテストデータ、および
-  Project Gutenberg のパブリックドメインの英文（約9,600文）で出力を比べて確かめました。liblouis も英文も、このアプリには入れていません。
+  Project Gutenberg のパブリックドメインの英文（約6万文）で出力を比べて確かめました。liblouis のプログラムと英文は、このアプリには入れていません。
+- `js/ueb-g2-rules.js`（英語の縮約を使わない文脈の一覧）は、liblouis の UEB グレード２辞書テスト
+  （tests/braille-specs/en-ueb-g2-dictionary_harness.yaml）から自動で学習して作ったものです。
+  このファイルだけは liblouis と同じ GNU Lesser General Public License v2.1 以降で配布します（ほかのファイルは MIT License）。
 
 # ファイル形式の解析について
 
