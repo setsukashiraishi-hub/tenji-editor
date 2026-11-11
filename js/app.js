@@ -2100,6 +2100,15 @@
   backBtn.addEventListener('click', () => guideBack());
   tapHint(backBtn);
   G.esc.before(backBtn);
+  // 案内だけの画面を飛ばす：1.5秒のうちに2回（キーか、画面のタップ）
+  function guideSkipTap() {
+    const sc = guide.screen;
+    if (!sc || !sc.auto) return;
+    const now = Date.now();
+    if (guide.skipAt && now - guide.skipAt < 1500) { guide.skipAt = 0; clearTimeout(guide.timer); announce('次へ進みます'); sc.next(); }
+    else guide.skipAt = now;
+  }
+  G.el.addEventListener('click', ev => { if (guide.screen && guide.screen.auto && !ev.target.closest('button')) guideSkipTap(); });
   function guideBack() {
     const sc = guide.screen;
     if (!sc || !sc.back) return;
@@ -2114,7 +2123,8 @@
     clearTimeout(guide.pvTimer);
     if (guide.screen && guide.screen.preview && !sc.preview) ttsStop(); // プレビューを抜けたら声も止める
     G.preview.hidden = !sc.preview;
-    guide.screen = sc; guide.sel = -1; guide.shiftEnter = 0; guide.armed = false;
+    guide.screen = sc; guide.sel = -1; guide.shiftEnter = 0; guide.armed = false; guide.skipAt = 0;
+    if (sc.auto) sc.sub = [sc.sub, hasKeys ? 'エンターを2回押すと、待たずに次へ進みます。' : '画面を2回タップすると、待たずに次へ進みます。'].filter(Boolean).join('\n');
     G.step.textContent = sc.step || '';
     G.msg.textContent = sc.msg;
     G.msg.classList.toggle('guide-busy', !!sc.busy);
@@ -2213,6 +2223,12 @@
     const sc = guide.screen;
     if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finishGuide('esc'); return; }
     if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); guideBack(); return; }
+    // 案内だけの画面：エンターかスペースを続けて押すと、待たずに次へ
+    if (sc.auto && (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space')) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (!ev.repeat) guideSkipTap();
+      return;
+    }
     if (ev.isComposing || ev.keyCode === 229) return; // 日本語入力の変換中
     if (sc.memo) {
       if (ev.key === 'Enter' && ev.shiftKey) {
