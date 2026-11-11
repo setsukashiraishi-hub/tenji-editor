@@ -390,53 +390,169 @@
   // 1語だけのときは、今までどおり外字符 ⠰ を前に付ける
   const EN_LETTER = { a: '⠁', b: '⠃', c: '⠉', d: '⠙', e: '⠑', f: '⠋', g: '⠛', h: '⠓', i: '⠊', j: '⠚', k: '⠅', l: '⠇', m: '⠍', n: '⠝', o: '⠕', p: '⠏', q: '⠟', r: '⠗', s: '⠎', t: '⠞', u: '⠥', v: '⠧', w: '⠺', x: '⠭', y: '⠽', z: '⠵' };
   const EN_DIGIT = { 1: '⠁', 2: '⠃', 3: '⠉', 4: '⠙', 5: '⠑', 6: '⠋', 7: '⠛', 8: '⠓', 9: '⠊', 0: '⠚' };
-  const EN_PUNCT = { ',': '⠂', '.': '⠲', '?': '⠦', '!': '⠖', "'": '⠄', '’': '⠄', '\u02bc': '⠄', '-': '⠤', ':': '⠒', ';': '⠆', '&': '⠈⠯' };
+  // 英語の点字（UEB 統一英語点字・グレード１）。日本で今の教科書が使う書き方（文部科学省「点字学習指導の手引」令和5年 第8章第5節）。
+  // 大文字符 ⠠、大文字単語符 ⠠⠠、3語以上の大文字は大文字パッセージ符 ⠠⠠⠠ … 大文字終止符 ⠠⠄。
+  // 数字は数符 ⠼、小数点 ⠲・桁区切り ⠂ は数字の続き。数字のすぐ後の a〜j の前に１級記号符 ⠰。
+  // アクセント記号は修飾符（é ⠘⠌e など）を文字の前に。句読符は UEB の形（( ) ⠐⠣ ⠐⠜、“ ” ⠦ ⠴ など）。
+  const EN_PUNCT = { ',': '⠂', '.': '⠲', ';': '⠆', ':': '⠒', '!': '⠖', '?': '⠦', '-': '⠤', '‐': '⠤', '‑': '⠤', '—': '⠠⠤', '–': '⠠⠤', '―': '⠐⠠⠤',
+    '…': '⠲⠲⠲', '/': '⠸⠌', '(': '⠐⠣', ')': '⠐⠜', '[': '⠨⠣', ']': '⠨⠜', '{': '⠸⠣', '}': '⠸⠜', '“': '⠦', '”': '⠴', '‘': '⠠⠦',
+    "'": '⠄', 'ʼ': '⠄', '&': '⠈⠯', '%': '⠨⠴', '$': '⠈⠎', '@': '⠈⠁', '#': '⠸⠹', '*': '⠐⠔', '+': '⠐⠖', '=': '⠐⠶', '×': '⠐⠦',
+    '÷': '⠐⠌', '<': '⠈⠣', '>': '⠈⠜', '£': '⠈⠇', '€': '⠈⠑', '¥': '⠈⠽', '°': '⠘⠚', '~': '⠈⠔', '_': '⠨⠤', '\\': '⠸⠡', '|': '⠸⠳', '•': '⠸⠲', '©': '⠘⠉', '®': '⠘⠗', '™': '⠘⠞', '§': '⠘⠎', '¶': '⠘⠏',
+    '±': '⠸⠖', '´': '⠘⠌', '¨': '⠘⠒', '¯': '⠈⠤', '♭': '⠼⠣', '♮': '⠼⠡', '♯': '⠼⠩', '½': '⠼⠁⠌⠃', '¼': '⠼⠁⠌⠙', '¾': '⠼⠉⠌⠙' };
+  // 修飾符（アクセント記号）：結合文字 → 点字
+  const EN_MOD = { '́': '⠘⠌', '̀': '⠘⠡', '̂': '⠘⠩', '̈': '⠘⠒', '̧': '⠘⠯', '̃': '⠘⠻', '̊': '⠘⠫', '̄': '⠈⠤', '̆': '⠈⠬', '̌': '⠘⠬' };
+  // 合字・特別な文字
+  const EN_SPECIAL = { 'œ': '⠕⠘⠖⠑', 'æ': '⠁⠘⠖⠑', 'ß': '⠨⠮', 'ø': '⠈⠡⠕', 'ð': '⠼⠫', 'þ': '⠼⠮' };
   const LAT = 'A-Za-zÀ-ÖØ-öø-ɏ';
-  const EN_PHRASE_RE = new RegExp(`[${LAT}][${LAT}0-9'’\u02bc.\\-]*(?:,? +(?:&|[${LAT}0-9][${LAT}0-9'’\u02bc.\\-]*))+[.?!]?`, 'g');
-  function englishBraille(text) {
-    let out = '';
-    for (const word of text.split(/ +/)) {
-      if (out) out += '⠀';
-      const letters = word.normalize('NFD').replace(/[^A-Za-z]/g, '');
-      const allCaps = letters.length >= 2 && letters === letters.toUpperCase();
-      if (allCaps) out += '⠠⠠';
+  const EN_PHRASE_RE = new RegExp(`[${LAT}][${LAT}0-9'’ʼ.\\-]*(?:,? +(?:&|[${LAT}0-9][${LAT}0-9'’ʼ.\\-]*))+[.?!]?`, 'g');
+  // 日本語の文中の英単語：外国語引用符で囲む語か、外字符で書く語（略語・単位・ローマ数字）か
+  // 公式の点字データ（厚生労働省・自治体の広報など）では、小文字を含む4文字以上の英単語は外国語引用符（2766例 対 81例）、
+  // 大文字だけの略語（NPO・ALT）は外字符。2〜3文字は、ふつうの英単語（new・the・in など）は引用符、略語（id・hp・vs）は外字符。
+  // アクセント記号の付いた文字は外字符では書けない（文部科学省「点字学習指導の手引」）ので引用符。
+  const EN_SHORT = new Set('act add age ago aid air all an and any are arm art as ask at ate awe bad bag bar be bed beg bet big bit bow box boy bus but buy by bye cab can cap car cat cry cup cut day den die dig do dog dry due ear eat end eye fan far fat fee few fin fit fix fly fog for fun get go got gun ha had has hat he her hid him his hip hit hop hot how ice if in inn is it its jaw jet job joy key lad law lay led leg let lie lip lit log lot low mad man map may me men met mix mud my net new no nor not now odd of off oh oil old on one or our out own pay pen pet pop put ran red rid row run sad sat saw say sea see set she sir sit six sky so son spy sum sun tax tea ten the to too top toy try two up us use war was way we web wet who why win won yes yet you zoo app'.split(' '));
+  const EN_NOT_WORD = /^(?:m{0,3}(?:cm|cd|d?c{0,3})(?:xc|xl|l?x{0,3})(?:ix|iv|v?i{0,3})|kcal|mmhg|kwh|mah|mbps|kbps|gbps|kbyte|mbyte|gbyte|ppm|ppb|dpi|fps|rpm|vol|ver|etc|fig|tel|fax|feat)$/i;
+  function enQuoteWord(w) {
+    const letters = w.replace(/[^\p{L}]/gu, '');
+    if (!letters || EN_NOT_WORD.test(letters)) return false;
+    if (/[^A-Za-z]/.test(letters)) return true; // アクセント記号などの付いた文字
+    if (!/[a-z]{2}/.test(w)) return false; // 大文字だけ・1文字ずつの大文字小文字（SDGs・iOS）
+    if (letters.length >= 4) return true;
+    return EN_SHORT.has(letters.toLowerCase());
+  }
+  const EN_WORD_RE = new RegExp(`(?<![${LAT}0-9⟪'’\\-.])[${LAT}](?:[${LAT}'’\\-]*[${LAT}])?(?![${LAT}0-9'’\\-]|\\.[${LAT}0-9])`, 'gu');
+  const isUpperL = ch => ch !== ch.toLowerCase() && ch === ch.toUpperCase();
+  const isLowerL = ch => ch !== ch.toUpperCase() && ch === ch.toLowerCase();
+  const isEnLetter = ch => /\p{L}/u.test(ch) && (isUpperL(ch) || isLowerL(ch));
+  // 一般の日本語の文章の中の英語は、日本点字委員会の決まり（2023年）で、アクセント記号の付いた文字は
+  // アクセント符 ⠈ を前に置くだけにする（UEB の修飾符は使わない）。英語の教科書の書き方（UEB）にもできる
+  let EN_UEB = false;
+  function setEnglishMode(ueb) { EN_UEB = !!ueb; }
+  function englishBraille(text, ueb = EN_UEB) {
+    text = String(text).normalize('NFC').replace(/[ 　\t]+/g, ' ').trim();
+    const words = text.split(' ');
+    // 大文字だけの語（文字を1つ以上含み、小文字を含まない）
+    const capsTok = words.map(w => /\p{L}/u.test(w) && ![...w].some(isLowerL));
+    const pStart = new Set(), pEnd = new Set();
+    // 文字を含まない語（数字・記号だけ）は大文字の続きを切らない
+    const neutral = words.map(w => !/\p{L}/u.test(w));
+    for (let i = 0; i < words.length;) {
+      if (!capsTok[i]) { i++; continue; }
+      let j = i, n = 0, last = i;
+      while (j < words.length && (capsTok[j] || neutral[j])) { if (capsTok[j]) { n++; last = j; } j++; }
+      if (n >= 3) { pStart.add(i); pEnd.add(last); }
+      i = last + 1;
+    }
+    let out = '', inPassage = false, sqOpen = 0;
+    words.forEach((w, wi) => {
+      if (wi) out += '⠀';
+      if (pStart.has(wi)) { out += '⠠⠠⠠'; inPassage = true; }
+      const ch = [...w];
       let num = false;
-      for (const ch of word) {
-        if (/[0-9]/.test(ch)) { if (!num) out += '⠼'; num = true; out += EN_DIGIT[ch]; continue; }
-        const base = /[A-Za-z]/.test(ch) ? ch : (ACC_RE.test(ch) ? accBase(ch) : null);
-        if (base) {
-          if (num && /[a-jA-J]/.test(base)) out += '⠰'; // 数字のすぐ後の a〜j は、数字と区別する印
+      for (let i = 0; i < ch.length; i++) {
+        const c = ch[i];
+        if (/[0-9]/.test(c)) { if (!num) out += '⠼'; num = true; out += EN_DIGIT[c]; continue; }
+        if (num && (c === '.' || c === ',') && /[0-9]/.test(ch[i + 1] || '')) { out += c === '.' ? '⠲' : '⠂'; continue; }
+        if (isEnLetter(c)) {
+          // 文字が続く部分をまとめて、大文字の書き方を決める
+          let j = i; while (j < ch.length && isEnLetter(ch[j])) j++;
+          const run = ch.slice(i, j);
+          for (let k = 0; k < run.length;) {
+            const up = isUpperL(run[k]);
+            let e = k; while (e < run.length && isUpperL(run[e]) === up) e++;
+            if (up && !inPassage) {
+              if (e - k >= 2) { out += '⠠⠠'; }
+            }
+            for (let m = k; m < e; m++) {
+              const L = run[m];
+              const low = L.toLowerCase();
+              if (up && !inPassage && e - k < 2) out += '⠠';
+              const d = low.normalize('NFD');
+              const base = d[0];
+              if (num && m === 0 && /[a-j]/.test(base) && !up && d.length === 1) out += '⠰';
+              num = false;
+              if (!ueb && /[œæßø]/.test(low)) { out += ({ 'œ': '⠕⠑', 'æ': '⠁⠑', 'ß': '⠎⠎', 'ø': '⠈⠕' })[low]; continue; }
+              if (!ueb && d.length > 1) { out += '⠈' + (EN_LETTER[base] || ''); continue; }
+              if (EN_SPECIAL[low]) { out += (up && !inPassage && e - k < 2 && /^.⠘⠖/.test(EN_SPECIAL[low])) ? EN_SPECIAL[low].replace('⠘⠖', '⠠⠘⠖') : EN_SPECIAL[low]; continue; }
+              for (const mk of d.slice(1)) out += EN_MOD[mk] || '';
+              out += EN_LETTER[base] || '';
+            }
+            // 2文字以上の大文字のすぐ後に小文字が続くときは大文字終止符
+            if (up && !inPassage && e - k >= 2 && e < run.length) out += '⠠⠄';
+            k = e;
+          }
           num = false;
-          if (!allCaps && ch !== ch.toLowerCase()) out += '⠠';
-          out += (base !== ch ? '⠈' : '') + EN_LETTER[base.toLowerCase()];
+          i = j - 1;
           continue;
         }
-        if (num && ch === '.' ) { out += '⠲'; continue; }
         num = false;
-        out += EN_PUNCT[ch] || '';
+        if (c === '"') { out += ((i === 0 || /[(\[{“‘]/.test(ch[i - 1])) && i < ch.length - 1) ? '⠦' : '⠴'; continue; }
+        if (c === '‘') { sqOpen++; out += '⠠⠦'; continue; }
+        if (c === '’') {
+          // 閉じのシングルコーテーション（開きがあり、すぐ後が文字でない）か、アポストロフィか
+          if ((sqOpen > 0 && !isEnLetter(ch[i + 1] || '')) || (/[.,!?;:]/.test(ch[i - 1] || '') && !isEnLetter(ch[i + 1] || ''))) { sqOpen = Math.max(0, sqOpen - 1); out += '⠠⠴'; } else out += '⠄';
+          continue;
+        }
+        out += EN_PUNCT[c] || '';
       }
-    }
+      if (pEnd.has(wi)) { out += '⠠⠄'; inPassage = false; }
+    });
     return out;
   }
 
   // 英語の点字（外国語引用符の中）→ 英文
-  function englishFromBraille(cells) {
-    const L = {}, P = {}, D = {};
+  const EN_BACK = (() => {
+    const m = {};
+    for (const k in EN_PUNCT) if (!(EN_PUNCT[k] in m) && !/[‐‑–―“”‘…'ʼ]/.test(k)) m[EN_PUNCT[k]] = k;
+    m['⠠⠤'] = '—'; m['⠲⠲⠲'] = '...'; m['⠄'] = "'"; m['⠠⠦'] = '‘'; m['⠠⠴'] = '’';
+    return m;
+  })();
+  const EN_MOD_BACK = {}; for (const k in EN_MOD) EN_MOD_BACK[EN_MOD[k]] = k;
+  function englishFromBraille(cells, ueb = EN_UEB) {
+    const L = {}, D = {};
     for (const k in EN_LETTER) L[EN_LETTER[k]] = k;
     for (const k in EN_DIGIT) D[EN_DIGIT[k]] = k;
-    for (const k of [',', '.', '?', '!', "'", '-', ':', ';']) P[EN_PUNCT[k]] = k;
-    let out = '', capAll = false, capNext = false, num = false;
-    for (let i = 0; i < cells.length; i++) {
-      const c = cells[i];
-      if (c === '⠀') { out += ' '; capAll = false; num = false; continue; }
-      if (c === '⠠' && cells[i + 1] === '⠠') { capAll = true; i++; continue; }
-      if (c === '⠠') { capNext = true; continue; }
-      if (c === '⠼') { num = true; continue; }
-      if (c === '⠈' && cells[i + 1] === '⠯') { out += '&'; i++; continue; }
-      if (c === '⠰') { num = false; continue; }
-      if (num && D[c]) { out += D[c]; continue; }
-      if (L[c]) { out += (capAll || capNext) ? L[c].toUpperCase() : L[c]; capNext = false; num = false; continue; }
-      if (P[c]) { out += P[c]; continue; }
+    const c = [...cells];
+    let out = '', passage = false, capWord = false, capNext = false, num = false, mod = '';
+    const atWordStart = () => !out || /[ (\[{“‘"]$/.test(out);
+    for (let i = 0; i < c.length; i++) {
+      const x = c[i], two = x + (c[i + 1] || ''), three = two + (c[i + 2] || '');
+      if (x === '⠀') { out += ' '; capWord = false; num = false; capNext = false; continue; }
+      if (three === '⠠⠠⠠') { passage = true; i += 2; continue; }
+      if (two === '⠠⠄') { passage = false; capWord = false; i++; continue; }
+      if (two === '⠠⠠') { capWord = true; num = false; i++; continue; }
+      if (x === '⠠' && !['⠤', '⠦', '⠴'].includes(c[i + 1])) { capNext = true; num = false; continue; }
+      if (x === '⠼') { num = true; continue; }
+      if (x === '⠰') { num = false; continue; }
+      if (num && D[x]) { out += D[x]; continue; }
+      if (num && (x === '⠲' || x === '⠂') && D[c[i + 1]]) { out += x === '⠲' ? '.' : ','; continue; }
+      if (!ueb && x === '⠈' && L[c[i + 1]] && (/\p{L}$/u.test(out) || L[c[i + 2]])) { // アクセント符（どのアクセントかは分からないので、よく使う形にする）
+        mod = { a: '\u0300', e: '\u0301', i: '\u0308', o: '\u0308', u: '\u0308', c: '\u0327', n: '\u0303' }[L[c[i + 1]]] || ''; continue;
+      }
+      if (EN_MOD_BACK[two]) { mod = EN_MOD_BACK[two]; i++; continue; }
+      if (two === '⠘⠖' && L[c[i + 2]]) { // 合字
+        const prev = out.slice(-1), nx = L[c[i + 2]];
+        const lig = { oe: 'œ', ae: 'æ' }[prev.toLowerCase() + nx];
+        if (lig) { out = out.slice(0, -1) + (isUpperL(prev) ? lig.toUpperCase() : lig); i += 2; continue; }
+      }
+      if (L[x]) {
+        num = false;
+        let ch = L[x] + mod; mod = '';
+        ch = ch.normalize('NFC');
+        out += (passage || capWord || capNext) ? ch.toUpperCase() : ch;
+        capNext = false; continue;
+      }
+      // 記号（長いものから）
+      num = false;
+      if (EN_BACK[three]) { out += EN_BACK[three]; i += 2; capWord = false; continue; }
+      if (EN_BACK[two]) { out += EN_BACK[two]; i++; capWord = false; continue; }
+      if (x === '⠦') {
+        // 開きのダブルコーテーション（すぐ後に語が続き、前が文字・数字でない）か疑問符か
+        const nx = c[i + 1];
+        const opens = nx && !['⠀', '⠴', '⠦', '⠲', '⠂', '⠖', '⠆', '⠒'].includes(nx) && !/[\p{L}0-9]$/u.test(out);
+        out += opens || atWordStart() && nx && nx !== '⠀' ? '“' : '?'; capWord = false; continue;
+      }
+      if (x === '⠴') { out += '”'; capWord = false; continue; }
+      if (EN_BACK[x]) { out += EN_BACK[x]; capWord = false; continue; }
       out += '〓';
     }
     return out;
@@ -576,6 +692,8 @@
       const strong = /[√^²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞÷]/.test(t);
       const binary = /[0-9A-Za-z)²³½⅓⅔¼¾][+×=＝<>＜＞÷＋－±∓≦≤≧≥][-−－]?[0-9A-Za-z(√½⅓⅔¼¾]/.test(t.replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')'));
       if (!strong && !binary) continue;
+      // 引き算の記号だけでつながったもの（Q４－１－５・1－2－3 番地）は番号なので数式にしない
+      if (!strong && !/[+×=＝<>＜＞÷＋±∓≦≤≧≥]/.test(t)) continue;
       if (/[A-Za-z]{3,}/.test(t)) continue; // 英単語の入った語句は数式にしない
       if (/^\+\d/.test(t)) continue; // 国際電話番号
       if (!/[0-9A-Za-z½⅓⅔¼¾]/.test(t)) continue;
@@ -635,8 +753,10 @@
     line = String(line || '').split(/(⟪[^⟫]*⟫|⟬[^⟭]*⟭?|⟦[^⟧]*⟧|⟮[^⟯]*⟯)/).map((part, k) => k % 2 ? part : (/https?:|www\.|@/.test(part) ? part : wrapMath(part))
       .replace(URL_RE, m => { const t = /[.,;:!?)\]]+$/.exec(m); const tail = t ? t[0] : ''; return '⟬' + m.slice(0, m.length - tail.length) + '⟭' + tail; }) // アドレス（手で書いたときも）
       .replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; })
-      // 外国語引用符にするのは、2文字以上の英語の語が2つ以上ある語句だけ（A B C・FAX 261 は1語ずつ外字符）
-      .replace(EN_PHRASE_RE, m => m.split(/ +/).filter(w => (w.match(/[A-Za-zÀ-ÖØ-öø-ɏ]/g) || []).length >= 2).length >= 2 ? '⟪' + m + '⟫' : m)).join('');
+      // 2文字以上の英語の語が2つ以上ある語句は外国語引用符（A B C・FAX 261 は1語ずつ外字符）
+      .replace(EN_PHRASE_RE, m => m.split(/ +/).filter(w => (w.match(/[A-Za-zÀ-ÖØ-öø-ɏ]/g) || []).length >= 2).length >= 2 ? '⟪' + m + '⟫' : m)
+      // 1語でも、英単語なら外国語引用符（略語・単位は外字符のまま）
+      .split(/(⟪[^⟫]*⟫)/).map((q, j) => j % 2 ? q : q.replace(EN_WORD_RE, w => enQuoteWord(w) ? '⟪' + w + '⟫' : w)).join('')).join('');
     const s = Array.from(normalizeInput(toKatakana(line)));
     let out = '';
     const unknown = [];
@@ -1872,7 +1992,8 @@
     ROW_TYPES, HEAD_INDENT, DECOR_TYPES, decorCells, detectDecor, decorText, looksLikeGraphic, pageLine, AMBIG,
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
-    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ
+    toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
+    englishBraille, englishFromBraille, setEnglishMode
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;

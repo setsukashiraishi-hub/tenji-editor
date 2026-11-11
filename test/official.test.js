@@ -49,12 +49,13 @@ const words = k => k.replace(/⁑/g, 'ヲヲ').replace(/[（）()「」『』]/g
   assert.strictEqual(E.kanaToBraille('（ア（イ）ウ）').cells, '⠶⠁⠰⠶⠃⠶⠆⠉⠶', 'カッコの中のカッコは ⠰⠶ … ⠶⠆');
   assert.strictEqual(E.kanaToBraille('CDヲ').cells, '⠰⠠⠠⠉⠙⠤⠔', '英字の後の仮名はつなぎ符');
   assert.strictEqual(E.kanaToBraille('FIELD NOTES').cells, '⠦⠠⠠⠋⠊⠑⠇⠙⠀⠠⠠⠝⠕⠞⠑⠎⠴', '2語以上の英語は外国語引用符');
-  assert.strictEqual(E.kanaToBraille('Japanese').cells, '⠰⠠⠚⠁⠏⠁⠝⠑⠎⠑', '1語の英語は外字符');
+  assert.strictEqual(E.kanaToBraille('Japanese').cells, '⠦⠠⠚⠁⠏⠁⠝⠑⠎⠑⠴', '1語でも英単語は外国語引用符（文部科学省の手引・公式データ）');
+  assert.strictEqual(E.kanaToBraille('NPO').cells, '⠰⠠⠠⠝⠏⠕', '略語は外字符');
   const back = E.brailleToKana('⠶⠁⠰⠶⠃⠶⠆⠉⠶');
   assert.strictEqual(typeof back === 'string' ? back : back.kana, '（ア（イ）ウ）', 'カッコの中のカッコを読み戻す');
   // 英語以外の外国語：アクセント記号つきの文字はアクセント符 ⠈ を前に付け、要確認にする。ほかの文字（ハングルなど）も要確認
   const fr = E.sumijiToKana('カフェ（café）', t => tk.tokenize(t), {});
-  assert.ok(E.kanaToBraille(fr.kana).cells.includes('⠰⠉⠁⠋⠈⠑'), 'é はアクセント符＋e');
+  assert.ok(E.kanaToBraille(fr.kana).cells.includes('⠦⠉⠁⠋⠈⠑⠴'), 'é はアクセント符＋e（外字符では書けないので外国語引用符）');
   assert.strictEqual(fr.foreign.length, 1, '英語以外の外国語として知らせる');
   assert.strictEqual(E.sumijiToKana('안녕하세요', t => tk.tokenize(t), {}).foreign[0].kind.slice(0, 4), 'ハングル');
   assert.strictEqual(E.sumijiToKana('Japanese [dʒæ̀pəníːz]', t => tk.tokenize(t), {}).foreign.length, 0, '発音記号は外国語にしない');

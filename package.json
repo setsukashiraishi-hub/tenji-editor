@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "test": "node test/rules.test.js && node test/roundtrip.test.js && node test/office.test.js && node test/real.test.js && node test/symbols.test.js && node test/layout.test.js && node test/figure.test.js && node test/bse.test.js && node test/official.test.js && node test/corpus.test.js && node test/math.test.js",
+    "test": "node test/rules.test.js && node test/roundtrip.test.js && node test/office.test.js && node test/real.test.js && node test/symbols.test.js && node test/layout.test.js && node test/figure.test.js && node test/bse.test.js && node test/official.test.js && node test/corpus.test.js && node test/math.test.js && node test/english.test.js",
     "serve": "python3 -m http.server 8000",
     "dist": "electron-builder --publish never"
   },
