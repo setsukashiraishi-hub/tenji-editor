@@ -1042,7 +1042,7 @@
       // 行頭に4マス以上あいている行は見出しとして独立させる。2マスなら新しい段落、それ以外は前の行に続ける
       if (/^[ 　]{4,}/.test(line)) { flush(); out.push(''); out.push(line.trim()); out.push(''); continue; }
       if (para === null || /^[ 　]/.test(line)) { flush(); para = line.replace(/^[ 　]+/, ''); }
-      else para += ((r.kana || '').startsWith('⟬↪') ? '' : ' ') + line; // アドレスの続きの行は詰めてつなぐ
+      else para += ((r.kana || '').startsWith('⟬↪') || / $/.test(para) ? '' : ' ') + line; // アドレスの続きの行は詰めてつなぐ（行をまたぐ英語の空白は1つに）
     }
     flush();
     return out.join('\n').replace(/\n{3,}/g, '\n\n').trim();

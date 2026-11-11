@@ -545,13 +545,14 @@
       num = false;
       if (EN_BACK[three]) { out += EN_BACK[three]; i += 2; capWord = false; continue; }
       if (EN_BACK[two]) { out += EN_BACK[two]; i++; capWord = false; continue; }
+      if (x === '⠶') { const open = (out.match(/\(/g) || []).length <= (out.match(/\)/g) || []).length; out += open ? '(' : ')'; capWord = false; continue; } // 日本語のカッコ（LEGO(R)）
       if (x === '⠦') {
         // 開きのダブルコーテーション（すぐ後に語が続き、前が文字・数字でない）か疑問符か
         const nx = c[i + 1];
         const opens = nx && !['⠀', '⠴', '⠦', '⠲', '⠂', '⠖', '⠆', '⠒'].includes(nx) && !/[\p{L}0-9]$/u.test(out);
         out += opens || atWordStart() && nx && nx !== '⠀' ? '“' : '?'; capWord = false; continue;
       }
-      if (x === '⠴') { out += '”'; capWord = false; continue; }
+      if (x === '⠴') { out += /^$| $/.test(out) && (!c[i + 1] || c[i + 1] === '⠀') ? '〓' : '”'; capWord = false; continue; } // 前後があいた ⠴ は縮約の was（グレード２で読む）
       if (EN_BACK[x]) { out += EN_BACK[x]; capWord = false; continue; }
       out += '〓';
     }
@@ -1044,6 +1045,171 @@
   }
 
   // st：行をまたぐ状態（アドレス囲みの続きの行など）。同じオブジェクトを続けて渡す
+  // ---------- 英語の点字 グレード２（縮約）の読み戻し ----------
+  // 公式の点字データには、外国語引用符の中を縮約（and → ⠯、ment → ⠰⠞ など）で書いたものもある。
+  // グレード１で読めないときはこちらで読む（liblouis の UEB グレード２の表で確かめた）
+  const G2 = (() => {
+    const L = {}; for (const k in EN_LETTER) L[EN_LETTER[k]] = k;
+    const enc = w => [...w].map(ch => EN_LETTER[ch] || ch).join('');
+    const ALPHA_WS = { b: 'but', c: 'can', d: 'do', e: 'every', f: 'from', g: 'go', h: 'have', j: 'just', k: 'knowledge', l: 'like', m: 'more', n: 'not',
+      p: 'people', q: 'quite', r: 'rather', s: 'so', t: 'that', u: 'us', v: 'very', w: 'will', x: 'it', y: 'you', z: 'as' };
+    const STRONG = { '⠯': 'and', '⠿': 'for', '⠷': 'of', '⠮': 'the', '⠾': 'with' };
+    const GROUP = { '⠡': 'ch', '⠣': 'gh', '⠩': 'sh', '⠹': 'th', '⠱': 'wh', '⠫': 'ed', '⠻': 'er', '⠳': 'ou', '⠪': 'ow', '⠌': 'st', '⠬': 'ing', '⠜': 'ar' };
+    const STRONG_WS = { '⠡': 'child', '⠩': 'shall', '⠹': 'this', '⠱': 'which', '⠳': 'out', '⠌': 'still' };
+    const LOWER_WS = { '⠆': 'be', '⠢': 'enough', '⠶': 'were', '⠦': 'his', '⠔': 'in', '⠴': 'was' };
+    const INIT = {
+      '⠐': { d: 'day', e: 'ever', f: 'father', h: 'here', k: 'know', l: 'lord', m: 'mother', n: 'name', o: 'one', p: 'part', q: 'question', r: 'right', s: 'some', t: 'time', u: 'under', w: 'work', y: 'young', '⠮': 'there', '⠡': 'character', '⠹': 'through', '⠱': 'where', '⠳': 'ought' },
+      '⠘': { u: 'upon', w: 'word', '⠮': 'these', '⠹': 'those', '⠱': 'whose' },
+      '⠸': { c: 'cannot', h: 'had', m: 'many', s: 'spirit', w: 'world', '⠮': 'their' }
+    };
+    const FINAL = { '⠨': { d: 'ound', e: 'ance', n: 'sion', s: 'less', t: 'ount' }, '⠰': { e: 'ence', g: 'ong', l: 'ful', n: 'tion', s: 'ness', t: 'ment', y: 'ity' } };
+    const keyOf = c => L[c] || c;
+    // 短形語（shortform）：点字 → 語
+    const SF = {};
+    const sfList = 'about:ab above:abv according:ac across:acr after:af afternoon:afn afterward:afw again:ag against:ag⠌ almost:alm already:alr also:al although:al⠹ altogether:alt always:alw because:⠆c before:⠆f behind:⠆h below:⠆l beneath:⠆n beside:⠆s between:⠆t beyond:⠆y blind:bl braille:brl children:⠡n conceive:⠒cv conceiving:⠒cvg could:cd deceive:dcv deceiving:dcvg declare:dcl declaring:dclg either:ei first:f⠌ friend:fr good:gd great:grt herself:h⠻f him:hm himself:hmf immediate:imm its:xs itself:xf letter:lr little:ll much:m⠡ must:m⠌ myself:myf necessary:nec neither:nei oneself:⠐of ourselves:⠳rvs paid:pd perceive:p⠻cv perceiving:p⠻cvg perhaps:p⠻h quick:qk receive:rcv receiving:rcvg rejoice:rjc rejoicing:rjcg said:sd should:⠩d such:s⠡ themselves:⠮mvs thyself:⠹yf today:td together:tgr tomorrow:tm tonight:tn would:wd your:yr yourself:yrf yourselves:yrvs';
+    for (const x of sfList.split(' ')) { const [w, b] = x.split(':'); SF[enc(b)] = w; }
+    const SF_SUFFIX = /^(great|quick|immediate|receive|conceive|deceive|perceive|declare|rejoice|friend|letter|little|blind|braille|good|beside|afterward|according|first|after|children|your)$/;
+    const LETTERISH = new Set([...Object.values(EN_LETTER), ...Object.keys(STRONG), ...Object.keys(GROUP)]);
+    const OPEN2 = ['⠠⠦', '⠘⠦', '⠐⠣', '⠨⠣', '⠸⠣'], CLOSE2 = ['⠠⠴', '⠘⠴', '⠐⠜', '⠨⠜', '⠸⠜'];
+    const PUNCT1 = { '⠂': ',', '⠆': ';', '⠒': ':', '⠲': '.', '⠖': '!', '⠦': '?', '⠴': '”', '⠄': "'", '⠤': '-' };
+    const cap = (w, st) => st.all ? w.toUpperCase() : st.next ? w[0].toUpperCase() + w.slice(1) : w;
+    // 1つの部分（ハイフン・アポストロフィで区切った中）を読む
+    function part(c, st, noWs) {
+      let out = '';
+      // 大文字・１級記号符を前から外して、単独で立つ語（縮約語・短形語）を調べる
+      let k = 0, g1 = false;
+      const pre = { next: false, all: false };
+      while (k < c.length) {
+        if (c[k] === '⠠' && c[k + 1] === '⠠') { pre.all = true; k += 2; continue; }
+        if (c[k] === '⠠') { pre.next = true; k++; continue; }
+        if (c[k] === '⠰' && c[k + 1] !== '⠰') { g1 = true; k++; continue; }
+        break;
+      }
+      const body = c.slice(k), b = body.join('');
+      const st2 = { next: pre.next, all: pre.all || st.passage };
+      if (body.length === 1 && !g1 && !noWs) {
+        const x = body[0];
+        const w = ALPHA_WS[L[x]] || STRONG_WS[x] || STRONG[x] || LOWER_WS[x];
+        if (w) return cap(w, st2);
+      }
+      if (!g1 && !noWs && SF[b]) return cap(SF[b], st2);
+      // 短形語＋語尾（greater・received・quickly・friends・wouldn't の wdn）
+      if (!g1 && !noWs) {
+        for (let e = body.length - 1; e >= 2; e--) {
+          const w = SF[body.slice(0, e).join('')];
+          if (!w) continue;
+          const rest = part(body.slice(e), { passage: false }, true);
+          const okSuffix = (SF_SUFFIX.test(w) && /^(s|ly|er|ers|est|ed|d|ing|ness|ful|ship|hood|ment|ments|ity|hand|less|liness|en|ening|ened)$/.test(rest) && !(w === 'friend' && /^e?d$/.test(rest))) ||
+            (/^(could|would|should|must|need)$/.test(w) && rest === 'n');
+          if (okSuffix) return cap(w.replace(/e$/, /^(d|ed)$/.test(rest) ? 'e' : 'e') + (rest === 'ed' && /e$/.test(w) ? 'd' : rest), st2);
+        }
+      }
+      if (!g1 && body.length > 1 && SF[body.slice(0, -1).join('')] && body[body.length - 1] === '⠎' && !/[⠎]$/.test(SF[body.slice(0, -1).join('')])) {
+        const w = SF[body.slice(0, -1).join('')]; if (/^(friend|letter|blind|braille|child|good|great|little|quick)/.test(w)) return cap(w + 's', st2);
+      }
+      // 前に語が付いた短形語（hereafter・thereabouts・inasmuch・unnecessary・repaid）
+      if (!g1 && !noWs) {
+        for (let e = 1; e <= body.length - 2; e++) {
+          const w = SF[body.slice(e).join('')];
+          if (!w || !/^(after|about|much|paid|friend|necessary|above|hand)$/.test(w)) continue;
+          const head = part(body.slice(0, e), { passage: false }, true);
+          if (/^(here|there|where|in|un|re|be|se|im|ever|for|what|hither|thither)$/.test(head)) return cap(head + w, st2);
+        }
+      }
+      // ふつうに1マスずつ読む
+      let capNext = pre.next, capAll = pre.all || st.passage, num = false;
+      const emit = w => { if (capAll) out += w.toUpperCase(); else if (capNext) { out += w[0].toUpperCase() + w.slice(1); capNext = false; } else out += w; };
+      for (let j = 0; j < c.length; j++) {
+        if (j < k) continue;
+        const x = c[j], nx = c[j + 1], first = j === k, last = j === c.length - 1;
+        if (x === '⠠' && nx === '⠠') { capAll = true; j++; continue; }
+        if (x === '⠠' && nx === '⠄') { capAll = st.passage = false; j++; continue; }
+        if (x === '⠠') { capNext = true; num = false; continue; }
+        if (x === '⠼') { num = true; continue; }
+        if (num && EN_DIGIT_REV[x]) { out += EN_DIGIT_REV[x]; continue; }
+        if (num && (x === '⠲' || x === '⠂') && EN_DIGIT_REV[nx]) { out += x === '⠲' ? '.' : ','; continue; }
+        if (num && PUNCT1[x]) { num = false; out += PUNCT1[x]; continue; }
+        if (x === '⠰' && !first && FINAL['⠰'][keyOf(nx)] && !num) { emit(FINAL['⠰'][keyOf(nx)]); j++; continue; }
+        if (x === '⠨' && !first && FINAL['⠨'][keyOf(nx)]) { emit(FINAL['⠨'][keyOf(nx)]); j++; continue; }
+        if (x === '⠰') { num = false; if (L[nx]) { emit(L[nx]); j++; } continue; }
+        num = false;
+        if (INIT[x] && INIT[x][keyOf(nx)]) { emit(INIT[x][keyOf(nx)]); j++; continue; }
+        if (x === '⠘' && nx === '⠖' && L[c[j + 2]]) { const p2 = out.slice(-1).toLowerCase() + L[c[j + 2]]; const lg = { ae: 'æ', oe: 'œ' }[p2]; if (lg) { out = out.slice(0, -1) + lg; j += 2; continue; } }
+        if (EN_MOD_BACK[x + nx]) { const m = EN_MOD_BACK[x + nx]; j += 2; const y = L[c[j]] || ''; emit((y + m).normalize('NFC')); continue; }
+        if (L[x]) { emit(L[x]); continue; }
+        if (STRONG[x]) { emit(STRONG[x]); continue; }
+        if (GROUP[x]) { emit(GROUP[x]); continue; }
+        const mid = !first && !last;
+        if (x === '⠔') { emit('in'); continue; }
+        if (x === '⠢') { emit('en'); continue; }
+        if (x === '⠆') { emit(first && !last ? 'be' : mid ? 'bb' : ';'); continue; }
+        if (x === '⠒') { emit(first && !last ? 'con' : mid ? 'cc' : ':'); continue; }
+        if (x === '⠲') { emit(first && !last ? 'dis' : '.'); continue; }
+        if (x === '⠂' && mid) { emit('ea'); continue; }
+        if (x === '⠖' && mid) { emit('ff'); continue; }
+        if (x === '⠶' && mid) { emit('gg'); continue; }
+        const two = x + (nx || ''), three = two + (c[j + 2] || '');
+        if (EN_BACK[three]) { out += EN_BACK[three]; j += 2; continue; }
+        if (EN_BACK[two]) { out += EN_BACK[two]; j++; continue; }
+        if (PUNCT1[x]) { out += PUNCT1[x]; continue; }
+        out += '〓';
+      }
+      return out;
+    }
+    function word(c, st) {
+      // 前後の句読符を外す
+      let a = 0, z = c.length, head = '', tail = '';
+      for (;;) {
+        const two = c.slice(z - 2, z).join('');
+        if (z - a > 2 && CLOSE2.includes(two)) { tail = EN_BACK[two] + tail; z -= 2; continue; }
+        if (z - a > 3 && c.slice(z - 3, z).join('') === '⠲⠲⠲') { tail = '...' + tail; z -= 3; continue; }
+        if (z - a > 2 && c[z - 2] === '⠠' && c[z - 1] === '⠤') { tail = '—' + tail; z -= 2; continue; }
+        if (z - a > 1 && c[z - 1] === '⠤') { tail = '-' + tail; z--; continue; }
+        if (z - a > 1 && /[⠂⠆⠒⠲⠖⠦⠴]/.test(c[z - 1]) && !/[⠨⠠⠘⠐⠸⠈]/.test(c[z - 2] || '')) { tail = PUNCT1[c[z - 1]] + tail; z--; continue; }
+        break;
+      }
+      for (;;) {
+        const two = c.slice(a, a + 2).join('');
+        if (z - a > 2 && OPEN2.includes(two)) { head += EN_BACK[two]; a += 2; continue; }
+        if (z - a > 1 && c[a] === '⠦') { head += '“'; a++; continue; }
+        if (z - a > 2 && c[a] === '⠠' && c[a + 1] === '⠴') { head += '’'; a += 2; continue; }
+        break;
+      }
+      const core = c.slice(a, z);
+      if (core[0] === '⠠' && core[1] === '⠠' && core[2] === '⠠') { st.passage = true; core.splice(0, 3); }
+      let endPassage = false;
+      if (core.length >= 2 && core[core.length - 2] === '⠠' && core[core.length - 1] === '⠄') { core.splice(-2); endPassage = true; }
+      // ハイフン・アポストロフィ・ダッシュで区切る
+      let out = '', cur = [], afterApos = false;
+      const flush = () => { if (cur.length) out += part(cur, st, afterApos); cur = []; };
+      for (let j = 0; j < core.length; j++) {
+        if (core[j] === '⠠' && core[j + 1] === '⠤') { flush(); afterApos = false; out += '—'; j++; continue; }
+        if (core[j] === '⠤') { flush(); afterApos = false; out += '-'; continue; }
+        if (core[j] === '⠄') { flush(); afterApos = true; out += "'"; continue; }
+        cur.push(core[j]);
+      }
+      flush();
+      if (endPassage) st.passage = false;
+      return head + out + tail;
+    }
+    return function (cells) {
+      const st = { passage: false };
+      return Array.from(cells).join('').split('⠀').map(w => w ? word(Array.from(w), st) : '').join(' ');
+    };
+  })();
+  const EN_DIGIT_REV = {}; for (const k in EN_DIGIT) EN_DIGIT_REV[EN_DIGIT[k]] = k;
+  function englishFromBraille2(cells) { return G2(cells); }
+
+  // 外国語引用符の中の点字を英文に。英語として読めないとき（〓 が出るとき）は null
+  function enFromCells(cells) {
+    const arr = Array.from(cells);
+    if (!arr.length) return '';
+    const t = englishFromBraille(arr);
+    if (!/〓/.test(t)) return t;
+    const t2 = englishFromBraille2(arr); // 縮約（グレード２）
+    if (!/〓/.test(t2)) return t2;
+    return null;
+  }
   function brailleToKana(cellsLine, st) {
     const s = Array.from(cellsLine.replace(/ /g, '⠀'));
     let out = '';
@@ -1057,6 +1223,19 @@
         if (!closed && j >= s.length) st.url = true;
         i0 = j;
       }
+    }
+    // 前の行から続く外国語引用符（⠦ が前の行にあって、閉じの ⠴ がまだ来ていない）
+    if (st.en) {
+      st.en = false;
+      let j = i0; while (j < s.length && s[j] === '⠀') { out += ' '; j++; }
+      const end = s.indexOf('⠴', j);
+      const body = s.slice(j, end < 0 ? s.length : end);
+      const t = enFromCells(body);
+      if (t != null) {
+        out += '⟪' + t + '⟫';
+        if (end < 0) st.en = true;
+        i0 = end < 0 ? s.length : end + 1;
+      } else i0 = j;
     }
     let kagi = false, kakko = false, ins = false, inner = 0, shiji = 0;
     const innerTop = [];
@@ -1079,7 +1258,7 @@
         let j = i; while (j < s.length && s[j] !== '⠀') j++;
         let w = s.slice(i, j), tail = '';
         if (w.length > 1 && (w[w.length - 1] === '⠰' || w[w.length - 1] === '⠲')) { tail = w[w.length - 1] === '⠰' ? '、' : '。'; w = w.slice(0, -1); } // 式のあとの読点・句点
-        if (isMathWord(w)) { out += '⟮' + mathFromBraille(w) + '⟯' + tail; i = j - 1; continue; }
+        if (isMathWord(w)) { const mt = mathFromBraille(w); if (!/〓/.test(mt)) { out += '⟮' + mt + '⟯' + tail; i = j - 1; continue; } }
       }
       if (c === '⠠' && n1 === '⠦') { // アドレス囲み符号
         const [t, j, closed] = infoFromBraille(s, i + 2);
@@ -1144,9 +1323,18 @@
       }
       // 外国語引用符 ⠦ … ⠴：中は英語の点字
       if (c === '⠦' && s.indexOf('⠴', i + 1) > i) {
-        const end = s.indexOf('⠴', i + 1);
-        out += '⟪' + englishFromBraille(s.slice(i + 1, end)) + '⟫';
-        i = end; continue;
+        // 閉じの ⠴ は語の後ろにあるもの（前があいている ⠴ は縮約の was）
+        let end = i; do { end = s.indexOf('⠴', end + 1); } while (end > 0 && s[end - 1] === '⠀');
+        if (end < 0) end = s.indexOf('⠴', i + 1);
+        const body = s.slice(i + 1, end);
+        const t = enFromCells(body);
+        // 英語として読めないもの（⠦ を別の意味で使った日本語の行など）は、外国語引用符にしない
+        if (t != null) { out += '⟪' + t + '⟫'; i = end; continue; }
+      }
+      // 閉じの ⠴ が次の行にある外国語引用符（英語が行をまたぐ）
+      if (c === '⠦' && /^[⠠⠼⠁-⠵⠈⠘⠸⠐⠨⠰⠦]/.test(n1 || '') && (i === 0 || /[⠀⠶⠤⠷⠾⠄⠆⠒⠲⠂⠔]/.test(s[i - 1]))) {
+        const t = enFromCells(s.slice(i + 1));
+        if (t != null) { out += '⟪' + t + '⟫'; st.en = true; break; }
       }
       if (c === '⠤') {
         if (n1 === '⠂' && shiji > 0) { out += '〗'; shiji--; i++; continue; }
@@ -1993,7 +2181,7 @@
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
-    englishBraille, englishFromBraille, setEnglishMode
+    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;

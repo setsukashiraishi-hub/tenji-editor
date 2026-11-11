@@ -53,5 +53,15 @@ const { getTokenizer, engine: E } = require('./harness');
   assert.ok(cells('id を入力').startsWith('⠰⠊⠙'), '略語は外字符'); n++;
   // 番号のハイフン（公式データ：Q１－３－１ は ⠟⠼⠁⠤⠼⠉⠤⠼⠁）は数式にしない
   assert.ok(cells('Q１－３－１．').includes('⠟⠼⠁⠤⠼⠉⠤⠼⠁⠲'), 'Q番号'); n++;
+  // 点字から読み戻すとき（公式の点字データで見つかった形）
+  const back = (lines) => { const st = {}; return lines.map(l => E.brailleToKana(l, st)).join('\n'); };
+  eq(back(['⠔⠔⠀⠪⠒⠻⠃⠀⠦⠠⠏⠗⠑⠎⠎⠀', '⠗⠑⠇⠑⠁⠎⠑⠴⠀⠇⠀⠜⠙⠲']), '⁑ コーセイ ⟪Press ⟫\n⟪release⟫ ニ ヨル。', '行をまたぐ外国語引用符');
+  eq(back(['⠦⠠⠊⠞⠀⠴⠀⠛⠕⠕⠙⠲⠴⠀⠞']), '⟪It was good.⟫ ト', '縮約（グレード２）の was');
+  eq(back(['⠦⠠⠧⠊⠝⠑⠇⠯⠤⠠⠠⠊⠊⠴']), '⟪Vineland-II⟫', '縮約 and');
+  eq(back(['⠦⠠⠢⠞⠊⠞⠇⠑⠰⠞⠴']), '⟪Entitlement⟫', '縮約 en・ment');
+  eq(back(['⠦⠠⠠⠇⠑⠛⠕⠶⠰⠠⠗⠶⠴']), '⟪LEGO(R)⟫', '英語の中の日本語のカッコ');
+  // グレード２（liblouis の表で書いた英文を読み戻せる）
+  eq(E.englishFromBraille2('⠠⠝⠕⠗⠀⠔⠀⠮⠀⠠⠎⠏⠻⠍⠀⠠⠱⠁⠇⠑⠀⠜⠑⠀⠐⠮⠀⠁⠝⠽⠀⠷⠀⠘⠹⠀⠃⠇⠎⠀⠷⠀⠃⠐⠕⠆'), 'Nor in the Sperm Whale are there any of those blinds of bone;');
+  eq(E.englishFromBraille2('⠠⠊⠄⠇⠇⠀⠞⠑⠇⠇⠀⠽⠀⠭⠄⠎⠀⠛⠗⠞⠻⠀⠹⠁⠝⠀⠽⠗⠎⠲'), "I'll tell you it's greater than yours.");
   console.log(`english: all passed (${n})`);
 })().catch(e => { console.error(e); process.exit(1); });
