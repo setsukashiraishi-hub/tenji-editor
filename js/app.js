@@ -2129,6 +2129,8 @@
     G.msg.textContent = sc.msg;
     G.msg.classList.toggle('guide-busy', !!sc.busy);
     G.sub.textContent = sc.sub || '';
+    // 読み上げソフト用：見出しと説明をつなげて1行に（なぞったときに1回で読まれる）
+    $('guide-say').textContent = [sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/\n/g, ' ')).join(' ');
     G.memo.hidden = !sc.memo;
     G.field.hidden = !sc.input;
     G.btns.textContent = '';
@@ -2195,7 +2197,8 @@
     } else if (sc.list) {
       G.btns.firstChild.focus(); // 一覧の名前（質問文）と、最初の項目が読まれる
     } else if (sc.memo) {
-      G.memo.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
+      G.memo.setAttribute('aria-label', hasKeys ? '文章（Shift＋Enterを3回で点訳、Escでエディタへ）' : '文章');
+      G.memo.removeAttribute('aria-describedby'); // 質問文は上の1行で読むので、ここでは繰り返さない
       G.memo.focus();
     } else {
       // 案内の枠の名前は「案内」のまま変えない（名前が変わると、読み上げソフトがその名前と知らせの両方を読んで2回になる）。

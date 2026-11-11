@@ -485,6 +485,7 @@ fieldset:disabled { opacity: .5; }
 .guide-msg { margin: 0; font: 600 clamp(20px, 3.4vw, 28px)/1.6 var(--font-ui); color: var(--ink); white-space: pre-line; outline: none; }
 .guide-sub { margin: 0; font-size: 15px; line-height: 1.8; color: var(--muted); white-space: pre-line; }
 .guide-sub:empty { display: none; }
+.guide-text { display: flex; flex-direction: column; gap: 14px; }
 .guide-btns { display: flex; flex-wrap: wrap; gap: 12px; }
 .guide-btns button { flex: 1 1 220px; min-height: 64px; padding: 12px 18px; font: 600 18px/1.4 var(--font-ui); border-radius: 12px;
   border: 2px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; text-align: left; }

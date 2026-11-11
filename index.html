@@ -273,8 +273,13 @@
     <!-- 読み上げソフト（PC-Talker・NVDA・JAWS）でもエンター・スペースがそのまま届くように、案内の中はアプリケーションとして扱う -->
     <div class="guide-box" id="guide-box" role="application" tabindex="-1" aria-label="案内">
       <p class="guide-step" id="guide-step" aria-hidden="true"></p>
-      <p class="guide-msg" id="guide-msg"></p>
-      <p class="guide-sub" id="guide-sub"></p>
+      <!-- 見出しと説明は1つのまとまり：VoiceOver・TalkBack で指でなぞったとき、続けて1回で読まれる -->
+      <div class="guide-text" id="guide-text">
+        <!-- 読み上げソフトには、見出しと説明をつなげた1行（guide-say）だけを読ませる。見た目の2つは読ませない -->
+        <p class="sr-only" id="guide-say"></p>
+        <p class="guide-msg" id="guide-msg" aria-hidden="true"></p>
+        <p class="guide-sub" id="guide-sub" aria-hidden="true"></p>
+      </div>
       <textarea class="guide-memo" id="guide-memo" hidden aria-label="文章（Shift＋Enterを3回で点訳、Escでエディタへ）" spellcheck="false"></textarea>
       <div class="guide-field" id="guide-field" hidden>
         <label for="guide-input" id="guide-input-label">読み方（かな）</label>
