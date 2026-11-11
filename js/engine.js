@@ -128,7 +128,46 @@
     if ((m = /^[ 　]*(第?)([0-9０-９]+)[ 　]+(?=\S)(?![+\-−×÷=＝<>＜＞＋－/^√²³])/.exec(text))) return { kana: (m[1] ? 'ダイ' : '') + zen(m[2]), sep: '  ', rest: text.slice(m[0].length) };
     return null;
   }
+  // ---------- 公式の点字データから学んだ分かち書き（js/spacing-data.js）----------
+  // split: { 語: '区切った形' }（ホームページ → ホーム ページ）、join: { '語1 語2': 1 }（クルマ イス → クルマイス）
+  // 公式の点字（厚生労働省・自治体の広報・日本語能力試験 など 約164万行）で、区切る形と続ける形の数を比べて決めたもの
+  let SPACING = null;
+  const loadSpacing = d => { SPACING = d ? { split: Object.assign(Object.create(null), d.split || {}), join: Object.assign(Object.create(null), d.join || {}) } : null; };
+  loadSpacing(typeof TENJI_SPACING !== 'undefined' ? TENJI_SPACING : (typeof require === 'function' ? (() => { try { return require('./spacing-data.js'); } catch (e) { return null; } })() : null));
+  const SP_PARTICLE = /(カラ|マデ|ヨリ|デワ|ニワ|トワ|デモ|ニモ|トモ|ノワ|ナド|ヲ|ガ|ニ|ノ|ワ|デ|ト|モ|ヘ|ヤ)$/;
+  const SP_WORD = /^[ァ-ヺー]+$/;
+  function spStem(w) {
+    if (SPACING.split[w] !== undefined || !SP_PARTICLE.test(w)) return [w, ''];
+    const m = SP_PARTICLE.exec(w), st = w.slice(0, m.index);
+    return st.length >= 2 ? [st, m[1]] : [w, ''];
+  }
+  function applySpacing(kana) {
+    if (!SPACING) return kana;
+    return kana.split('\n').map(line => {
+      const ws = line.split(' ');
+      const out = [];
+      for (let i = 0; i < ws.length; i++) {
+        let w = ws[i];
+        if (SP_WORD.test(w)) {
+          const [st, pt] = spStem(w);
+          if (SPACING.split[st]) {
+            // 区切った部分をさらに区切る（マイナンバーカード → マイ ナンバー カード）
+            const deep = x => x.split(' ').map(y => SPACING.split[y] && y.length >= 4 ? SPACING.split[y] : y).join(' ');
+            w = deep(deep(SPACING.split[st])) + pt;
+          }
+          // 前の語と続ける
+          const prev = out[out.length - 1];
+          if (prev !== undefined && SP_WORD.test(prev) && SPACING.join[prev + ' ' + st]) { out[out.length - 1] = prev + w; continue; }
+        }
+        out.push(w);
+      }
+      return out.join(' ');
+    }).join('\n');
+  }
+
   function sumijiToKana(text, tokenize, opts, noLabel) {
+    // PDF からコピーした文字の「部首」の字（⾒・⽂ など）や互換漢字は、ふつうの漢字にする（意⾒書 → 意見書）
+    text = String(text || '').replace(/[\u2E80-\u2FDF\uF900-\uFAFF]/g, c => c.normalize('NFKC'));
     const lb = noLabel ? null : lineLabel(text);
     if (lb) {
       const r = sumijiToKana(lb.rest, tokenize, opts, true);
@@ -245,6 +284,13 @@
     let s = MARK_RE.test(line) ? line.replace(MARK_RE, MARK + ' ') : line.replace(BULLET_RE, '');
     // 行頭の ※・＊ は星印（⠔⠔＋マスあけ）。「※1 」のような注の番号だけは注記符のまま（公式の点字データの書き方）
     if (/^[ 　]*[※＊*](?![ 　]?[0-9０-９]{1,2}(?![0-9０-９一-鿿々（(.．,，]))/.test(s)) s = s.replace(/^[ 　]*[※＊*][ 　]*/, MARK + ' ');
+    // 漢字の語と語のあいだの中点（小・中学校）は、中点のあとをあける（公式：ショー・ チューガッコー 257：0）
+    s = s.replace(/([一-鿿々])・(?=[一-鿿々])/g, (m, a, o, str) => /[〇一二三四五六七八九十百千]/.test(a) && /[〇一二三四五六七八九十]/.test(str[o + 2] || '') ? m : a + '・ ');
+    // PDF の組版で入った字間のあき（障 害者）、古い書き方の「なかつた」、「長又は」（姓の長又と読まない）
+    s = s.replace(/〇・([一二三四五六七八九])/g, (m, d) => '0.' + ('一二三四五六七八九'.indexOf(d) + 1)).replace(/障[ 　]+害/g, '障害').replace(/なかつ(?=[てた])/g, 'なかっ').replace(/長又(?=は)/g, '長 又');
+    // 読みを辞書に任せると誤る書き方（公式の点字データ：障がい → ショーガイ、聾話 → ローワ、1人 → ヒトリ）
+    s = s.replace(/障(?:がい|碍)/g, '障害').replace(/聾(唖|話|学校|者|児|教育)/g, (m, x) => 'ろう' + ({ '唖': 'あ', '話': 'わ' }[x] || x)).replace(/聾/g, 'ろう')
+      .replace(/(?<![0-9０-９.,．，])[1１]人(?![目称前分組])/g, '一人').replace(/(?<![0-9０-９.,．，])[2２]人(?![目称前分組])/g, '二人');
     // 空欄（　）・（＿＿）→ 空欄符号（全角スペースの2マスあけより先に）
     s = s.replace(/[（(][ 　_＿]*[）)]/g, '\ue062');
     // 組版の都合で入ったスペース（第 36 条・13 ページ・第一項 の）は詰める（全角スペースは区切りとして残す）
@@ -258,7 +304,9 @@
     // 日付の漢数字は数字にする（四月一日 → 4月1日、十二月二十五日 → 12月25日）
     const kn = k => { let n = 0, cur = 0; for (const ch of k) { const d = '〇一二三四五六七八九'.indexOf(ch); if (d >= 0) cur = cur * 10 + d; else if (ch === '十') { n += (cur || 1) * 10; cur = 0; } } return n + cur; };
     s = s.replace(/(^|[^一-鿿〇]|年)([一二三四五六七八九十]{1,3})月/g, (m, a, k) => { const n = kn(k); return n >= 1 && n <= 12 ? a + n + '月' : m; })
-      .replace(/月([〇一二三四五六七八九十]{1,3})日/g, (m, k) => { const n = kn(k); return n >= 1 && n <= 31 ? '月' + n + '日' : m; });
+      .replace(/月([〇一二三四五六七八九十]{1,3})日/g, (m, k) => { const n = kn(k); return n >= 1 && n <= 31 ? '月' + n + '日' : m; })
+      // 「経過後三月以内」「六月を経過」のような期間の月も数字に（3ゲツ イナイ）
+      .replace(/(?<![年第0-9０-９〇一二三四五六七八九十])([一二三四五六七八九十]{1,3})月(?=以内|以上|未満|を経過|を超え|ごと|当たり|間)/g, (m, k) => kn(k) + '月');
     // 語と語の間の全角スペース（「第1　趣旨」「資料1　（福）…」）は2マスあけ
     s = s.replace(/([^ 　])　+(?=[^ 　])/g, '$1' + WIDE_GAP);
     // 丸数字 → （1）
@@ -1710,7 +1758,7 @@
       // （点字では「ニ タイシテ」「ト シテ」のように、動詞の部分を区切って書く）
       if (t.pos === '助詞' && t.pos_detail_2 === '連語') {
         const m = /^(に|と|を)(.+)$/.exec(t.surface_form);
-        if (m && !/^(の|は|も|が|で|へ|から|まで|ほど|だけ|など|って|か|て)+$/.test(m[2])) {
+        if (m && !/^(の|は|も|が|で|へ|から|まで|ほど|だけ|など|って|か|て)+$/.test(m[2]) && !(m[1] === 'を' && m[2] === 'して')) { // 「障害者をして」（させる相手）は続ける
           const rd = t.reading && t.reading !== '*' ? t.reading : toKatakana(t.surface_form);
           res.push({ surface_form: m[1], pos: '助詞', pos_detail_1: '格助詞', pos_detail_2: '一般', reading: rd.slice(0, 1), basic_form: m[1] });
           const pr = t.pronunciation && t.pronunciation !== '*' ? t.pronunciation.slice(1) : undefined;
@@ -1735,6 +1783,13 @@
         const W = { 1: 'ツイタチ', 2: 'フツカ', 3: 'ミッカ', 4: 'ヨッカ', 5: 'イツカ', 6: 'ムイカ', 7: 'ナノカ', 8: 'ヨーカ', 9: 'ココノカ', 10: 'トオカ', 20: 'ハツカ' };
         return { kana: W[n] || (n === 14 || n === 24 ? n + 'カ' : n + 'ニチ'), eatNext: true, day: true };
       }
+      // 月のない「5日」（週5日・5日間）も、2〜10日・20日は和語（イツカ）、14日・24日は「14カ」
+      if (next && /^日間?$/.test(next.surface_form) && /^[0-9]{1,2}$/.test(surf) && !(prev && prev.surface_form === '月')) {
+        const n = +surf, kan = next.surface_form === '日間' ? 'カン' : '';
+        const W = { 2: 'フツカ', 3: 'ミッカ', 4: 'ヨッカ', 5: 'イツカ', 6: 'ムイカ', 7: 'ナノカ', 8: 'ヨーカ', 9: 'ココノカ', 10: 'トオカ', 20: 'ハツカ' };
+        if (W[n]) return { kana: W[n] + kan, eatNext: true, day: true };
+        if (n === 14 || n === 24) return { kana: n + 'カ' + kan, eatNext: true, day: true };
+      }
       const k = numberToKana(surf);
       if (k !== null) return { kana: k };
     }
@@ -1751,7 +1806,7 @@
     // 数のあとの「行」は行数（2行目 → 2ギョーメ、1行あける → 1ギョー アケル）
     if (surf === '行' && ((prev && prev.isNumber) || (next && next.surface_form === '目'))) return { kana: 'ギョー' };
     // 「3月を経過」「6月以内」のような期間はゲツ
-    if (prev && prev.isNumber && surf === '月') return { kana: next && /^(を|以内|以上|未満|間|後|ごと|毎)$/.test(next.surface_form) ? 'ゲツ' : 'ガツ' };
+    if (prev && prev.isNumber && surf === '月') return { kana: next && /^(を|以内|以上|未満|間|後|ごと|毎|当たり|当り|あたり|超|経過)$/.test(next.surface_form) ? 'ゲツ' : 'ガツ' };
     // 数字のあとの助数詞は、最後の数字で読みが変わる（30分 → 30プン、3本 → 3ボン）
     if (prev && prev.isNumber && COUNTER_SOUND[surf] && /[0-9]$/.test(prev.surface_form)) {
       const d = +prev.surface_form.slice(-1), tens = /[0-9]0$/.test(prev.surface_form) && prev.surface_form.length > 1;
@@ -1763,7 +1818,12 @@
       if (surf === 'は') return { kana: 'ワ' };
       if (surf === 'へ') return { kana: 'エ' };
     }
+    // サ変名詞のあとの「人」はニン（相続人・代理人・申請人。公式 ソーゾクニン 22：0）、「済」はズミ（納付済）
+    if (surf === '人' && t.pos_detail_1 === '接尾' && prev && prev.pos_detail_1 === 'サ変接続') return { kana: 'ニン' };
+    if (surf === '済' && prev && prev.pos === '名詞') return { kana: 'ズミ' };
     if (WORD_READ[surf]) return { kana: WORD_READ[surf] };
+    // カタカナで書いてある語は、書いてあるとおり（ボウル → ボウル。辞書の発音 ボール にしない）
+    if (/^[ァ-ヺ][ァ-ヺー]*$/.test(surf) && t.pos !== '助動詞') return { kana: surf.replace(/ヮ/g, 'ワ') };
     const R = t.reading && t.reading !== '*' ? t.reading : null;
     // 接続詞・あいさつの「は」はワ（又は → マタワ、こんにちは → コンニチワ）
     if (R && /^(接続詞|感動詞)$/.test(t.pos) && /は$/.test(surf)) return { kana: longVowel(R, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R, false).replace(/ハ$/, 'ワ') };
@@ -1799,7 +1859,11 @@
     if (p === '助動詞' && ps === 'で' && prev.pos === '助動詞' && /^(ある|ない)$/.test(t.basic_form || '')) return true;
     // 「ではない」「もない」「美しくない」の ない は区切る（デワ ナイ、ウツクシク ナイ）
     if (t.basic_form === 'ない' && ((prev.pos === '助詞' && /^(は|も|こそ|さえ|しか)$/.test(ps)) || (prev.pos === '形容詞' && /く$/.test(ps)) || (prev.pos === '助動詞' && /^(たく|らしく)$/.test(ps)))) return true;
+    // 「ありがとう ございます」「おめでとう ございます」の ござい は区切る（公式 586：0）
+    if (/^ござい/.test(surf) && /(とう|よう)$/.test(ps)) return true;
     if (p === '助詞' || p === '助動詞') return false; // 英字の後の助詞も続ける（点字ではつなぎ符をはさむ：CDヲ）
+    // 「1人当たり」「1月当たり」は続ける（公式 ヒトリアタリ 428：2）
+    if (/^(当たり|当り|あたり)$/.test(surf) && (prev.isNumber || prev.pos_detail_1 === '接尾' || prev.pos_detail_1 === '助数詞' || /^(一人|二人|人|月|日|年|回|件|世帯)$/.test(ps))) return false;
     if (p === '名詞') {
       // 「等（とう）」と「以上・以下・未満・以内・以外」は区切る（テアテ トー、50サイ ミマン）
       if (surf === '等' || /^(以上|以下|未満|以内|以外|以降|以前|以後)$/.test(surf)) return true;
@@ -1810,6 +1874,8 @@
       if (d1 === '非自立' && t.pos_detail_2 === '助動詞語幹') return false;
       if (d1 === '非自立') return !(surf === 'の' || surf === 'ん');
       if (prev.pos === '接頭詞') return false;
+      // 「市ホームページ」「県ウェブサイト」：1字の漢字の名詞のあとのカタカナ語は区切る（シ ホーム ページ 1067：1）
+      if (/^[市県区町村都府国道]$/.test(ps) && prev.pos === '名詞' && /^[ァ-ヺー]{2,}$/.test(surf)) return true;
       if (prev.pos === '名詞' && !['接尾', '非自立', '数', '代名詞'].includes(prev.pos_detail_1) && !prev.isNumber && !t.isNumber) {
         if (prev.pos_detail_3 === '姓' && t.pos_detail_3 === '名') return true;
         if (isLatinWord(ps) || isLatinWord(surf)) return false;
@@ -1824,7 +1890,11 @@
       if (d1 === '接尾') return false;
       // 名詞＋動詞の連用形で1つの名詞になっているもの（切り欠きを）は続ける
       if (prev.pos === '名詞' && /^連用/.test(t.conjugated_form || '') && ctx.nextIsCase && /[りきしちみぎびい]$/.test(ps)) return false;
-      if (t.basic_form === 'する' && prev.pos === '名詞' && prev.pos_detail_1 !== '接尾' && /^[一-鿿]$/.test(ps)) return false; // 愛する（多様化 シテ は区切る）
+      // 1字の漢語＋する は続ける（愛する）。前に漢字が付いた2字以上の語（来庁する）は区切る
+      if (t.basic_form === 'する' && prev.pos === '名詞' && prev.pos_detail_1 !== '接尾' && /^[一-鿿]$/.test(ps) && !((ctx.segMora || 0) > (ctx.prevMora || 0))) return false; // 愛する（多様化 シテ は区切る）
+      // 「ください」は区切る（オモーシコミ クダサイ 198：0）。「お受けできません」の できる も区切る
+      if (/^(くださ|下さ)/.test(surf)) return true;
+      if (/^(できる|する|いたす|致す)$/.test(t.basic_form || '') && prev.pos === '動詞' && ctx.honorific) return true; // オウケ デキル、オススメ シマス
       if (['てる', 'でる', 'とく', 'どく', 'ちゃう', 'じゃう', 'ちまう'].includes(t.basic_form)) return false;
       if (t.basic_form === 'なさる' && prev.pos === '動詞') return false;
       // 複合動詞（混み合う・歩き続ける）は続ける
@@ -1855,7 +1925,9 @@
     '歩': d => [1, 6, 8, 0].includes(d) ? 'ポ' : d === 3 ? 'ボ' : 'ホ'
   };
   // 辞書の読みが、点訳のふつうの読みと違う語
-  const WORD_READ = { '毎年': 'マイネン', '如何': 'イカン', '上方': 'ジョーホー', '車いす': 'クルマ イス', '車椅子': 'クルマ イス', '対償': 'タイショー',
+  const WORD_READ = { '毎年': 'マイネン', '如何': 'イカン', '上方': 'ジョーホー', '車いす': 'クルマイス', '車椅子': 'クルマイス',
+    // 公式の点字データ全体の数で決めた読み（日本 ニホン 3912：ニッポン 376、本市 ホンシ）。毎年は発行元で割れる（厚労省 マイネン、名古屋市 マイトシ）ので候補に出す
+    '日本': 'ニホン', '日本年金機構': 'ニッポン ネンキン キコー', '日本郵便': 'ニッポン ユービン', '日本赤十字社': 'ニホン セキジュージシャ', '日本銀行': 'ニッポン ギンコー', '日本放送協会': 'ニッポン ホーソー キョーカイ', '本市': 'ホンシ', '本県': 'ホンケン', '本町': 'ホンチョー', '本区': 'ホンク', '本村': 'ホンソン', '本学': 'ホンガク', '本校': 'ホンコー', '本会': 'ホンカイ', '本件': 'ホンケン', '本書': 'ホンショ', '本法': 'ホンポー', '本省': 'ホンショー', '本庁': 'ホンチョー', '本制度': 'ホンセイド', '本事業': 'ホンジギョー', '各課': 'カク カ', '各月': 'カク ツキ', '款': 'カン', '何人も': 'ナニビトモ', '対償': 'タイショー',
     // 公式の点字データ（厚生労働省）と比べて分かった、辞書の読みが違う・ない語
     '令和': 'レイワ', '令': 'レイ', '附則': 'フソク', '事業主': 'ジギョーヌシ', '届出': 'トドケデ', '獣医師': 'ジューイシ', '獣医': 'ジューイ', '被毛': 'ヒモー',
     '毎年度': 'マイネンド', '各省各庁': 'カクショー カクチョー', '関係会社': 'カンケイガイシャ', '親事業主': 'オヤジギョーヌシ', '安定所': 'アンテイジョ',
@@ -1880,7 +1952,12 @@
     const t = tokens[i], surf = t.surface_form, p1 = tokens[i - 1], p2 = tokens[i - 2], n1 = tokens[i + 1];
     // 「〜の方」：人ならカタ、方向・方面ならホー
     if (surf === '方' && p1 && p1.surface_form === 'の') {
-      const person = tokens.slice(Math.max(0, i - 5), i - 1).some(x => /者$|^歳$|^人$|^以外$|^未満$|^以上$|^様$|^皆/.test(x.surface_form));
+      // 公式の点字データでは「の方は・に・が」の 85% 以上がカタ。方向（こちらの方・右の方・〜の方へ）や比べるとき（〜の方が良い）はホー
+      const p2s = p2 ? p2.surface_form : '';
+      const n2 = tokens[i + 2];
+      const dir = /^(こちら|そちら|あちら|どちら|こっち|そっち|あっち|どっち|前|後|後ろ|右|左|上|下|東|西|南|北|内|外|奥|先|手前|中|横|裏|表|山|海|川|駅|窓|出口|入口)$/.test(p2s) ||
+        (n1 && n1.surface_form === 'へ') || (n1 && n1.surface_form === 'が' && n2 && /^(よい|良い|いい|良く|よく|多い|少ない|大きい|小さい|早い|遅い|安い|高い|便利|楽|簡単|まし|有利|効果|上|下)/.test(n2.surface_form));
+      const person = !dir;
       const kana = person ? 'カタ' : 'ホー';
       return { surface: 'の方', kana, options: person ? ['カタ', 'ホー'] : ['ホー', 'カタ'] };
     }
@@ -1900,9 +1977,17 @@
     // 「〜の間」「〜との間」：アイダ（当分の間、国民の間に）
     if (surf === '間' && p1 && p1.surface_form === 'の' && t.reading === 'マ') return { surface: 'の間', kana: 'アイダ', options: ['アイダ', 'マ', 'カン'] };
     // 動詞のあとの「方」は人（希望する方は → キボー スル カタワ）
-    if (surf === '方' && p1 && p1.pos === '動詞' && t.pos_detail_1 === '非自立') return { surface: p1.surface_form + '方', kana: 'カタ', options: ['カタ', 'ホー'] };
+    if (surf === '方' && p1 && (p1.pos === '動詞' || p1.pos === '助動詞') && (t.pos_detail_1 === '非自立' || t.pos_detail_1 === '接尾')) {
+      // 「読み方」（動詞の連用形＋方）は続けてカタ。「行ける方」「していない方」（人）は区切ってカタ。「した方がよい」（比べる）はホー
+      const n2 = tokens[i + 2];
+      if (n1 && n1.surface_form === 'が' && n2 && /^(よい|良い|いい|良く|よく|まし|便利|楽|安全|確実|早い|効果)/.test(n2.surface_form)) return { surface: '方', kana: 'ホー', options: ['ホー', 'カタ'], brk: true };
+      if (p1.pos === '動詞' && /^連用/.test(p1.conjugated_form || '')) return { surface: p1.surface_form + '方', kana: 'カタ', options: ['カタ', 'ホー'] };
+      return { surface: '方', kana: 'カタ', options: ['カタ', 'ホー'], brk: true };
+    }
+    // 「年4回」「年に1度」の年はネン（公式 199：55、194：7）
+    if (surf === '年' && t.pos === '名詞' && !(p1 && p1.isNumber) && n1 && (n1.isNumber || (n1.surface_form === 'に' && tokens[i + 2] && tokens[i + 2].isNumber))) return { surface: '年', kana: 'ネン', options: ['ネン', 'トシ'] };
     // 「〜の数」「定める数」：スー（法令・統計の書き方）
-    if (surf === '数' && p1 && (p1.surface_form === 'の' || p1.pos === '動詞') && t.reading === 'カズ') return { surface: '数', kana: 'スー', options: ['スー', 'カズ'] };
+    if (surf === '数' && p1 && (/^(の|その|この|当該|同|総)$/.test(p1.surface_form) || p1.pos === '動詞') && t.reading === 'カズ') return { surface: '数', kana: 'スー', options: ['スー', 'カズ'] };
     // 「機関の長」「その長」：チョー
     if (surf === '長' && p1 && /^(の|その|当該|この)$/.test(p1.surface_form) && (!n1 || !/^(い|く|かっ|さ|すぎ)/.test(n1.surface_form))) return { surface: '長', kana: 'チョー', options: ['チョー', 'ナガ'] };
     return null;
@@ -1933,6 +2018,7 @@
       else if (t.isNumber && !r.day && tokens[i + 1] && tokens[i + 1].surface_form === '日') checks.push({ surface: surf + '日', kana: r.kana + 'ニチ', options: [r.kana + 'ニチ', r.kana + 'カ'] });
       ctx.curMora = moraOf(t, r.kana);
       ctx.nextIsCase = !!(tokens[i + 1] && tokens[i + 1].pos === '助詞' && /^(を|が|に|の|は|も|で|と)$/.test(tokens[i + 1].surface_form));
+      ctx.honorific = !!(prev && tokens[i - 2] && tokens[i - 2].pos === '接頭詞' && /^(お|ご|御)$/.test(tokens[i - 2].surface_form) && prev.pos === '動詞');
       const brk = !ctx.attachHere && (needsBreak(t, prev, ctx) || ctx.forceBreak || !!(ctxCheck && ctxCheck.brk));
       ctx.forceBreak = false; ctx.attachHere = false;
       if (brk && out && !out.endsWith(' ')) out += ' ';
@@ -1948,7 +2034,7 @@
       ctx.prevMora = ctx.curMora;
       prev = t;
     }
-    return { kana: normalizeSpacing(out), unresolved, checks };
+    return { kana: applySpacing(normalizeSpacing(out)), unresolved, checks };
   }
 
   // 句読点まわりのマスあけを整える
@@ -2378,7 +2464,7 @@
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
-    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F
+    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;
