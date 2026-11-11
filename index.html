@@ -268,6 +268,26 @@
     </div>
   </dialog>
 
+  <!-- 自動誘導（案内）：画面いっぱいに1つずつ聞いていく -->
+  <section class="guide" id="guide" hidden role="dialog" aria-modal="true" aria-labelledby="guide-msg">
+    <!-- 読み上げソフト（PC-Talker・NVDA・JAWS）でもエンター・スペースがそのまま届くように、案内の中はアプリケーションとして扱う -->
+    <div class="guide-box" id="guide-box" role="application" tabindex="-1" aria-roledescription="案内" aria-labelledby="guide-msg" aria-describedby="guide-sub">
+      <p class="guide-step" id="guide-step" aria-hidden="true"></p>
+      <p class="guide-msg" id="guide-msg"></p>
+      <p class="guide-sub" id="guide-sub"></p>
+      <textarea class="guide-memo" id="guide-memo" hidden aria-label="文章（Shift＋Enterを3回で点訳、Escでエディタへ）" spellcheck="false"></textarea>
+      <div class="guide-field" id="guide-field" hidden>
+        <label for="guide-input" id="guide-input-label">読み方（かな）</label>
+        <input type="text" id="guide-input" autocomplete="off" spellcheck="false">
+        <div class="guide-opts" id="guide-opts" role="group" aria-label="読み方の候補"></div>
+      </div>
+      <div class="guide-preview" id="guide-preview" hidden></div>
+      <div class="guide-btns" id="guide-btns"></div>
+      <p class="guide-esc pc-only" id="guide-esc">Esc：今までの内容をエディタに入れて、案内を終わる</p>
+    </div>
+    <input type="file" id="guide-file" hidden multiple
+           accept=".zip,application/zip,.txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.png,.jpg,.jpeg,.gif,.bmp,.webp,.heic,.heif,.avif,image/*,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
+  </section>
   <div class="drop-hint" id="drop-hint" hidden>ここにファイルを離すと読み込みます</div>
   <div class="toast" id="toast" aria-hidden="true" hidden></div>
   <!-- スクリーンリーダー向けのお知らせ（画面には出ない） -->

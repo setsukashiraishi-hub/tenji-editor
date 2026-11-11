@@ -2072,12 +2072,616 @@
     if (fs.length) openFiles(fs);
   });
 
+  // ---------- 自動誘導（案内） ----------
+  // 開くと最初に「自動誘導を使うか」を聞き、使うときは1画面ずつ案内して、点字ファイルを作るところまで進める。
+  // キー：1つめの選択肢は Enter、2つめは Space（最初の画面だけ1回で決定、そのあとは1回で選択・2回で決定）。Esc で途中までをエディタに入れて終わる
+  const G = { el: $('guide'), box: $('guide-box'), preview: $('guide-preview'), msg: $('guide-msg'), sub: $('guide-sub'), step: $('guide-step'), btns: $('guide-btns'), memo: $('guide-memo'),
+    field: $('guide-field'), input: $('guide-input'), inputLabel: $('guide-input-label'), opts: $('guide-opts'), file: $('guide-file'), esc: $('guide-esc') };
+  const hasKeys = !window.matchMedia || matchMedia('(hover: hover) and (pointer: fine)').matches; // キーボードのあるパソコンか
+  if (!hasKeys) document.documentElement.classList.add('no-keys');
+  const guide = { on: false, screen: null, sel: -1, timer: null, shiftEnter: 0, armed: false, items: [], k: 0, picking: false, listArmed: -1 };
+  const KEY_NAME = { Enter: 'エンター', Space: 'スペース' };
+  const appParts = () => [...document.body.children].filter(el => el !== G.el && el.tagName !== 'SCRIPT' && !/^sr-/.test(el.id));
+  // 案内の画面でも使える「終わる」ボタン（スマホなど Esc のない端末用）
+  const quitBtn = document.createElement('button');
+  quitBtn.type = 'button'; quitBtn.className = 'btn small-btn guide-quit'; quitBtn.textContent = '案内を終わってエディタへ';
+  quitBtn.addEventListener('click', () => finishGuide('esc'));
+  G.esc.after(quitBtn);
+
+  function guideShow(sc) {
+    clearTimeout(guide.timer);
+    clearTimeout(guide.pvTimer);
+    G.preview.hidden = !sc.preview;
+    guide.screen = sc; guide.sel = -1; guide.shiftEnter = 0; guide.armed = false;
+    G.step.textContent = sc.step || '';
+    G.msg.textContent = sc.msg;
+    G.msg.classList.toggle('guide-busy', !!sc.busy);
+    G.sub.textContent = sc.sub || '';
+    G.msg.setAttribute('aria-describedby', sc.sub ? 'guide-sub' : '');
+    G.memo.hidden = !sc.memo;
+    G.field.hidden = !sc.input;
+    G.btns.textContent = '';
+    G.btns.classList.toggle('guide-list', !!sc.list);
+    G.btns.setAttribute('role', sc.list ? 'listbox' : 'group');
+    // 一覧の名前に質問文を入れて、一覧に入ったときに質問から読まれるようにする
+    G.btns.setAttribute('aria-label', sc.list ? [sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1') : '選択肢');
+    guide.listArmed = -1;
+    // 一覧（形式など）：矢印で動いて、フォーカスのある項目でエンター2回で決定
+    (sc.list || []).forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'guide-item'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', 'false');
+      const t = document.createElement('span'); t.className = 'gi-label'; t.textContent = c.label;
+      b.appendChild(t);
+      if (c.note) { const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.appendChild(n); }
+      b.addEventListener('click', () => c.run()); // マウス・指は押したら決定
+      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.setAttribute('aria-selected', String(x === b))); });
+      G.btns.appendChild(b);
+    });
+    (sc.choices || []).forEach((c, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.append(c.label);
+      if (c.key) {
+        const k = document.createElement('span');
+        k.className = 'key';
+        k.textContent = sc.single ? KEY_NAME[c.key] : `${KEY_NAME[c.key]}（1回で選択、2回で決定）`;
+        b.appendChild(k);
+      }
+      b.setAttribute('aria-pressed', 'false');
+      b.addEventListener('click', () => guideChoose(i)); // マウス・指は押したら決定
+      G.btns.appendChild(b);
+    });
+    quitBtn.hidden = !!sc.first;
+    G.esc.hidden = !!sc.first;
+    if (sc.input) {
+      // キーの案内はパソコンのときだけ
+      G.inputLabel.textContent = (sc.input.label || (hasKeys ? '読み方（かな。シフトを押しながら F D S J K L で6点入力もできます）' : '読み方（かな）'))
+        .replace(hasKeys ? /$^/ : /。?6点入力もできます/, '');
+      G.input.value = sc.input.value || '';
+      G.input.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
+      G.opts.textContent = '';
+      for (const o of sc.input.options || []) {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = o;
+        b.setAttribute('aria-label', `候補「${o}」を入れる`);
+        b.addEventListener('click', () => { G.input.value = o; G.input.focus(); guide.armed = false; guideEcho(); });
+        G.opts.appendChild(b);
+      }
+      guideEcho();
+      // スマホなどエンターを2回押しにくい端末のための決定ボタン
+      const ok = document.createElement('button');
+      ok.type = 'button'; ok.textContent = '決定';
+      ok.addEventListener('click', () => sc.input.done(G.input.value));
+      G.btns.appendChild(ok);
+      // 入力欄に入ると、質問文（説明）から読まれる
+      G.input.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
+      G.input.focus(); G.input.select();
+    } else if (sc.list) {
+      G.btns.firstChild.focus(); // 一覧の名前（質問文）と、最初の項目が読まれる
+    } else if (sc.memo) {
+      G.memo.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
+      G.memo.focus();
+    } else if (document.activeElement !== G.box) {
+      G.box.focus(); // 案内の枠に入ると、質問文と説明が読まれる
+    } else {
+      // 同じ枠のまま画面だけ変わったときは、読み上げソフトに文を渡す
+      announce([sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1'));
+    }
+    if (sc.auto) guide.timer = setTimeout(sc.next, sc.auto);
+  }
+  function guideChoose(i) {
+    const sc = guide.screen;
+    const c = sc && sc.choices && sc.choices[i];
+    if (c) c.run();
+  }
+  function guideSelect(i) {
+    guide.sel = i;
+    [...G.btns.children].forEach((b, k) => { b.classList.toggle('selected', k === i); b.setAttribute('aria-pressed', String(k === i)); });
+    const c = guide.screen.choices[i];
+    // フォーカスは動かさず（読み上げが途切れないように）、選んだことだけを知らせる
+    announce(`${c.label}を選びました。もう一度${KEY_NAME[c.key]}を押すと決定します`);
+  }
+  document.addEventListener('keydown', ev => {
+    if (!guide.on || !guide.screen) return;
+    const sc = guide.screen;
+    if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); finishGuide('esc'); return; }
+    if (ev.isComposing || ev.keyCode === 229) return; // 日本語入力の変換中
+    if (sc.memo) {
+      if (ev.key === 'Enter' && ev.shiftKey) {
+        ev.preventDefault();
+        guide.shiftEnter++;
+        if (guide.shiftEnter >= 3) { guide.shiftEnter = 0; guideTranslate(G.memo.value); }
+        else announce(`あと${3 - guide.shiftEnter}回で点訳します`);
+      } else if (ev.key !== 'Shift') guide.shiftEnter = 0;
+      return;
+    }
+    if (sc.preview) {
+      // スペース2回：1回目を押したときに読んでいた語で止めて、そこを直す
+      if (ev.key === ' ' || ev.code === 'Space') {
+        ev.preventDefault(); ev.stopPropagation();
+        if (ev.repeat) return;
+        const now = Date.now();
+        if (guide.pvArm && now - guide.pvArm.at < 3000) { const w = guide.pvArm.w; guide.pvArm = null; guidePreviewStop(w); }
+        else guide.pvArm = { at: now, w: guide.pvPos };
+      } else if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); }
+      return;
+    }
+    if (sc.list) {
+      const items = [...G.btns.querySelectorAll('.guide-item')];
+      const i = items.indexOf(document.activeElement);
+      if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+        ev.preventDefault();
+        const j = i < 0 ? 0 : (i + (ev.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length;
+        items[j].focus();
+        return;
+      }
+      if (ev.key === 'Home' || ev.key === 'End') { ev.preventDefault(); items[ev.key === 'Home' ? 0 : items.length - 1].focus(); return; }
+      if (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space') {
+        ev.preventDefault(); ev.stopPropagation();
+        if (ev.repeat) return;
+        if (ev.key !== 'Enter') return;
+        if (i < 0) { items[0].focus(); return; }
+        if (guide.listArmed === i) { guide.listArmed = -1; sc.list[i].run(); }
+        else { guide.listArmed = i; announce(`${sc.list[i].label}を選びました。もう一度エンターを押すと決定します`); }
+      }
+      return;
+    }
+    if (sc.input) {
+      if (ev.target !== G.input) return;
+      if (ev.key === 'Enter' && !ev.shiftKey) {
+        ev.preventDefault();
+        if (ev.repeat) return;
+        if (guide.armed) { guide.armed = false; sc.input.done(G.input.value); }
+        else { guide.armed = true; announce('もう一度エンターを押すと決定します'); }
+      } else if (ev.key !== 'Shift') guide.armed = false;
+      return;
+    }
+    const i = ev.key === 'Enter' ? 0 : (ev.key === ' ' || ev.code === 'Space') ? 1 : -1;
+    if (i < 0) return;
+    ev.preventDefault(); ev.stopPropagation();
+    if (ev.repeat || !sc.choices || !sc.choices[i] || sc.choices[i].key !== (i ? 'Space' : 'Enter')) return;
+    if (sc.single || guide.sel === i) guideChoose(i);
+    else guideSelect(i);
+  }, true);
+  // Space の keyup でボタンが押されないようにする（決定は自分で数える）
+  document.addEventListener('keyup', ev => {
+    if (guide.on && guide.screen && !guide.screen.memo && !guide.screen.input && (ev.key === ' ' || ev.code === 'Space')) ev.preventDefault();
+  }, true);
+  // 入力欄の6点入力：シフトを押しながら F D S J K L を同時に押して離すと1マス（シフトは先に離してもよい）
+  {
+    const held = new Set(); let chord = 0;
+    G.input.addEventListener('keydown', ev => {
+      if (!SIX_KEYS[ev.code] || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (!ev.shiftKey && !held.size) return; // シフトなしはふつうの文字入力
+      ev.preventDefault(); ev.stopPropagation();
+      guide.armed = false;
+      if (!ev.repeat) { held.add(ev.code); chord |= SIX_KEYS[ev.code]; }
+    }, true);
+    G.input.addEventListener('keyup', ev => {
+      if (!SIX_KEYS[ev.code] || !held.has(ev.code)) return;
+      ev.preventDefault();
+      held.delete(ev.code);
+      if (!held.size && chord) {
+        const c = E.bitsCell(chord); const bits = chord; chord = 0;
+        const a = G.input.selectionStart, z = G.input.selectionEnd;
+        G.input.value = G.input.value.slice(0, a) + c + G.input.value.slice(z);
+        G.input.setSelectionRange(a + c.length, a + c.length);
+        announce(speakCell(bits));
+      }
+    });
+    G.input.addEventListener('blur', () => { held.clear(); chord = 0; });
+  }
+  // 入力した答えが点字でどうなるかを、入力欄の下に出す（目で見て確かめる用。読み上げはしない）
+  const echo = document.createElement('p');
+  echo.className = 'guide-echo'; echo.setAttribute('aria-hidden', 'true');
+  G.input.after(echo);
+  let echoTimer = null;
+  function guideEcho() {
+    clearTimeout(echoTimer);
+    echoTimer = setTimeout(() => {
+      const k = guideAnswerKana(G.input.value);
+      echo.textContent = k ? `点字：${E.kanaToBraille(k).cells}　（${k}）` : '';
+    }, 120);
+  }
+  G.input.addEventListener('input', guideEcho);
+  G.input.addEventListener('keyup', guideEcho);
+  // 入力された答え（かな・漢字・6点の点字が混ざってもよい）を、点字の読み（カタカナ）にする
+  function guideAnswerKana(v) {
+    v = String(v || '').trim();
+    if (!v) return '';
+    return v.split(/([⠀-⣿]+)/).map((part, k) => {
+      if (!part) return '';
+      if (k % 2) { const z = E.brailleToKana(part); return (typeof z === 'string' ? z : z.kana).replace(/〓/g, ''); }
+      if (/^[ぁ-ゖァ-ヺー・ 　]+$/.test(part)) return E.toKatakana(part);
+      if (!state.tokenizer) return E.toKatakana(part);
+      return E.sumijiToKana(part, t => state.tokenizer.tokenize(t), { fallback: readByChar }).kana;
+    }).join('').replace(/[ 　]+/g, ' ');
+  }
+
+  function startGuide() {
+    guide.on = true;
+    G.el.hidden = false;
+    for (const el of appParts()) el.inert = true;
+    guideShow({
+      first: true, single: true,
+      msg: '自動誘導機能を利用しますか？',
+      sub: hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。' : '',
+      choices: [{ label: '利用する', key: 'Enter', run: guideIntro }, { label: '利用しない', key: 'Space', run: () => finishGuide('skip') }],
+    });
+  }
+  function guideIntro() {
+    const sub = hasKeys
+      ? 'エスケープを押すと、現在の進捗をエディタに反映して、案内を終了します。\n今後は、一つ目の選択肢はエンター1回で選択、2回で決定、二つ目の選択肢はスペース1回で選択、2回で決定できます。'
+      : '画面のボタンを押して進みます。途中でやめるときは「案内を終わってエディタへ」を押してください。';
+    guideShow({ msg: '案内を開始します。', sub, auto: hasKeys ? 14000 : 6000, next: guideSource });
+  }
+  function guideSource() {
+    guideShow({
+      step: '1. 点訳するもの',
+      msg: 'ファイルをインポートしますか？　文章を入力しますか？',
+      sub: hasKeys ? 'ファイルをインポートするならエンター、文章を入力するならスペースです。' : '',
+      choices: [{ label: 'ファイルをインポートする', key: 'Enter', run: guidePickFile }, { label: '文章を入力する', key: 'Space', run: guideMemoNotice }],
+    });
+  }
+  function guidePickFile() {
+    G.file.value = '';
+    guide.picking = true;
+    G.file.click();
+    announce('ファイルを選んでください');
+  }
+  G.file.addEventListener('cancel', () => { guide.picking = false; announce('ファイルが選ばれませんでした。もう一度選んでください'); guideSource(); });
+  G.file.addEventListener('change', async () => {
+    guide.picking = false;
+    const fs = G.file.files ? [...G.file.files] : [];
+    if (!fs.length) { guideSource(); return; }
+    guideShow({ step: '2. 点訳', msg: 'ファイルを読み込んで、点訳を行っています。', busy: true });
+    try {
+      if (fs.length === 1 && !/\.zip$/i.test(fs[0].name)) await openFile(fs[0]);
+      else await openFiles(fs);
+      await waitDict();
+      if (state.mode === 'sumiji') convertAll(true);
+    } catch (e) { /* 読めなかったときは下で知らせる */ }
+    if (!state.rows.some(r => r.cells || r.figure)) {
+      toast('ファイルを読み込めませんでした。', true);
+      guideShow({ msg: 'ファイルを読み込めませんでした。', sub: hasKeys ? '別のファイルを選ぶならエンター、文章を入力するならスペースです。' : '',
+        choices: [{ label: '別のファイルを選ぶ', key: 'Enter', run: guidePickFile }, { label: '文章を入力する', key: 'Space', run: guideMemoNotice }] });
+      return;
+    }
+    guideAfterTranslate();
+  });
+  function guideMemoNotice() {
+    guideShow({
+      msg: hasKeys ? 'シフトを押しながらエンターを3回押すと、自動点訳を行います。' : '文章を入力したら「点訳する」を押してください。',
+      auto: hasKeys ? 7000 : 4000, next: guideMemo,
+    });
+  }
+  function guideMemo() {
+    if (!G.memo.value && els.src.value) G.memo.value = els.src.value; // エディタに途中の文章があれば続きから
+    guideShow({
+      step: '1. 文章の入力',
+      msg: '文章を入力してください。',
+      sub: hasKeys ? 'Shift＋Enterを3回で点訳、Escでエディタに移ります。' : '',
+      memo: true,
+      choices: [{ label: '点訳する', run: () => guideTranslate(G.memo.value) }],
+    });
+  }
+  async function guideTranslate(text) {
+    if (!String(text).trim()) { announce('文章が入っていません'); G.memo.focus(); return; }
+    guideShow({ step: '2. 点訳', msg: '点訳を行っています。', busy: true });
+    closeDocs(true);
+    if (state.mode !== 'sumiji') setMode('sumiji');
+    els.src.value = text;
+    G.memo.value = '';
+    state.rows = [];
+    state.fileBase = '点訳';
+    els.fileName.textContent = '新規';
+    await waitDict();
+    await new Promise(r => setTimeout(r, 50)); // 「点訳を行っています」を見せてから
+    convertAll(true);
+    guideAfterTranslate();
+  }
+  // 校正箇所を1つずつの項目にする（読みが複数・点訳できない語・点字にできない文字・外国語・記号）
+  function guideItems() {
+    const items = [];
+    state.rows.forEach((r, i) => {
+      if (!needsCheck(r)) return;
+      for (const ck of r.checks || []) if (!ck.done) items.push({ kind: ck.note ? 'note' : 'reading', r, i, ck });
+      const seen = new Set();
+      for (const w of r.unresolved || []) if (w !== '〓' && !seen.has(w)) { seen.add(w); items.push({ kind: 'fail', r, i, surface: w }); }
+      for (const w of r.unknown || []) if (w !== '〓' && !seen.has(w)) { seen.add(w); items.push({ kind: 'fail', r, i, surface: w, isChar: true }); }
+      for (const f of r.foreign || []) items.push({ kind: 'foreign', r, i, f });
+    });
+    return items;
+  }
+  function guideAfterTranslate() {
+    render();
+    guide.items = guideItems();
+    const n = guide.items.length;
+    const braille = state.mode !== 'sumiji';
+    const target = braille ? '墨字のファイル' : '点字ファイル';
+    if (!n) {
+      guidePreviewAsk('点訳が終わりました。校正箇所はありません。');
+      return;
+    }
+    guideShow({
+      step: '3. 校正',
+      msg: `校正箇所が${n}件あります。一つずつ確認しますか？`,
+      sub: hasKeys ? `エンターを2回押すと、一つずつ確認します。スペースを2回押すと、手動校正をスキップして${target}を作成します。` : '',
+      choices: [{ label: '一つずつ確認する', key: 'Enter', run: () => { guide.k = 0; guideItem(); } },
+        { label: `確認せずに${target}を作成する`, key: 'Space', run: guideMakeFile }],
+    });
+  }
+  const rowSrc = r => String(r.src || '').replace(/\t/g, ' ');
+  function guideItem() {
+    const items = guide.items;
+    if (guide.k >= items.length) {
+      render();
+      guidePreviewAsk('すべての校正箇所を確認しました。');
+      return;
+    }
+    const it = items[guide.k];
+    const step = `校正 ${guide.k + 1} / ${items.length}`;
+    const line = `${it.i + 1}行目：${rowSrc(it.r).slice(0, 80)}`;
+    const done = v => { guideApply(it, v); guide.k++; guideItem(); };
+    if (it.kind === 'reading') {
+      guideShow({ step, msg: `「${it.ck.surface.length > 1 ? it.ck.surface.replace(/^の/, '') : it.ck.surface}」には読み方が複数あります。読み方を入力してください。`,
+        sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${line}\n候補：${it.ck.options.map(displayKana).join('、')}　／　今の読み：${displayKana(it.ck.kana)}`,
+        input: { value: displayKana(it.ck.kana), options: it.ck.options.map(displayKana), done } });
+    } else if (it.kind === 'fail') {
+      const pos = rowSrc(it.r).indexOf(it.surface);
+      const len = Array.from(it.surface).length;
+      const where = pos < 0 ? `${it.i + 1}行目の文字は点訳できませんでした。`
+        : len > 1 ? `${it.i + 1}行${pos + 1}番目から${pos + len}番目の文字は点訳できませんでした。` : `${it.i + 1}行${pos + 1}番目の文字は点訳できませんでした。`;
+      guideShow({ step, msg: `「${it.surface}」は点訳できませんでした。${where}確認して適切な文字を入力してください。`,
+        sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${line}\n分からないときは、空のまま決定すると、そのままにします。`,
+        input: { label: '適切な文字（かな・漢字。6点入力もできます）', value: '', done } });
+    } else if (it.kind === 'foreign') {
+      guideShow({ step, msg: `「${it.f.text}」は外国語（${it.f.kind}）です。点字の書き方は言語ごとに違います。読み方を入力してください。（エンター2回で決定）`,
+        sub: `${line}\nそのままでよいときは、空のままエンターを2回押します。`, input: { value: '', done } });
+    } else {
+      guideShow({ step, msg: `「${it.ck.surface}」の記号の点字を確認してください。`, sub: `${line}\n${it.ck.note}`,
+        choices: [{ label: 'このままにする', key: 'Enter', run: () => { it.ck.done = true; guideRowChecked(it.r); guide.k++; guideItem(); } }] });
+    }
+  }
+  function guideRowChecked(r) {
+    if (!(r.checks || []).some(c => !c.done) && !(r.unknown || []).length && !(r.unresolved || []).filter(x => x !== '〓').length && !(r.foreign || []).length) r.reviewed = true;
+  }
+  function guideApply(it, value) {
+    const r = it.r;
+    const kana = guideAnswerKana(value);
+    const replaceKana = (from, to) => { if (from && to && from !== to && r.kana.includes(from)) { r.kana = r.kana.replace(from, to); return true; } return false; };
+    if (it.kind === 'reading') {
+      if (kana) replaceKana(it.ck.kana, kana);
+      if (kana) it.ck.kana = kana;
+      it.ck.done = true;
+    } else if (it.kind === 'fail') {
+      if (kana) {
+        const old = it.isChar ? it.surface : (readByChar(it.surface) || it.surface);
+        replaceKana(old, kana) || replaceKana(it.surface, kana);
+      }
+      r.unresolved = (r.unresolved || []).filter(w => w !== it.surface);
+    } else if (it.kind === 'foreign') {
+      if (kana) replaceKana(it.f.text, kana);
+      r.foreign = (r.foreign || []).filter(f => f !== it.f);
+    }
+    const b = E.kanaToBraille(r.kana);
+    r.cells = b.cells; r.bad = b.bad;
+    r.unknown = it.kind === 'fail' && it.isChar ? b.unknown.filter(c => c !== it.surface) : b.unknown;
+    if (r.type === 'table') r.tkana = r.kana.split(/ {2,}/);
+    r.edited = true;
+    guideRowChecked(r);
+    E.fitBlocks(state.rows, layoutOpt());
+    announce(kana ? `「${it.surface || (it.ck && it.ck.surface) || it.f.text}」を ${kana} にしました` : 'そのままにしました');
+  }
+  // ---------- プレビュー：点字と文を出して、分かち書きごとに自動で送りながら読み上げソフトに渡す ----------
+  function guidePreviewAsk(head) {
+    const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
+    guideShow({ step: '4. プレビュー', msg: `${head}プレビューを確認しますか？`,
+      sub: hasKeys ? `確認するならエンター、確認せずに${target}を作成するならスペースです。\nプレビューでは、先頭から分かち書きごとに自動で読み進めます。スペースを2回押すと、今読んでいるところで止めて修正できます。` : 'プレビューでは、語を押すとそこを修正できます。',
+      choices: [{ label: 'プレビューを確認する', key: 'Enter', run: () => guidePreview(0) }, { label: `確認せずに${target}を作成する`, key: 'Space', run: guideMakeFile }] });
+  }
+  // 語の一覧：[{ r: 行, n: 行の中の何語目, kana }]
+  function guideWords() {
+    const ws = [];
+    state.rows.forEach(r => {
+      if (!r.kana || E.DECOR_TYPES.has(r.type) || r.type === 'figure' || r.pagebreak) return;
+      displayKana(r.kana).split(/ +/).forEach((k, n) => { if (k) ws.push({ r, n, kana: k }); });
+    });
+    return ws;
+  }
+  function guidePreview(from) {
+    const ws = guide.pvWords = guideWords();
+    if (!ws.length) { guideMakeFile(); return; }
+    // 画面：行ごとに、語の上にかな、下に点字
+    G.preview.textContent = '';
+    let line = null, lastRow = null;
+    ws.forEach((w, i) => {
+      if (w.r !== lastRow) {
+        lastRow = w.r;
+        line = document.createElement('div'); line.className = 'pv-line';
+        const no = document.createElement('span'); no.className = 'pv-no'; no.textContent = (state.rows.indexOf(w.r) + 1) + '行';
+        line.appendChild(no);
+        G.preview.appendChild(line);
+      }
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'pv-word'; b.dataset.i = i; b.tabIndex = -1;
+      const k = document.createElement('span'); k.className = 'pv-k'; k.textContent = w.kana;
+      const c = document.createElement('span'); c.className = 'pv-c'; c.textContent = E.kanaToBraille(w.kana).cells;
+      b.append(k, c);
+      b.setAttribute('aria-label', `${w.kana}。押すとここを修正`);
+      b.addEventListener('click', () => guidePreviewStop(i)); // 指・マウスはその語を押すと止めて修正
+      line.appendChild(b);
+    });
+    const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
+    guideShow({ step: '4. プレビュー', preview: true,
+      msg: from ? '続きから読みます。' : 'プレビューを読みます。',
+      sub: hasKeys ? 'スペースを2回押すと、今読んでいるところで止めて修正できます。Escで案内を終わります。' : '語を押すと、そこを修正できます。',
+      choices: [{ label: '今のところで止めて修正する', run: () => guidePreviewStop(guide.pvPos || 0) },
+        { label: `プレビューを終えて${target}を作成する`, run: guideMakeFile }] });
+    guide.pvArm = null;
+    guide.pvPos = from;
+    // 最初の語は、案内の文を読み終えるころから
+    guidePreviewStep(from, from ? 1500 : 3500);
+  }
+  function guidePreviewStep(i, wait) {
+    clearTimeout(guide.pvTimer);
+    guide.pvTimer = setTimeout(() => {
+      if (!guide.screen || !guide.screen.preview) return;
+      const ws = guide.pvWords;
+      if (i >= ws.length) {
+        const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
+        guideShow({ step: '4. プレビュー', msg: 'プレビューを最後まで読みました。',
+          sub: hasKeys ? `${target}を作成するならエンター、もう一度最初から読むならスペースです。` : '',
+          choices: [{ label: `${target}を作成する`, key: 'Enter', run: guideMakeFile }, { label: 'もう一度最初から読む', key: 'Space', run: () => guidePreview(0) }] });
+        return;
+      }
+      guide.pvPos = i;
+      const prev = G.preview.querySelector('.pv-word.now');
+      if (prev) prev.classList.remove('now');
+      const el = G.preview.querySelector(`.pv-word[data-i="${i}"]`);
+      if (el) { el.classList.add('now'); el.scrollIntoView({ block: 'nearest' }); }
+      const w = ws[i];
+      // 行が変わったら行番号も読む
+      announce((i === 0 || ws[i - 1].r !== w.r ? `${state.rows.indexOf(w.r) + 1}行目、` : '') + w.kana);
+      // 次の語へ：語の長さ（拍）に合わせて待つ（読み上げソフトが読み終えるくらい）
+      const mora = E.moraCount ? E.moraCount(w.kana) : Array.from(w.kana).length;
+      guidePreviewStep(i + 1, 700 + mora * 170 + (i + 1 < ws.length && ws[i + 1].r !== w.r ? 600 : 0));
+    }, wait);
+  }
+  // 止めて、その語を直す
+  function guidePreviewStop(i) {
+    clearTimeout(guide.pvTimer);
+    const w = guide.pvWords[i];
+    if (!w) return;
+    const lineNo = state.rows.indexOf(w.r) + 1;
+    // 語の後ろの句読点（。、？！）は直す欄に入れず、そのまま残す
+    const pm = /[。、？！?!…]+$/.exec(w.kana);
+    const tail = pm ? pm[0] : '', body = tail ? w.kana.slice(0, -tail.length) : w.kana;
+    guideShow({ step: '4. プレビュー（修正）', msg: `「${w.kana}」（${lineNo}行目）で止めました。修正してください。`,
+      sub: (hasKeys ? 'シフトを押しながら S D F J K L の入力で6点入力、エンター2回で決定します。\n' : '') + `${lineNo}行目：${displayKana(w.r.kana)}\nそのままでよいときは、変えずに決定すると続きを読みます。`,
+      input: { label: '読み（かな。6点入力もできます）', value: body, done: v => {
+        let k = guideAnswerKana(v);
+        if (k && tail && !/[。、？！?!…]$/.test(k)) k += tail;
+        if (k && k !== w.kana) {
+          const parts = displayKana(w.r.kana).split(/( +)/);
+          parts[w.n * 2] = k;
+          const r = w.r;
+          r.kana = E.toKatakana(parts.join(''));
+          if (r.type === 'table') r.tkana = r.kana.split(/ {2,}/);
+          const b = E.kanaToBraille(r.kana);
+          r.cells = b.cells; r.bad = b.bad; r.unknown = b.unknown; r.edited = true;
+          E.fitBlocks(state.rows, layoutOpt());
+          announce(`${k}に直しました`);
+        }
+        guidePreview(i + 1);
+      } } });
+  }
+
+  // 出力するファイル形式を選ぶ → 点図があれば出し方を選ぶ → 保存場所を選んで保存
+  function guideMakeFile() {
+    const braille = state.mode !== 'sumiji';
+    const list = [];
+    if (braille) {
+      list.push({ label: '墨字のテキスト（.txt）', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-txt' }) });
+      list.push({ label: '墨字のWord（.docx）', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-docx' }) });
+    }
+    for (const fmt of F.EXPORTS) list.push({ label: `${fmt.label}（.${fmt.ext}）`, note: fmt.note, run: () => guideFigures(fmt) });
+    guideShow({ step: '4. ファイルの作成', msg: '出力するファイル形式を選択してください。',
+      sub: hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。' : '形式を押すと決定します。',
+      list, listLabel: '出力するファイル形式' });
+  }
+  // 点字の形式で点図があるときは、ZIP（本文と点図）・本文の点字だけ・点図だけ から選ぶ
+  function guideFigures(fmt) {
+    const figs = figureRows();
+    if (fmt.group !== '点字' || !figs.length) { guideBuild({ kind: 'body', fmt }); return; }
+    const fk = FG.format.value;
+    const figName = { edl: 'エーデル（EDL）', svg: 'SVG', 'pdf-dots': '点図のPDF', 'pdf-solid': '立体コピー用のPDF' }[fk] || fk;
+    guideShow({ step: '4. ファイルの作成', msg: `点図が${figs.length}点あります。どの形で出力しますか？`,
+      sub: (hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。\n' : '') + `点図の形式（${figName}）は、エディタの点図の画面で変えられます。`,
+      listLabel: '出力のしかた',
+      list: [
+        { label: 'ZIPでまとめて出力', note: `本文の点字（${fmt.label}）と点図（${figName}）を1つのZIPに入れる`, run: () => guideBuild({ kind: 'zip', fmt }) },
+        { label: `文字（本文の点字）だけ出力`, note: `${fmt.label} のファイル1つ`, run: () => guideBuild({ kind: 'body', fmt }) },
+        { label: `点図（${figName}）だけ出力`, note: figs.length > 1 && fk !== 'pdf-dots' && fk !== 'pdf-solid' ? `${figs.length}点の点図を1つのZIPに入れる` : '点図のファイル', run: () => guideBuild({ kind: 'figs', fmt }) },
+      ] });
+  }
+  async function guideBuild(o) {
+    const userGesture = !navigator.userActivation || navigator.userActivation.isActive;
+    let name, data;
+    try {
+      const base = state.fileBase || (state.mode === 'sumiji' ? '点訳' : '墨字');
+      if (o.kind === 'sumiji-txt' || o.kind === 'sumiji-docx') {
+        updateSumiji();
+        name = `${base}_墨字.${o.kind === 'sumiji-txt' ? 'txt' : 'docx'}`;
+        data = o.kind === 'sumiji-txt' ? F.textFile(els.sumiji.value) : await F.docxFromText(els.sumiji.value);
+      } else {
+        const rows = state.rows.map(r => ({ ...r, kana: r.kana ? displayKana(r.kana) : r.kana }));
+        const suffix = o.fmt.id.startsWith('txt-') || o.fmt.id.startsWith('docx-') ? '_' + o.fmt.id.split('-')[1] : '';
+        const bodyName = `${base}${suffix}.${o.fmt.ext}`;
+        const body = o.kind === 'figs' ? null : await F.exportFile(o.fmt.id, rows, layoutOpt());
+        const figFiles = o.kind === 'body' ? [] : await buildTactileFiles(figureRows(), FG.format.value);
+        const files = [...(body ? [{ name: bodyName, data: body }] : []), ...figFiles.filter(f => o.kind === 'zip' || !/_点図の一覧\.txt$/.test(f.name))];
+        if (files.length === 1) { name = files[0].name; data = files[0].data; }
+        else {
+          const zip = new window.JSZip();
+          for (const f of files) zip.file(f.name, f.data);
+          name = o.kind === 'figs' ? `${base}_点図.zip` : `${base}_点字と点図.zip`;
+          data = await zip.generateAsync({ type: 'uint8array' });
+        }
+      }
+    } catch (e) {
+      guideShow({ msg: 'ファイルを作成できませんでした。', sub: e.message || '', choices: [{ label: 'エディタに移る', key: 'Enter', run: () => finishGuide('done') }] });
+      return;
+    }
+    guide.pending = { name, data };
+    // 保存場所を選ぶ画面（ブラウザが保存場所を聞けるときはすぐ開く。聞けないブラウザはダウンロードに保存）
+    const canPick = !!window.showSaveFilePicker;
+    const pick = async () => {
+      const ok = await saveFile(name, data);
+      if (!ok) {
+        guideShow({ step: '4. ファイルの作成', msg: '保存をやめました。', sub: hasKeys ? 'もう一度保存場所を選ぶならエンター、形式を選び直すならスペースです。' : '',
+          choices: [{ label: 'もう一度保存場所を選ぶ', key: 'Enter', run: pick }, { label: '形式を選び直す', key: 'Space', run: guideMakeFile }] });
+        return;
+      }
+      toast(`${name} を保存しました`);
+      guideShow({ step: '4. ファイルの作成', msg: canPick ? `「${name}」を保存しました。` : `「${name}」をダウンロードに保存しました。`,
+        sub: 'エディタに切り替えます。', auto: 6000, next: () => finishGuide('done') });
+    };
+    guideShow({ step: '4. ファイルの作成', msg: canPick ? 'ファイルの保存場所を選んでください。' : 'ファイルを保存します。',
+      sub: canPick ? `ファイル名：${name}` : `このブラウザでは保存場所を選べないため、ダウンロードのフォルダに「${name}」を保存します。` + (hasKeys ? 'エンターを2回押すと保存します。' : ''),
+      choices: [{ label: canPick ? '保存場所を選ぶ' : '保存する', key: 'Enter', run: pick }] });
+    if (canPick && userGesture && navigator.userActivation && navigator.userActivation.isActive) pick(); // 決定のキー操作のうちに、すぐ保存場所の画面を開く
+  }
+  function finishGuide(how) {
+    if (!guide.on) return;
+    clearTimeout(guide.timer);
+    const sc = guide.screen || {};
+    // メモ帳の画面から抜けるときは、途中まで書いた文章をエディタに入れる
+    if (sc.memo && G.memo.value.trim()) {
+      closeDocs(true);
+      if (state.mode !== 'sumiji') setMode('sumiji');
+      els.src.value = G.memo.value;
+      G.memo.value = '';
+      convertAll(true);
+    }
+    guide.on = false;
+    guide.screen = null;
+    G.el.hidden = true;
+    for (const el of appParts()) el.inert = false;
+    render();
+    if (how !== 'skip') {
+      announce('案内を終了しました。エディタに切り替えました');
+      (state.mode === 'sumiji' && !state.rows.length ? els.src : els.rows).focus();
+    } else els.src.focus();
+  }
+
   // ---------- 起動 ----------
   loadPrefs();
   buildMenu();
   setMode('sumiji');
   els.src.value = '';
   convertAll();
+  if (!/[?&]guide=0\b/.test(location.search)) startGuide();
 
   if (window.kuromoji) {
     window.kuromoji.builder({ dicPath: 'dict/' }).build((err, tokenizer) => {
