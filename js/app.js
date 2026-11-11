@@ -2091,6 +2091,7 @@
   function guideShow(sc) {
     clearTimeout(guide.timer);
     clearTimeout(guide.pvTimer);
+    if (guide.screen && guide.screen.preview && !sc.preview) ttsStop(); // プレビューを抜けたら声も止める
     G.preview.hidden = !sc.preview;
     guide.screen = sc; guide.sel = -1; guide.shiftEnter = 0; guide.armed = false;
     G.step.textContent = sc.step || '';
@@ -2473,7 +2474,41 @@
     E.fitBlocks(state.rows, layoutOpt());
     announce(kana ? `「${it.surface || (it.ck && it.ck.surface) || it.f.text}」を ${kana} にしました` : 'そのままにしました');
   }
-  // ---------- プレビュー：点字と文を出して、分かち書きごとに自動で送りながら読み上げソフトに渡す ----------
+  // ---------- プレビューの読み上げ：ブラウザ（端末）の日本語の声で読む ----------
+  // 自動で語を送るところは読み上げソフトが追いつかないことがあるので、ここだけブラウザの声で読む。
+  // 読み上げソフトの声と重なっても止めない（止めるのは、スペース2回で止めたときとプレビューを抜けたときだけ）
+  const TTS = { ok: 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window, voice: null, seq: 0 };
+  function ttsPickVoice() {
+    if (!TTS.ok) return;
+    const vs = speechSynthesis.getVoices().filter(v => /^ja([-_]|$)/i.test(v.lang));
+    TTS.voice = vs.find(v => v.localService) || vs[0] || null;
+  }
+  if (TTS.ok) { ttsPickVoice(); speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', ttsPickVoice); }
+  // text を読み、読み終えたら（または読めなかったら目安の時間で）done を呼ぶ
+  function ttsSay(text, done) {
+    const my = ++TTS.seq;
+    let fired = false;
+    const finish = () => { if (fired || my !== TTS.seq) return; fired = true; clearTimeout(t); done && done(); };
+    const mora = E.moraCount ? E.moraCount(text) : Array.from(text).length;
+    // 声が使えないときや、終わりの知らせが来ないときのための目安
+    const t = setTimeout(finish, TTS.ok ? 1500 + mora * 400 : 700 + mora * 170);
+    if (!TTS.ok) return;
+    try {
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = 'ja-JP';
+      if (TTS.voice) u.voice = TTS.voice;
+      u.rate = 1;
+      u.onend = () => setTimeout(finish, 150);
+      u.onerror = () => setTimeout(finish, 150);
+      speechSynthesis.speak(u);
+    } catch (e) { /* 目安の時間で進む */ }
+  }
+  function ttsStop() {
+    TTS.seq++;
+    if (TTS.ok) { try { speechSynthesis.cancel(); } catch (e) { /* 何もしない */ } }
+  }
+
+  // ---------- プレビュー：点字と文を出して、分かち書きごとに自動で送りながら読む ----------
   function guidePreviewAsk(head) {
     const target = state.mode !== 'sumiji' ? '墨字のファイル' : '点字ファイル';
     guideShow({ step: '4. プレビュー', msg: `${head}プレビューを確認しますか？`,
@@ -2520,8 +2555,9 @@
         { label: `プレビューを終えて${target}を作成する`, run: guideMakeFile }] });
     guide.pvArm = null;
     guide.pvPos = from;
-    // 最初の語は、案内の文を読み終えるころから
-    guidePreviewStep(from, from ? 1500 : 3500);
+    // 決定した操作の中ですぐ声を出す（iPhone などは、操作の中で一度声を出すと、そのあとも読める）。読み終えたら語へ
+    ttsStop();
+    ttsSay(from ? '続きから読みます' : 'プレビューを読みます', () => guidePreviewStep(from, 200));
   }
   function guidePreviewStep(i, wait) {
     clearTimeout(guide.pvTimer);
@@ -2542,15 +2578,16 @@
       if (el) { el.classList.add('now'); el.scrollIntoView({ block: 'nearest' }); }
       const w = ws[i];
       // 行が変わったら行番号も読む
-      announce((i === 0 || ws[i - 1].r !== w.r ? `${state.rows.indexOf(w.r) + 1}行目、` : '') + w.kana);
-      // 次の語へ：語の長さ（拍）に合わせて待つ（読み上げソフトが読み終えるくらい）
-      const mora = E.moraCount ? E.moraCount(w.kana) : Array.from(w.kana).length;
-      guidePreviewStep(i + 1, 700 + mora * 170 + (i + 1 < ws.length && ws[i + 1].r !== w.r ? 600 : 0));
+      const say = (i === 0 || ws[i - 1].r !== w.r ? `${state.rows.indexOf(w.r) + 1}行目、` : '') + w.kana;
+      announce(say); // 点字ディスプレイ・読み上げソフトにも渡す
+      // ブラウザの声で読み、読み終えたら次の語へ（行が変わるところは少し間をあける）
+      ttsSay(say, () => guidePreviewStep(i + 1, i + 1 < ws.length && ws[i + 1].r !== w.r ? 400 : 0));
     }, wait);
   }
   // 止めて、その語を直す
   function guidePreviewStop(i) {
     clearTimeout(guide.pvTimer);
+    ttsStop();
     const w = guide.pvWords[i];
     if (!w) return;
     const lineNo = state.rows.indexOf(w.r) + 1;
@@ -2655,6 +2692,8 @@
   function finishGuide(how) {
     if (!guide.on) return;
     clearTimeout(guide.timer);
+    clearTimeout(guide.pvTimer);
+    ttsStop();
     const sc = guide.screen || {};
     // メモ帳の画面から抜けるときは、途中まで書いた文章をエディタに入れる
     if (sc.memo && G.memo.value.trim()) {
