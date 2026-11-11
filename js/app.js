@@ -368,8 +368,8 @@
         b.className = 'opt' + (opt2 === ck.kana ? ' current' : '');
         b.textContent = displayKana(opt2);
         b.title = opt2 === ck.kana ? '今の読み（このままでよい）' : 'この読みにする';
-        b.setAttribute('aria-pressed', String(opt2 === ck.kana));
-        b.setAttribute('aria-label', `${row._n || ''}行目の「${ck.surface}」を ${displayKana(opt2)} と読む`);
+        // 切り替えボタンにしない（「選択されていません」と読まれないように）。今の読みは名前で知らせる
+        b.setAttribute('aria-label', `${row._n || ''}行目の「${ck.surface}」を ${displayKana(opt2)} と読む` + (opt2 === ck.kana ? '（今の読み）' : ''));
         b.addEventListener('click', ev => {
           ev.stopPropagation();
           if (opt2 !== ck.kana && row.kana.includes(ck.kana)) {
@@ -2082,10 +2082,17 @@
   const guide = { on: false, screen: null, sel: -1, timer: null, shiftEnter: 0, armed: false, items: [], k: 0, picking: false, listArmed: -1 };
   const KEY_NAME = { Enter: 'エンター', Space: 'スペース' };
   const appParts = () => [...document.body.children].filter(el => el !== G.el && el.tagName !== 'SCRIPT' && !/^sr-/.test(el.id));
+  // ボタンの操作の案内（読み上げソフト用）。スマホは「ダブルタップで決定」、パソコンの一覧は「エンター2回で決定」
+  const hintEl = (id, text) => { const e = document.createElement('span'); e.id = id; e.className = 'sr-only'; e.textContent = text; G.el.appendChild(e); return id; };
+  const HINT_TAP = hintEl('gh-tap', 'ダブルタップで決定します');
+  const HINT_LIST = hintEl('gh-list', 'エンター2回で決定します');
+  const HINT_PRESS = hintEl('gh-press', 'エンターで決定します');
+  const tapHint = b => b.setAttribute('aria-describedby', hasKeys ? HINT_PRESS : HINT_TAP);
   // 案内の画面でも使える「終わる」ボタン（スマホなど Esc のない端末用）
   const quitBtn = document.createElement('button');
   quitBtn.type = 'button'; quitBtn.className = 'btn small-btn guide-quit'; quitBtn.textContent = '案内を終わってエディタへ';
   quitBtn.addEventListener('click', () => finishGuide('esc'));
+  tapHint(quitBtn);
   G.esc.after(quitBtn);
 
   function guideShow(sc) {
@@ -2103,19 +2110,20 @@
     G.field.hidden = !sc.input;
     G.btns.textContent = '';
     G.btns.classList.toggle('guide-list', !!sc.list);
-    G.btns.setAttribute('role', sc.list ? 'listbox' : 'group');
+    G.btns.setAttribute('role', 'group');
     // 一覧の名前に質問文を入れて、一覧に入ったときに質問から読まれるようにする
     G.btns.setAttribute('aria-label', sc.list ? [sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1') : '選択肢');
     guide.listArmed = -1;
     // 一覧（形式など）：矢印で動いて、フォーカスのある項目でエンター2回で決定
     (sc.list || []).forEach((c, i) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'guide-item'; b.setAttribute('role', 'option'); b.setAttribute('aria-selected', 'false');
+      b.type = 'button'; b.className = 'guide-item';
+      b.setAttribute('aria-describedby', hasKeys ? HINT_LIST : HINT_TAP); // 「選択されていません」とは読ませず、決定のしかたを案内する
       const t = document.createElement('span'); t.className = 'gi-label'; t.textContent = c.label;
       b.appendChild(t);
       if (c.note) { const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.appendChild(n); }
       b.addEventListener('click', () => c.run()); // マウス・指は押したら決定
-      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.setAttribute('aria-selected', String(x === b))); });
+      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); });
       G.btns.appendChild(b);
     });
     (sc.choices || []).forEach((c, i) => {
@@ -2128,7 +2136,8 @@
         k.textContent = sc.single ? KEY_NAME[c.key] : `${KEY_NAME[c.key]}（1回で選択、2回で決定）`;
         b.appendChild(k);
       }
-      b.setAttribute('aria-pressed', 'false');
+      // 切り替えボタンにはしない（「選択されていません」「設定を変更」と読まれるため）。スマホでは「ダブルタップで決定」と案内する
+      if (!hasKeys || !c.key) tapHint(b);
       b.addEventListener('click', () => guideChoose(i)); // マウス・指は押したら決定
       G.btns.appendChild(b);
     });
@@ -2145,6 +2154,7 @@
         const b = document.createElement('button');
         b.type = 'button'; b.textContent = o;
         b.setAttribute('aria-label', `候補「${o}」を入れる`);
+        b.setAttribute('aria-describedby', hasKeys ? HINT_PRESS : HINT_TAP);
         b.addEventListener('click', () => { G.input.value = o; G.input.focus(); guide.armed = false; guideEcho(); });
         G.opts.appendChild(b);
       }
@@ -2153,6 +2163,7 @@
       const ok = document.createElement('button');
       ok.type = 'button'; ok.textContent = '決定';
       ok.addEventListener('click', () => sc.input.done(G.input.value));
+      tapHint(ok);
       G.btns.appendChild(ok);
       // 入力欄に入ると、質問文（説明）から読まれる
       G.input.setAttribute('aria-describedby', 'guide-msg' + (sc.sub ? ' guide-sub' : ''));
@@ -2177,7 +2188,7 @@
   }
   function guideSelect(i) {
     guide.sel = i;
-    [...G.btns.children].forEach((b, k) => { b.classList.toggle('selected', k === i); b.setAttribute('aria-pressed', String(k === i)); });
+    [...G.btns.children].forEach((b, k) => b.classList.toggle('selected', k === i)); // 見た目だけ（読み上げは announce で）
     const c = guide.screen.choices[i];
     // フォーカスは動かさず（読み上げが途切れないように）、選んだことだけを知らせる
     announce(`${c.label}を選びました。もう一度${KEY_NAME[c.key]}を押すと決定します`);
@@ -2498,8 +2509,11 @@
       u.lang = 'ja-JP';
       if (TTS.voice) u.voice = TTS.voice;
       u.rate = 1;
-      u.onend = () => setTimeout(finish, 150);
-      u.onerror = () => setTimeout(finish, 150);
+      // 声がない端末では、すぐに「終わり」が来ることがある。語の長さに合わせた最低限の時間は待つ
+      const start = Date.now(), least = 450 + mora * 150;
+      const after = () => setTimeout(finish, Math.max(150, least - (Date.now() - start)));
+      u.onend = after;
+      u.onerror = after;
       speechSynthesis.speak(u);
     } catch (e) { /* 目安の時間で進む */ }
   }
@@ -2527,8 +2541,10 @@
   function guidePreview(from) {
     const ws = guide.pvWords = guideWords();
     if (!ws.length) { guideMakeFile(); return; }
-    // 画面：行ごとに、語の上にかな、下に点字
+    // 画面：行ごとに、語の上にかな、下に点字。「押すと修正」の案内は枠に1回だけ
     G.preview.textContent = '';
+    G.preview.setAttribute('role', 'group');
+    G.preview.setAttribute('aria-label', hasKeys ? 'プレビュー。語をクリックすると、そこで止めて修正します' : 'プレビュー。語をダブルタップすると、そこで止めて修正します');
     let line = null, lastRow = null;
     ws.forEach((w, i) => {
       if (w.r !== lastRow) {
@@ -2543,7 +2559,7 @@
       const k = document.createElement('span'); k.className = 'pv-k'; k.textContent = w.kana;
       const c = document.createElement('span'); c.className = 'pv-c'; c.textContent = E.kanaToBraille(w.kana).cells;
       b.append(k, c);
-      b.setAttribute('aria-label', `${w.kana}。押すとここを修正`);
+      b.setAttribute('aria-label', w.kana);
       b.addEventListener('click', () => guidePreviewStop(i)); // 指・マウスはその語を押すと止めて修正
       line.appendChild(b);
     });
