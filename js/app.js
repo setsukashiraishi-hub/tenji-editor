@@ -2105,6 +2105,42 @@
   backBtn.addEventListener('click', () => guideBack());
   tapHint(backBtn);
   G.esc.before(backBtn);
+  // 画面の説明をブラウザの声で読む（オン・オフは覚えておく。Alt＋V でも切り替え）
+  let guideVoice = true;
+  try { guideVoice = localStorage.getItem('tenji-guide-voice') !== '0'; } catch (e) { /* 既定はオン */ }
+  const voiceBtn = document.createElement('button');
+  voiceBtn.type = 'button'; voiceBtn.className = 'btn guide-voice';
+  const voiceLabel = () => { voiceBtn.innerHTML = `声で読む：${guideVoice ? 'オン' : 'オフ'}<span class="key pc-only">（Alt＋V）</span>`; voiceBtn.setAttribute('aria-pressed', String(guideVoice)); };
+  voiceLabel();
+  function toggleGuideVoice() {
+    guideVoice = !guideVoice;
+    try { localStorage.setItem('tenji-guide-voice', guideVoice ? '1' : '0'); } catch (e) { /* 覚えられなくても動く */ }
+    voiceLabel();
+    if (guideVoice) guideSpeak(guide.screen); else if (!(guide.screen && guide.screen.preview)) ttsStop();
+    announce(guideVoice ? '声で読みます' : '声で読むのをやめました');
+  }
+  voiceBtn.addEventListener('click', toggleGuideVoice);
+  G.esc.after(voiceBtn);
+  // 画面の見出しと説明（と選択肢）を声で読む。読み上げソフトの声と重なっても止めない
+  function guideSpeakText(sc) {
+    if (!sc) return '';
+    const parts = [sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/\n/g, '。').replace(/。。/g, '。'));
+    // スマホ（キーの案内がない画面）は、選択肢の名前も読む
+    if (!hasKeys && sc.choices && sc.choices.length) parts.push('選択肢は、' + sc.choices.map(c => c.label).join('、') + '。');
+    if (sc.list && sc.list.length) parts.push('選択肢は、' + sc.list.map(c => c.label).join('、') + '。');
+    return parts.join('。').replace(/([。？?！!])。/g, '$1');
+  }
+  function guideSpeak(sc, done) {
+    if (!guideVoice || !sc || sc.preview || typeof TTS === 'undefined') { done && done(); return; }
+    ttsStop();
+    ttsSay(guideSpeakText(sc), done, { trustEnd: true });
+  }
+  // iPhone などは、最初に画面にふれるまで声が出ないことがある。最初の操作で、今の画面を読み直す
+  const voiceUnlock = () => {
+    document.removeEventListener('pointerdown', voiceUnlock, true); document.removeEventListener('keydown', voiceUnlock, true);
+    if (guide.on && guideVoice && typeof TTS !== 'undefined' && !TTS.started && guide.screen && !guide.screen.preview) guideSpeak(guide.screen);
+  };
+  document.addEventListener('pointerdown', voiceUnlock, true); document.addEventListener('keydown', voiceUnlock, true);
   // 案内だけの画面を飛ばす：1.5秒のうちに2回（キーか、画面のタップ）
   function guideSkipTap() {
     const sc = guide.screen;
@@ -2143,7 +2179,7 @@
     G.btns.setAttribute('role', 'group');
     // 一覧の名前に質問文を入れて、一覧に入ったときに質問から読まれるようにする
     G.btns.setAttribute('aria-label', sc.list ? [sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1') : '選択肢');
-    guide.listArmed = -1;
+    guide.listArmed = -1; guide.listSpoke = false; // 最初のフォーカスでは項目を読まない（画面の説明を読んでいるので）
     // 一覧（形式など）：矢印で動いて、フォーカスのある項目でエンター2回で決定
     (sc.list || []).forEach((c, i) => {
       const b = document.createElement('button');
@@ -2153,7 +2189,7 @@
       b.appendChild(t);
       if (c.note) { const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.appendChild(n); }
       b.addEventListener('click', () => c.run()); // マウス・指は押したら決定
-      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); });
+      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); if (guideVoice && guide.listSpoke) { ttsStop(); ttsSay(c.label + (c.note ? '。' + c.note : '')); } guide.listSpoke = true; });
       G.btns.appendChild(b);
     });
     (sc.choices || []).forEach((c, i) => {
@@ -2211,7 +2247,16 @@
       if (document.activeElement !== G.box) G.box.focus();
       announce([sc.msg, sc.sub].filter(Boolean).map(t => t.replace(/[。？?]$/, m => m === '。' ? '' : m)).join('。').replace(/([？?])。/g, '$1'));
     }
-    if (sc.auto) guide.timer = setTimeout(sc.next, sc.auto);
+    // 画面の説明を声で読む。案内だけの画面は、読み終えて（かつ決まった時間がたって）から次へ
+    if (sc.auto && guideVoice && !sc.preview) {
+      let spoke = false, waited = false;
+      const go = () => { if (spoke && waited && guide.screen === sc) sc.next(); };
+      guideSpeak(sc, () => { spoke = true; guide.timer = setTimeout(go, 300); });
+      setTimeout(() => { waited = true; go(); }, sc.auto);
+    } else {
+      if (!sc.preview) guideSpeak(sc);
+      if (sc.auto) guide.timer = setTimeout(sc.next, sc.auto);
+    }
   }
   function guideChoose(i) {
     const sc = guide.screen;
@@ -2230,6 +2275,7 @@
     const sc = guide.screen;
     if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); if (!guide.finishing) finishGuide('esc'); return; }
     if (ev.altKey && ev.key === 'ArrowLeft') { ev.preventDefault(); ev.stopPropagation(); guideBack(); return; }
+    if (ev.altKey && (ev.key === 'v' || ev.key === 'V' || ev.code === 'KeyV')) { ev.preventDefault(); ev.stopPropagation(); toggleGuideVoice(); return; }
     // 案内だけの画面：エンターかスペースを続けて押すと、待たずに次へ
     if (sc.auto && (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space')) {
       ev.preventDefault(); ev.stopPropagation();
@@ -2237,6 +2283,16 @@
       return;
     }
     if (ev.isComposing || ev.keyCode === 229) return; // 日本語入力の変換中
+    // フォーカスのあるボタン（プレビューの「作成する」「止めて修正する」、戻る・終わる・声で読む）は、エンター・スペースでそのボタンを押す
+    // （選択肢をエンター1回で選ぶ・2回で決める数え方は、案内の枠にフォーカスがあるときだけ）
+    const fb = document.activeElement;
+    const ownButton = fb && fb.tagName === 'BUTTON' && G.el.contains(fb) && !fb.classList.contains('guide-item') && !fb.classList.contains('pv-word') &&
+      (sc.preview || fb === backBtn || fb === quitBtn || fb === voiceBtn);
+    if (ownButton && (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space') && !sc.memo && !sc.input) {
+      ev.preventDefault(); ev.stopPropagation();
+      if (!ev.repeat) fb.click();
+      return;
+    }
     if (sc.memo) {
       if (ev.key === 'Enter' && ev.shiftKey) {
         ev.preventDefault();
@@ -2562,7 +2618,7 @@
   }
   if (TTS.ok) { ttsPickVoice(); speechSynthesis.addEventListener && speechSynthesis.addEventListener('voiceschanged', ttsPickVoice); }
   // text を読み、読み終えたら（または読めなかったら目安の時間で）done を呼ぶ
-  function ttsSay(text, done) {
+  function ttsSay(text, done, opt) {
     const my = ++TTS.seq;
     let fired = false;
     const finish = () => { if (fired || my !== TTS.seq) return; fired = true; clearTimeout(t); done && done(); };
@@ -2576,8 +2632,9 @@
       if (TTS.voice) u.voice = TTS.voice;
       u.rate = 1;
       // 声がない端末では、すぐに「終わり」が来ることがある。語の長さに合わせた最低限の時間は待つ
-      const start = Date.now(), least = 450 + mora * 150;
+      const start = Date.now(), least = opt && opt.trustEnd ? 0 : 450 + mora * 150;
       const after = () => setTimeout(finish, Math.max(150, least - (Date.now() - start)));
+      u.onstart = () => { TTS.started = true; };
       u.onend = after;
       u.onerror = after;
       speechSynthesis.speak(u);
@@ -2813,6 +2870,7 @@
     // 辞書なしで点訳していたら、辞書が使えるようになった今、変換し直す
     if (state.tokenizer && guide.noDict && state.mode === 'sumiji') { state.rows = state.rows.filter(r => r.edited); convertAll(true); }
     guide.on = false;
+    ttsStop(); // 案内を終えたら声も止める
     guide.screen = null;
     G.el.hidden = true;
     for (const el of appParts()) el.inert = false;
