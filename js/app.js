@@ -2110,16 +2110,16 @@
   try { guideVoice = localStorage.getItem('tenji-guide-voice') !== '0'; } catch (e) { /* 既定はオン */ }
   const voiceBtn = document.createElement('button');
   voiceBtn.type = 'button'; voiceBtn.className = 'btn guide-voice';
-  const voiceLabel = () => { voiceBtn.innerHTML = `声で読む：${guideVoice ? 'オン' : 'オフ'}<span class="key pc-only">（Alt＋V）</span>`; voiceBtn.setAttribute('aria-pressed', String(guideVoice)); };
+  const voiceLabel = () => { voiceBtn.innerHTML = `音声案内：${guideVoice ? 'オン' : 'オフ'}<span class="key pc-only">（Alt＋V）</span>`; voiceBtn.setAttribute('aria-pressed', String(guideVoice)); };
   voiceLabel();
-  function toggleGuideVoice() {
-    guideVoice = !guideVoice;
+  function toggleGuideVoice(on) {
+    guideVoice = typeof on === 'boolean' ? on : !guideVoice;
     try { localStorage.setItem('tenji-guide-voice', guideVoice ? '1' : '0'); } catch (e) { /* 覚えられなくても動く */ }
     voiceLabel();
     if (guideVoice) guideSpeak(guide.screen); else if (!(guide.screen && guide.screen.preview)) ttsStop();
-    announce(guideVoice ? '声で読みます' : '声で読むのをやめました');
+    announce(guideVoice ? '音声案内をオンにしました' : '音声案内をオフにしました');
   }
-  voiceBtn.addEventListener('click', toggleGuideVoice);
+  voiceBtn.addEventListener('click', () => toggleGuideVoice());
   G.esc.after(voiceBtn);
   // 画面の見出しと説明（と選択肢）を声で読む。読み上げソフトの声と重なっても止めない
   function guideSpeakText(sc) {
@@ -2187,7 +2187,9 @@
       b.setAttribute('aria-describedby', hasKeys ? HINT_LIST : HINT_TAP); // 「選択されていません」とは読ませず、決定のしかたを案内する
       const t = document.createElement('span'); t.className = 'gi-label'; t.textContent = c.label;
       b.appendChild(t);
-      if (c.note) { const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.appendChild(n); }
+      // 拡張子（.bse など）は画面に出すだけで、読み上げソフトにもブラウザの声にも読ませない
+      if (c.ext) { const x = document.createElement('span'); x.className = 'gi-ext'; x.setAttribute('aria-hidden', 'true'); x.textContent = `（.${c.ext}）`; b.appendChild(x); }
+      if (c.note) { const sep = document.createElement('span'); sep.className = 'sr-only'; sep.textContent = '。'; const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.append(sep, n); }
       b.addEventListener('click', () => c.run()); // マウス・指は押したら決定
       b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); if (guideVoice && guide.listSpoke) { ttsStop(); ttsSay(c.label + (c.note ? '。' + c.note : '')); } guide.listSpoke = true; });
       G.btns.appendChild(b);
@@ -2413,8 +2415,26 @@
       first: true, single: true,
       msg: '自動誘導機能を利用しますか？',
       sub: hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。' : '',
-      choices: [{ label: '利用する', key: 'Enter', run: guideIntro }, { label: '利用しない', key: 'Space', run: () => finishGuide('skip') }],
+      choices: [{ label: '利用する', key: 'Enter', run: guideVoiceAsk }, { label: '利用しない', key: 'Space', run: () => finishGuide('skip') }],
     });
+  }
+  // 音声案内（画面の説明をブラウザの声で読む）を使うか。あとからでも「音声案内」ボタン（Alt＋V）で切り替えられる
+  function guideVoiceAsk() {
+    guideShow({
+      single: true,
+      msg: '音声案内を利用しますか？',
+      sub: (hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。\n' : '') + '画面の説明をブラウザの声で読み上げます。読み上げソフトを使っているときは、利用しないを選ぶと声が重なりません。あとからでも「音声案内」ボタンで切り替えられます。',
+      choices: [
+        { label: '利用する', key: 'Enter', run: () => { setGuideVoice(true); guideIntro(); } },
+        { label: '利用しない', key: 'Space', run: () => { setGuideVoice(false); guideIntro(); } },
+      ],
+    });
+  }
+  function setGuideVoice(on) {
+    guideVoice = on;
+    try { localStorage.setItem('tenji-guide-voice', on ? '1' : '0'); } catch (e) { /* 覚えられなくても動く */ }
+    voiceLabel();
+    if (!on) ttsStop();
   }
   function guideIntro() {
     const sub = hasKeys
@@ -2762,10 +2782,10 @@
     const braille = state.mode !== 'sumiji';
     const list = [];
     if (braille) {
-      list.push({ label: '墨字のテキスト（.txt）', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-txt' }) });
-      list.push({ label: '墨字のWord（.docx）', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-docx' }) });
+      list.push({ label: '墨字のテキスト', ext: 'txt', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-txt' }) });
+      list.push({ label: '墨字のWord', ext: 'docx', note: '点字を墨字に起こした文章', run: () => guideBuild({ kind: 'sumiji-docx' }) });
     }
-    for (const fmt of F.EXPORTS) list.push({ label: `${fmt.label}（.${fmt.ext}）`, note: fmt.note, run: () => guideFigures(fmt) });
+    for (const fmt of F.EXPORTS) list.push({ label: fmt.label, ext: fmt.ext, note: fmt.note, run: () => guideFigures(fmt) });
     guideShow({ step: '4. ファイルの作成', msg: '出力するファイル形式を選択してください。', back: guide.formatBack || (() => guidePreviewAsk()),
       sub: hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。' : '形式を押すと決定します。',
       list, listLabel: '出力するファイル形式' });
