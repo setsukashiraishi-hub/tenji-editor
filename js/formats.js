@@ -1149,7 +1149,7 @@ ${pages.map(p => '        <page>\n' + p.map(l => '          ' + rowXml(l)).join(
   const textFile = text => enc(withBOM(text.replace(/\r?\n/g, '\r\n')) + '\r\n');
   const docxFromText = text => docxFile(text.replace(/\r/g, '').split('\n'));
 
-  const api = { parseEDL, toEDL, readFile, parseRaw, exportFile, textFile, docxFromText, readXlsx, readDocxStructured, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
+  const api = { makeFigure, parseEDL, toEDL, readFile, parseRaw, exportFile, textFile, docxFromText, readXlsx, readDocxStructured, EXPORTS, KINDS, UNSUPPORTED, PAGE_MARK, extOf, decodeText, readDocxText };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiFormats = api;
 })(typeof self !== 'undefined' ? self : this);

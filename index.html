@@ -21,7 +21,13 @@
       <button type="button" id="btn-open" class="btn primary">ファイルを開く</button>
       <input type="file" id="file-input" hidden multiple
              accept=".zip,application/zip,.txt,.docx,.xlsx,.xlsm,.csv,.tsv,.pdf,.edl,.png,.jpg,.jpeg,.gif,.bmp,.webp,.heic,.heif,.avif,image/*,.bse,.brl,.brf,.pef,.bes,.besx,.brt,.txn,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document">
-      <button type="button" id="btn-new" class="btn">新規</button>
+      <div class="menu-wrap">
+        <button type="button" id="btn-new" class="btn" aria-haspopup="menu" aria-expanded="false" aria-controls="new-menu">新規</button>
+        <div class="menu" id="new-menu" role="menu" aria-label="新規作成" hidden>
+          <button type="button" role="menuitem" id="new-text" tabindex="-1">文章を新規作成</button>
+          <button type="button" role="menuitem" id="new-draw" tabindex="-1">点図を作成（自由にお絵かき）</button>
+        </div>
+      </div>
       <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
     </div>
 
@@ -310,6 +316,7 @@
   <script src="js/engine.js"></script>
   <script src="js/figure.js"></script>
   <script src="js/formats.js"></script>
+  <script src="js/draw.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

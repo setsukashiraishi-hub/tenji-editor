@@ -353,6 +353,12 @@
       b.addEventListener('click', ev => { ev.stopPropagation(); openTactile(row); });
       meta.appendChild(b);
     }
+    if (row.type === 'figure' && state.mode === 'sumiji' && figOf(row) && figOf(row).drawOps) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'opt ok-btn fig-draw-btn'; b.textContent = '絵を描き直す…';
+      b.addEventListener('click', ev => { ev.stopPropagation(); drawFigure(row); });
+      meta.appendChild(b);
+    }
     const miss = [...new Set([...(row.unknown || []), ...(row.unresolved || [])])].filter(x => x !== '〓');
     if (miss.length) meta.appendChild(chipEl('辞書にない語：' + miss.join(' '), 'warn'));
     if (row.unresolved && row.unresolved.includes('〓')) meta.appendChild(chipEl('読めない点字があります', 'warn'));
@@ -2008,7 +2014,59 @@
     if (fs.length) openFiles(fs);
     ev.target.value = '';
   });
-  $('btn-new').addEventListener('click', () => {
+  // 「新規」：文章を新規作成 ／ 点図を作成（お絵かき）を選ぶメニュー
+  const NEW = { btn: $('btn-new'), menu: $('new-menu') };
+  const newItems = () => [...NEW.menu.querySelectorAll('[role=menuitem]')];
+  function newMenu(open, focusIdx) {
+    NEW.menu.hidden = !open;
+    NEW.btn.setAttribute('aria-expanded', String(open));
+    if (open) newItems()[focusIdx || 0].focus();
+  }
+  NEW.btn.addEventListener('click', () => newMenu(NEW.menu.hidden));
+  NEW.btn.addEventListener('keydown', ev => {
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); newMenu(true, ev.key === 'ArrowUp' ? newItems().length - 1 : 0); }
+  });
+  NEW.menu.addEventListener('keydown', ev => {
+    const its = newItems(), i = its.indexOf(document.activeElement);
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') { ev.preventDefault(); its[(i + (ev.key === 'ArrowDown' ? 1 : its.length - 1)) % its.length].focus(); }
+    else if (ev.key === 'Home' || ev.key === 'End') { ev.preventDefault(); its[ev.key === 'Home' ? 0 : its.length - 1].focus(); }
+    else if (ev.key === 'Escape' || ev.key === 'Tab') { if (ev.key === 'Escape') ev.preventDefault(); newMenu(false); if (ev.key === 'Escape') NEW.btn.focus(); }
+  });
+  document.addEventListener('pointerdown', ev => { if (!NEW.menu.hidden && !ev.target.closest('.menu-wrap')) newMenu(false); });
+  $('new-text').addEventListener('click', () => { newMenu(false); newDocument(); });
+  $('new-draw').addEventListener('click', () => { newMenu(false); drawFigure(); });
+  // 点図を作成：お絵かきの画面で描いて、その点図だけの新しい文書にする
+  async function drawFigure(row) {
+    if (!window.TenjiDraw) return;
+    const fig = row ? figOf(row) : null;
+    const res = await TenjiDraw.open(fig && fig.drawOps ? { ops: fig.drawOps, title: fig.alt } : {});
+    if (!res) { if (!row) NEW.btn.focus(); return; }
+    toast('点図を作っています…');
+    const label = row ? row.alt : '図1';
+    const info = await F.makeFigure(res.blob, row ? (fig && fig.no) || 1 : 1, res.title || '', layoutOpt());
+    info.kind = 'drawing'; info.proc = null; // 描いた絵は線画として扱う（写真として扱わない）
+    info.drawOps = res.ops; // あとから描き直せるように
+    if (row) {
+      state.figures.set(label, info);
+      if (state.figRows) state.figRows.delete(row.src);
+      convertAll();
+      toast('点図を描き直しました');
+      return;
+    }
+    newDocument(true);
+    setMode('sumiji');
+    state.figures = new Map([[label, info]]);
+    state.fileBase = res.title || '点図';
+    els.fileName.textContent = res.title || '点図';
+    const lines = [];
+    if (res.title) { lines.push(res.title); state.typeMap.set(res.title, 'h2'); }
+    lines.push(`［図：${label}］`);
+    els.src.value = lines.join('\n');
+    setNote('描いた絵を点図にしました。図の行の「点図の調整・手直し・書き出し…」で点を直したり、点図ファイルに書き出したりできます。「絵を描き直す…」でお絵かきに戻れます。');
+    convertAll();
+    toast('点図を作りました');
+  }
+  function newDocument(quiet) {
     closeDocs(true);
     state.rows = [];
     state.typeMap = new Map();
@@ -2016,9 +2074,10 @@
     state.fileBase = '点訳';
     els.fileName.textContent = '新規';
     setNote('');
+    if (quiet) return;
     if (state.mode === 'sumiji') { els.src.value = ''; convertAll(); els.src.focus(); }
     else { els.raw.value = ''; els.raw.hidden = false; els.btnRaw.setAttribute('aria-expanded', 'true'); convertAll(); els.raw.focus(); }
-  });
+  }
   let timer = null;
   els.src.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(convertAll, 350); });
   els.mode.addEventListener('change', () => {
