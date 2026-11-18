@@ -1,5 +1,5 @@
 {
- "version": "2026-11-18",
+ "version": "2026-11-18.2",
  "note": "点訳エディタの辞書・言語パック。ダウンロードするとブラウザ（IndexedDB）に保存されます。",
  "packs": [
   {
@@ -7,16 +7,16 @@
    "kind": "lexicon",
    "title": "日本語：一般の語・複合語の読み",
    "desc": "専門用語・複合語など、エディタに入っている辞書（IPA辞書）では読みを誤りやすい語。大きな辞書どうしで読みを照らし合わせ、公式の点字データに出てくる読みで確かめました。",
-   "version": "2026-11-18",
-   "entries": 113229,
+   "version": "2026-11-18.2",
+   "entries": 113784,
    "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
    "files": [
     {
      "name": "ja-words.tsv.gz",
      "path": "ja/ja-words.tsv.gz",
-     "size": 1090645,
+     "size": 1098005,
      "type": "application/gzip",
-     "sha256": "90c2a9c59864ca9f887991dd9263a17ef1c236e09d522d704c37981a4945ed53"
+     "sha256": "468c399cc5de37ca117ee0d2e68dd8bb98c388e5bd53a93db06295bfead88553"
     }
    ]
   },
@@ -25,16 +25,16 @@
    "kind": "lexicon",
    "title": "日本語：人名の読み",
    "desc": "姓・名・歴史上の人物など。字にない「の」が入る名前（源頼朝 ミナモトノ ヨリトモ）も点字の書き方で書きます。",
-   "version": "2026-11-18",
-   "entries": 258772,
+   "version": "2026-11-18.2",
+   "entries": 258051,
    "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
    "files": [
     {
      "name": "ja-people.tsv.gz",
      "path": "ja/ja-people.tsv.gz",
-     "size": 2564295,
+     "size": 2567161,
      "type": "application/gzip",
-     "sha256": "94a34d9132f5d8a0d6db8ccd9ea43cbf2397f6ed63e7a9f4c28ed0047a08b348"
+     "sha256": "247f6077802888919cf2323d00ffd4dc0f83c201020134c826ee5b11d479af8f"
     }
    ]
   },
@@ -43,16 +43,16 @@
    "kind": "lexicon",
    "title": "日本語：地名・住所の読み",
    "desc": "全国の都道府県・市区町村・町名・駅・寺社・山や川など。日本郵便の郵便番号データの読みも入っています。",
-   "version": "2026-11-18",
-   "entries": 294908,
+   "version": "2026-11-18.2",
+   "entries": 294833,
    "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
    "files": [
     {
      "name": "ja-places.tsv.gz",
      "path": "ja/ja-places.tsv.gz",
-     "size": 4382093,
+     "size": 4382843,
      "type": "application/gzip",
-     "sha256": "12a0be99e36a5094caaa4948e9a17923b615a1fdd547449644acd395db9b5ecc"
+     "sha256": "63888f72a894b20836eda3908a3aec40292e486772e27cd643f3a330eaa16d3a"
     }
    ]
   },
@@ -61,16 +61,16 @@
    "kind": "lexicon",
    "title": "日本語：会社・団体・作品などの読み",
    "desc": "会社・団体・施設・作品・商品などの固有名詞。",
-   "version": "2026-11-18",
-   "entries": 144380,
+   "version": "2026-11-18.2",
+   "entries": 144895,
    "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
    "files": [
     {
      "name": "ja-names.tsv.gz",
      "path": "ja/ja-names.tsv.gz",
-     "size": 2177006,
+     "size": 2184818,
      "type": "application/gzip",
-     "sha256": "0a54fadb17cdf18b0b297b8c66b6e5d7c19866cba0c33768d54295196b520dd0"
+     "sha256": "5385e4a65c95681e77aa7ca76fbf1b0b10a4562fe8f5f5c379348752780aa2f6"
     }
    ]
   },
