@@ -59,6 +59,11 @@ body {
 .brand-name { font-weight: 700; font-size: 16px; letter-spacing: .04em; }
 .bar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .bar-group.end { margin-left: auto; }
+/* パソコンの幅では、「書き出す」を帯の右上に置く（設定の行が折り返しても、いつも右上） */
+@media (min-width: 861px) {
+  .bar { position: relative; padding-right: calc(max(16px, env(safe-area-inset-right, 0px)) + 130px); }
+  .bar-group.end { position: absolute; top: 10px; right: max(16px, env(safe-area-inset-right, 0px)); margin-left: 0; }
+}
 
 .btn {
   font: inherit;
@@ -555,12 +560,12 @@ fieldset:disabled { opacity: .5; }
 
 /* 「新規」のメニュー */
 .menu-wrap { position: relative; display: inline-block; }
-.menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 240px; display: flex; flex-direction: column;
+.menu-wrap .menu { position: absolute; top: calc(100% + 4px); left: 0; z-index: 30; min-width: 240px; display: flex; flex-direction: column;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 8px 24px rgba(10, 20, 24, .16); padding: 4px; }
-.menu[hidden] { display: none; }
-.menu [role=menuitem] { text-align: left; font: inherit; font-size: 15px; padding: 10px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
-.menu [role=menuitem]:hover, .menu [role=menuitem]:focus { background: var(--accent-soft); outline: none; }
-.menu [role=menuitem]:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
+.menu-wrap .menu[hidden] { display: none; }
+.menu-wrap .menu [role=menuitem] { text-align: left; font: inherit; font-size: 15px; padding: 10px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; }
+.menu-wrap .menu [role=menuitem]:hover, .menu [role=menuitem]:focus { background: var(--accent-soft); outline: none; }
+.menu-wrap .menu [role=menuitem]:focus-visible { box-shadow: inset 0 0 0 2px var(--accent); }
 
 /* 点図を作成（お絵かき） */
 dialog.draw { width: min(1100px, calc(100vw - 24px)); }
