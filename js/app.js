@@ -2140,20 +2140,19 @@
     if (TTS.ok && !TTS.started && !TTS.unlockUsed) setTimeout(() => { if (!TTS.started && !TTS.unlockUsed) { TTS.blocked = true; } }, 1200);
   }
   // iPhone などは、最初に画面にふれるまで声が出ないことがある。最初の操作で、今の画面を読み直す
-  // 声が止められていたときは、その1回の操作は「読み始める」に使い、選択にはしない（何を選ぶか聞いてから押せるように）
+  // 声が止められていた（ページを開いて、まだ何も押していない）ときの最初の操作：
+  // 選択肢を押したときは、ふつうに選択して「質問」と「そのボタンの名前」を読む。ほかの所を押したときは、画面を最初から読む
   const voiceUnlock = ev => {
     if (typeof TTS === 'undefined' || TTS.started || TTS.unlockUsed) { document.removeEventListener('pointerdown', voiceUnlock, true); document.removeEventListener('keydown', voiceUnlock, true); return; }
     const sc = guide.screen;
     if (!guide.on || !sc || sc.preview || !(guideVoice || sc.forceVoice) || !TTS.ok) return;
     if (ev.type === 'keydown' && /^(Shift|Control|Alt|Meta|Tab)$/.test(ev.key)) return;
-    const wasBlocked = TTS.blocked;
+    if (!TTS.blocked) return;
     TTS.blocked = false;
-    TTS.unlockUsed = true; // 「最初の1回で読み始める」はページで1回だけ（声の出ない端末で、毎回押す回数が増えないように）
-    guideSpeak(sc);
-    if (wasBlocked) {
-      if (ev.type === 'keydown') { ev.preventDefault(); ev.stopImmediatePropagation(); }
-      else guide.swallowUntil = Date.now() + 900; // このあとのクリックを選択にしない
-    }
+    TTS.unlockUsed = true; // ページで1回だけ
+    const onChoice = ev.type === 'keydown' ? (ev.key === 'Enter' || ev.key === ' ' || ev.code === 'Space') && !!(sc.choices || sc.list) : !!(ev.target.closest && ev.target.closest('#guide-btns button'));
+    if (onChoice) TTS.withQuestion = true; // 選択のときに、質問から読む
+    else guideSpeak(sc);
   };
   document.addEventListener('pointerdown', voiceUnlock, true); document.addEventListener('keydown', voiceUnlock, true);
   // 案内だけの画面を飛ばす：1.5秒のうちに2回（キーか、画面のタップ）
@@ -2306,13 +2305,11 @@
     guideSayLabel(guide.screen.choices[i].label);
   }
   function guidePress(i) {
-    if (guide.swallowUntil && Date.now() < guide.swallowUntil) { guide.swallowUntil = 0; return; }
     if (guide.sel === i) guideChoose(i); else guideSelect(i);
   }
   function guideListPress(i) {
     const sc = guide.screen;
     if (!sc || !sc.list || !sc.list[i]) return;
-    if (guide.swallowUntil && Date.now() < guide.swallowUntil) { guide.swallowUntil = 0; return; }
     if (guide.listArmed === i) { guide.listArmed = -1; clickSound(); sc.list[i].run(); return; }
     guide.listArmed = i;
     const items = [...G.btns.children];
@@ -2323,7 +2320,11 @@
   // そのボタンの名前だけを読む（読み上げソフトへの知らせと、音声案内の声。プレビューの読み上げ中は声を止めない）
   function guideSayLabel(label) {
     announce(label);
-    if (guideVoice && !(guide.screen && guide.screen.preview)) { ttsStop(); ttsSay(label, null, { trustEnd: true }); }
+    const sc = guide.screen;
+    // ページを開いてまだ声が出せなかったときの最初の選択は、質問を読んでから、そのボタンの名前を読む
+    const q = typeof TTS !== 'undefined' && TTS.withQuestion && sc ? sc.msg + '　' : '';
+    if (typeof TTS !== 'undefined') TTS.withQuestion = false;
+    if ((guideVoice || (sc && sc.forceVoice)) && !(sc && sc.preview)) { ttsStop(); ttsSay(q + label, null, { trustEnd: true }); }
   }
   document.addEventListener('keydown', ev => {
     if (!guide.on || !guide.screen) return;
