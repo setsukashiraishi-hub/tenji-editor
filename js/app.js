@@ -17,7 +17,7 @@
 
   const els = {
     src: $('src'), rows: $('rows'), mode: $('mode'), cols: $('cols'), lines: $('lines'),
-    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'), eng2: $('eng2'), doclang: $('doclang'),
+    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'), eng2: $('eng2'), symdesc: $('symdesc'), doclang: $('doclang'),
     fileName: $('file-name'), note: $('file-note'),
     stDict: $('st-dict'), stCount: $('st-count'), stWarn: $('st-warn'), navCheck: $('nav-check'),
     exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
@@ -97,7 +97,7 @@
   }
 
   // ---------- 設定の保存（このブラウザだけ） ----------
-  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'framefit', 'srmode', 'enueb', 'eng2'];
+  const PREF_KEYS = ['cols', 'lines', 'indent', 'hira', 'pagenum', 'genpon', 'framefit', 'srmode', 'enueb', 'eng2', 'symdesc'];
   function loadPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem('tenji-editor-prefs') || '{}');
@@ -296,8 +296,15 @@
   // ---------- 描画 ----------
   // 発音記号の印 ⟦ ⟧ は、画面では [ ] で見せる（[ ] のまま直しても発音記号の点字になる）
   // 画面と墨字では、内部の印（英語の語句 ⟪ ⟫・アドレス ⟬ ⟭・続きの行 ↪）を見せない
-  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪⟮⟯\ue0f0\ue0f1]/g, '');
+  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦\ue0f2([^⟧]*)⟧/g, '/$1/').replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪⟮⟯\ue0f0\ue0f1\ue0f2]/g, '');
   const cellLen = s => Array.from(s || '').length;
+  // かなの中の一部（点訳者挿入符で書いた名前など）を消す。前後のマスあけが2つ続かないようにする
+  const removeKanaPart = (kana, part) => {
+    if (kana.includes(' ' + part + ' ')) return kana.replace(' ' + part + ' ', ' ');
+    if (kana.startsWith(part + ' ')) return kana.slice(part.length + 1);
+    if (kana.endsWith(' ' + part)) return kana.slice(0, -part.length - 1);
+    return kana.replace(part, '');
+  };
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
     ((r.checks && r.checks.length) || (r.unknown && r.unknown.length) || (r.unresolved && r.unresolved.length) || (r.foreign && r.foreign.length));
@@ -310,7 +317,9 @@
     if (miss.length) out.push('辞書にない語・点字にできない文字：' + miss.join(' '));
     if ((r.unresolved || []).includes('〓')) out.push('読めない点字');
     // 外国語の点字は言語ごとに違う（英語の点字とは別）。その言語の点字で書くか、点訳者が決める
-    for (const f of (r.foreign || [])) out.push(f.table ? `外国語「${f.text}」：${f.kind}。外国語の点字パックの「${f.tableName}」の書き方で、外国語引用符の中に書きました。書き方を確認してください` : `外国語「${f.text}」：${f.kind}。点字の書き方は言語ごとに違うので、書き方を確認してください`);
+    for (const f of (r.foreign || [])) out.push(f.table ? `外国語「${f.text}」：${f.kind}。外国語の点字パックの「${f.tableName}」の書き方で、外国語引用符の中に書きました。書き方を確認してください`
+      : f.builtin ? `外国語「${f.text}」：${f.kind}。${f.builtin}で、外国語引用符の中に書きました。言語によって書き方が違うので確認してください（「辞書・言語パック」の外国語の点字を入れると、その言語の点字にできます）`
+        : `外国語「${f.text}」：${f.kind}。点字の書き方は言語ごとに違うので、書き方を確認してください`);
     return out;
   }
 
@@ -384,24 +393,29 @@
       if (ck.done) continue;
       const box = document.createElement('span');
       box.className = 'check-box';
-      box.appendChild(chipEl(`読みを確認：${ck.surface}`, 'warn'));
+      box.appendChild(chipEl(ck.note ? `記号を確認：${ck.surface}` : `読みを確認：${ck.surface}`, 'warn'));
+      if (ck.note) box.title = ck.note;
       for (const opt2 of ck.options) {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'opt' + (opt2 === ck.kana ? ' current' : '');
-        b.textContent = displayKana(opt2);
-        b.title = opt2 === ck.kana ? '今の読み（このままでよい）' : 'この読みにする';
+        b.textContent = opt2 === '' ? '名前を消す' : displayKana(opt2);
+        b.title = opt2 === '' ? '点訳者挿入符で書いた名前を消す' : opt2 === ck.kana ? '今の読み（このままでよい）' : 'この読みにする';
         // 切り替えボタンにしない（「選択されていません」と読まれないように）。今の読みは名前で知らせる
-        b.setAttribute('aria-label', `${row._n || ''}行目の「${ck.surface}」を ${displayKana(opt2)} と読む` + (opt2 === ck.kana ? '（今の読み）' : ''));
+        b.setAttribute('aria-label', opt2 === '' ? `${row._n || ''}行目の「${ck.surface}」の名前を消す` : `${row._n || ''}行目の「${ck.surface}」を ${displayKana(opt2)} と読む` + (opt2 === ck.kana ? '（今の読み）' : ''));
         b.addEventListener('click', ev => {
           ev.stopPropagation();
-          if (opt2 !== ck.kana && row.kana.includes(ck.kana)) {
+          if (opt2 === '' && ck.kana && row.kana.includes(ck.kana)) {
+            row.kana = removeKanaPart(row.kana, ck.kana);
+            const r = E.kanaToBraille(row.kana);
+            row.cells = r.cells; row.bad = r.bad; row.unknown = r.unknown; row.edited = true;
+          } else if (opt2 !== ck.kana && row.kana.includes(ck.kana)) {
             row.kana = row.kana.replace(ck.kana, opt2);
             const r = E.kanaToBraille(row.kana);
             row.cells = r.cells; row.bad = r.bad; row.unknown = r.unknown; row.edited = true;
           }
           ck.kana = opt2; ck.done = true;
-          announce(`「${ck.surface}」を ${displayKana(opt2)} にしました`);
+          announce(opt2 === '' ? `「${ck.surface}」の名前を消しました` : `「${ck.surface}」を ${displayKana(opt2)} にしました`);
           if (!(row.checks || []).some(c => !c.done) && !(row.unknown || []).length && !(row.unresolved || []).length) row.reviewed = true;
           onChange();
         });
@@ -2140,6 +2154,8 @@
   const applyEnglishMode = () => { E.setEnglishMode(els.enueb.checked, els.eng2.checked); };
   els.enueb.addEventListener('change', () => { if (!els.enueb.checked) els.eng2.checked = false; applyEnglishMode(); savePrefs(); convertAll(); });
   els.eng2.addEventListener('change', () => { if (els.eng2.checked) els.enueb.checked = true; applyEnglishMode(); savePrefs(); convertAll(); });
+  // 絵文字・記号の名前を点訳者挿入符で書くか（外すと省く）
+  els.symdesc.addEventListener('change', () => { E.setSymbolMode(els.symdesc.checked); savePrefs(); convertAll(); });
 
   // ドラッグ＆ドロップ
   let dragDepth = 0;
@@ -2720,8 +2736,14 @@
       guideShow({ step, back, msg: `「${it.f.text}」は外国語（${it.f.kind}）です。点字の書き方は言語ごとに違います。読み方を入力してください。（エンター2回で決定）`,
         sub: `${line}\nそのままでよいときは、空のままエンターを2回押します。`, input: { value: '', done } });
     } else {
-      guideShow({ step, back, msg: `「${it.ck.surface}」の記号の点字を確認してください。`, sub: `${line}\n${it.ck.note}`,
-        choices: [{ label: 'このままにする', key: 'Enter', run: () => { it.ck.done = true; guideRowChecked(it.r); guide.k++; guideItem(); } }] });
+      const keep = { label: 'このままにする', key: 'Enter', run: () => { it.ck.done = true; guideRowChecked(it.r); guide.k++; guideItem(); } };
+      const drop = (it.ck.options || []).includes('') && it.ck.kana ? [{ label: '名前を消す', key: 'Space', run: () => {
+        const r = it.r;
+        if (r.kana.includes(it.ck.kana)) { r.kana = removeKanaPart(r.kana, it.ck.kana); const b = E.kanaToBraille(r.kana); r.cells = b.cells; r.bad = b.bad; r.unknown = b.unknown; r.edited = true; E.fitBlocks(state.rows, layoutOpt()); }
+        it.ck.done = true; guideRowChecked(r); announce(`「${it.ck.surface}」の名前を消しました`); guide.k++; guideItem();
+      } }] : [];
+      guideShow({ step, back, msg: `「${it.ck.surface}」の記号の点字を確認してください。`, sub: `${line}\n${it.ck.note}` + (drop.length && hasKeys ? '\nエンターを2回押すとこのまま、スペースを2回押すと名前を消します。' : ''),
+        choices: [keep, ...drop] });
     }
   }
   function guideRowChecked(r) {
@@ -3041,7 +3063,10 @@
   // 文書の言語：日本語のほか、英語（このエディタの英語の点字）と、外国語の点字パックの言語
   const LANG_BUILTIN = { 'en-ueb1': '英語（UEB・略字なし）', 'en-ueb2': '英語（UEB・略字あり）' };
   // 日本語の文の中の外国の文字を書く表（外国語の点字パックにあるとき）
-  const SCRIPT_TABLE = { hangul: 'ko-g2.ctb', cyrillic: 'ru-litbrl.ctb', arabic: 'ar.tbl', hebrew: 'he-IL.utb', thai: 'th-g0.utb', devanagari: 'hi.tbl' };
+  const SCRIPT_TABLE = { hangul: 'ko-g2.ctb', cyrillic: 'ru-litbrl.ctb', arabic: 'ar.tbl', hebrew: 'he-IL.utb', thai: 'th-g0.utb', devanagari: 'hi.tbl',
+    greek: 'el.ctb', lao: 'lo-g1.utb', bengali: 'bn.tbl', gurmukhi: 'pa.tbl', gujarati: 'gu.tbl', oriya: 'or.tbl', tamil: 'ta-ta-g1.ctb', telugu: 'te.tbl',
+    kannada: 'kn.tbl', malayalam: 'ml.tbl', myanmar: 'my-g1.utb', georgian: 'ka.utb', ethiopic: 'gez.tbl', cherokee: 'chr-us-g1.ctb', syllabics: 'iu-ca-g1.ctb',
+    khmer: 'km-g1.utb', syriac: 'syc.utb', coptic: 'cop.utb' };
   const LANG_KEY = 'tenji-editor-doclang';
   const savedLang = () => { try { return localStorage.getItem(LANG_KEY) || 'ja'; } catch (e) { return 'ja'; } };
   const saveLang = v => { try { localStorage.setItem(LANG_KEY, v); } catch (e) { /* 保存できなくても使える */ } };
@@ -3314,6 +3339,7 @@
   loadPrefs();
   if (els.eng2.checked) els.enueb.checked = true;
   E.setEnglishMode(els.enueb.checked, els.eng2.checked);
+  E.setSymbolMode(els.symdesc.checked);
   buildMenu();
   setMode('sumiji');
   els.src.value = '';

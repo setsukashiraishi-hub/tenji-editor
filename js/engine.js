@@ -103,37 +103,126 @@
   // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
   // 日本語・英語以外の外国語（点字の書き方が言語ごとに違うので、点訳者に確かめてもらう）
   const FOREIGN = [
-    [/[A-Za-zÀ-ÖØ-öø-ɏ]*[À-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ]*/g, 'アクセント記号つきの外国語（フランス語・ドイツ語・スペイン語など）', ''],
-    [/[가-힯ᄀ-ᇿ㄰-㆏]+/g, 'ハングル（韓国・朝鮮語）', 'hangul'],
-    [/[Ѐ-ӿ]+/g, 'キリル文字（ロシア語など）', 'cyrillic'],
-    [/[؀-ۿݐ-ݿ]+/g, 'アラビア文字', 'arabic'],
-    [/[֐-׿]+/g, 'ヘブライ文字', 'hebrew'],
-    [/[฀-๿]+/g, 'タイ文字', 'thai'],
-    [/[ऀ-ॿ]+/g, 'デーヴァナーガリー（ヒンディー語など）', 'devanagari']
+    [/[A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ]*[À-ÖØ-öø-ɏḀ-ỿ][A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ]*/g, 'アクセント記号つきの外国語（フランス語・ドイツ語・スペイン語など）', ''],
+    [/[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff]+/gu, 'ハングル（韓国・朝鮮語）', 'hangul'],
+    [/[\u0400-\u052f\u2de0-\u2dff\ua640-\ua69f\u1c80-\u1c8f]+/gu, 'キリル文字（ロシア語など）', 'cyrillic'],
+    [/[\u0370-\u03ff\u1f00-\u1fff]{4,}/gu, 'ギリシャ文字（ギリシャ語）', 'greek'],
+    [/[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]+/gu, 'アラビア文字', 'arabic'],
+    [/[\u0590-\u05ff\ufb1d-\ufb4f]+/gu, 'ヘブライ文字', 'hebrew'],
+    [/[\u0e00-\u0e7f]+/gu, 'タイ文字', 'thai'],
+    [/[\u0e80-\u0eff]+/gu, 'ラオ文字', 'lao'],
+    [/[\u0900-\u097f\ua8e0-\ua8ff]+/gu, 'デーヴァナーガリー（ヒンディー語など）', 'devanagari'],
+    [/[\u0980-\u09ff]+/gu, 'ベンガル文字', 'bengali'],
+    [/[\u0a00-\u0a7f]+/gu, 'グルムキー文字（パンジャブ語）', 'gurmukhi'],
+    [/[\u0a80-\u0aff]+/gu, 'グジャラート文字', 'gujarati'],
+    [/[\u0b00-\u0b7f]+/gu, 'オリヤー文字', 'oriya'],
+    [/[\u0b80-\u0bff]+/gu, 'タミル文字', 'tamil'],
+    [/[\u0c00-\u0c7f]+/gu, 'テルグ文字', 'telugu'],
+    [/[\u0c80-\u0cff]+/gu, 'カンナダ文字', 'kannada'],
+    [/[\u0d00-\u0d7f]+/gu, 'マラヤーラム文字', 'malayalam'],
+    [/[\u0d80-\u0dff]+/gu, 'シンハラ文字', 'sinhala'],
+    [/[\u0f00-\u0fff]+/gu, 'チベット文字', 'tibetan'],
+    [/[\u1000-\u109f\uaa60-\uaa7f\ua9e0-\ua9ff]+/gu, 'ビルマ文字（ミャンマー語）', 'myanmar'],
+    [/[\u10a0-\u10ff\u2d00-\u2d2f\u1c90-\u1cbf]+/gu, 'ジョージア文字', 'georgian'],
+    [/[\u1200-\u139f\u2d80-\u2ddf\uab00-\uab2f]+/gu, 'エチオピア文字（ゲエズ文字）', 'ethiopic'],
+    [/[\u13a0-\u13ff\uab70-\uabbf]+/gu, 'チェロキー文字', 'cherokee'],
+    [/[\u1400-\u167f\u18b0-\u18ff]+/gu, 'カナダ先住民音節文字（イヌクティトゥット語など）', 'syllabics'],
+    [/[\u1780-\u17ff\u19e0-\u19ff]+/gu, 'クメール文字（カンボジア語）', 'khmer'],
+    [/[\u1800-\u18af]+/gu, 'モンゴル文字', 'mongolian'],
+    [/[\u0531-\u058a\ufb13-\ufb17]+/gu, 'アルメニア文字', 'armenian'],
+    [/[\u0700-\u074f\u0860-\u086f]+/gu, 'シリア文字', 'syriac'],
+    [/[\u0780-\u07bf]+/gu, 'ターナ文字（ディベヒ語）', 'thaana'],
+    [/[\u07c0-\u07ff]+/gu, 'ンコ文字', 'nko'],
+    [/[\u2d30-\u2d7f]+/gu, 'ティフィナグ文字（ベルベル語）', 'tifinagh'],
+    [/[\u3100-\u312f\u31a0-\u31bf]+/gu, '注音符号（中国語の発音）', 'bopomofo'],
+    [/[\ua000-\ua4cf]+/gu, 'イ文字（彝語）', 'yi'],
+    [/[\ua500-\ua63f]+/gu, 'ヴァイ文字', 'vai'],
+    [/[\u2c80-\u2cff]+/gu, 'コプト文字', 'coptic'],
+    [/[\u16a0-\u16ff]+/gu, 'ルーン文字', 'runic'],
+    [/[\u1681-\u169c]+/gu, 'オガム文字', 'ogham'],
+    [/[\ua980-\ua9df]+/gu, 'ジャワ文字', 'javanese'],
+    [/[\u1b00-\u1b7f]+/gu, 'バリ文字', 'balinese'],
+    [/[\u1700-\u171f]+/gu, 'バイバイン文字（タガログ語）', 'tagalog'],
   ];
   // ---------- 外国語の点字（「外国語の点字」パック＝liblouis をダウンロードしたとき）----------
   // XL = { forward(text, table) → 点字 | null, back(cells, table) → 文字 | null, doc: 文書全体の言語の表, scripts: { hangul: 表, … }, name(表) → 名前 }
   // 日本語の文の中のハングル・キリル文字などは、その言語の点字で外国語引用符（⠦ … ⠴）の中に書く
   let XL = null;
   const setForeign = x => { XL = x || null; };
-  const DOC_MARK = ''; // 行の頭にあれば、この行は文書の言語（外国語）で書く
-  const SCRIPT_RE = { hangul: /[가-힯ᄀ-ᇿ㄰-㆏]/, cyrillic: /[Ѐ-ӿ]/, arabic: /[؀-ۿݐ-ݿ]/, hebrew: /[֐-׿]/, thai: /[฀-๿]/, devanagari: /[ऀ-ॿ]/ };
+  const DOC_MARK = '\ue0f1'; // 行の頭にあれば、この行は文書の言語（外国語）で書く
+  const SCRIPT_RE = {
+    hangul: /[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff]/u,
+    cyrillic: /[\u0400-\u052f\u2de0-\u2dff\ua640-\ua69f\u1c80-\u1c8f]/u,
+    greek: /[\u0370-\u03ff\u1f00-\u1fff]/u,
+    arabic: /[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff\ufb50-\ufdff\ufe70-\ufeff]/u,
+    hebrew: /[\u0590-\u05ff\ufb1d-\ufb4f]/u,
+    thai: /[\u0e00-\u0e7f]/u,
+    lao: /[\u0e80-\u0eff]/u,
+    devanagari: /[\u0900-\u097f\ua8e0-\ua8ff]/u,
+    bengali: /[\u0980-\u09ff]/u,
+    gurmukhi: /[\u0a00-\u0a7f]/u,
+    gujarati: /[\u0a80-\u0aff]/u,
+    oriya: /[\u0b00-\u0b7f]/u,
+    tamil: /[\u0b80-\u0bff]/u,
+    telugu: /[\u0c00-\u0c7f]/u,
+    kannada: /[\u0c80-\u0cff]/u,
+    malayalam: /[\u0d00-\u0d7f]/u,
+    sinhala: /[\u0d80-\u0dff]/u,
+    tibetan: /[\u0f00-\u0fff]/u,
+    myanmar: /[\u1000-\u109f\uaa60-\uaa7f\ua9e0-\ua9ff]/u,
+    georgian: /[\u10a0-\u10ff\u2d00-\u2d2f\u1c90-\u1cbf]/u,
+    ethiopic: /[\u1200-\u139f\u2d80-\u2ddf\uab00-\uab2f]/u,
+    cherokee: /[\u13a0-\u13ff\uab70-\uabbf]/u,
+    syllabics: /[\u1400-\u167f\u18b0-\u18ff]/u,
+    khmer: /[\u1780-\u17ff\u19e0-\u19ff]/u,
+    mongolian: /[\u1800-\u18af]/u,
+    armenian: /[\u0531-\u058a\ufb13-\ufb17]/u,
+    syriac: /[\u0700-\u074f\u0860-\u086f]/u,
+    thaana: /[\u0780-\u07bf]/u,
+    nko: /[\u07c0-\u07ff]/u,
+    tifinagh: /[\u2d30-\u2d7f]/u,
+    bopomofo: /[\u3100-\u312f\u31a0-\u31bf]/u,
+    yi: /[\ua000-\ua4cf]/u,
+    vai: /[\ua500-\ua63f]/u,
+    coptic: /[\u2c80-\u2cff]/u,
+    runic: /[\u16a0-\u16ff]/u,
+    ogham: /[\u1681-\u169c]/u,
+    javanese: /[\ua980-\ua9df]/u,
+    balinese: /[\u1b00-\u1b7f]/u,
+    tagalog: /[\u1700-\u171f]/u
+  };
   const scriptOf = c => { for (const k in SCRIPT_RE) if (SCRIPT_RE[k].test(c)) return k; return ''; };
   const scriptTable = k => (XL && XL.forward && XL.scripts && k && XL.scripts[k]) || '';
   function foreignParts(text) {
     const out = [];
     for (const [re, kind, script] of FOREIGN) for (const m of text.matchAll(re)) {
       const t = scriptTable(script);
-      out.push(t ? { text: m[0], kind, table: t, tableName: XL.name ? XL.name(t) : t } : { text: m[0], kind });
+      const approx = script === 'cyrillic' && Array.from(m[0]).some(ch => !CYR[ch] && !CYR[ch.normalize('NFD')[0]] && CYR_APPROX[ch] !== undefined);
+      out.push(t ? { text: m[0], kind, table: t, tableName: XL.name ? XL.name(t) : t } : BUILTIN_SCRIPT[script] ? { text: m[0], kind, builtin: BUILTIN_SCRIPT[script].name + (approx ? '（表にない古い字・まれな字は近い字にして）' : '') } : { text: m[0], kind });
     }
     return out;
   }
+  // 外国語の点字パックがないときに使う、エディタに入れてある文字の表（キリル文字。ロシア語の点字と、ウクライナ語・ベラルーシ語・セルビア語・マケドニア語などの字）
+  // 字の形は liblouis の各言語の表（ru-litbrl・uk・bel・sr・mk）と同じ。大文字の印は付けない（ロシア語の点字の書き方）
+  const CYR = {};
+  ('а⠁б⠃в⠺г⠛д⠙е⠑ж⠚з⠵и⠊й⠯к⠅л⠇м⠍н⠝о⠕п⠏р⠗с⠎т⠞у⠥ф⠋х⠓ц⠉ч⠟ш⠱щ⠭ъ⠷ы⠮ь⠾э⠪ю⠳я⠫ё⠡' +
+    'є⠜і⠽ї⠹ґ⠻ў⠬ћ⠩џ⠻ђ⠹ј⠚љ⠣њ⠫ќ⠌ѓ⠜ѕ⠳ѝ⠯ѣ⠜ѫ⠪ғ⠻қ⠽ҳ⠹' +
+    // カザフ語（kk）・タタール語（tt）・バシキール語（ba）・サハ語（sah）の字
+    'ә⠜ң⠩ө⠣ұ⠬ү⠌һ⠧җ⠻ҡ⠩ҫ⠌ҙ⠬ҕ⠹ҥ⠽').replace(/(.)(.)/g, (m, a, b) => { CYR[a] = b; CYR[a.toUpperCase()] = b; return ''; });
+  // 点字の表にない古い字・まれな字は、近い字で書く（ѳ フィタ → ф、ѵ イジツァ → и、ҷ → ч など）。校正一覧で知らせる
+  const CYR_APPROX = { 'ѡ': 'о', 'ѥ': 'е', 'ѧ': 'я', 'ѩ': 'я', 'ѭ': 'ю', 'ѯ': 'кс', 'ѱ': 'пс', 'ѳ': 'ф', 'ѵ': 'и', 'ѷ': 'и', 'ѹ': 'у', 'ѻ': 'о', 'ѽ': 'о', 'ѿ': 'от',
+    'ҁ': 'к', '҂': '', 'ҋ': 'й', 'ҍ': 'ь', 'ҏ': 'р', 'ҝ': 'к', 'ҟ': 'к', 'ҧ': 'п', 'ҩ': 'х', 'ҭ': 'т', 'ҵ': 'тц', 'ҷ': 'ч', 'ҹ': 'ч', 'ҽ': 'ч', 'ҿ': 'ч', 'ӏ': 'і',
+    'ӄ': 'к', 'ӆ': 'л', 'ӈ': 'н', 'ӊ': 'н', 'ӌ': 'ч', 'ӎ': 'м', 'ӕ': 'ае', 'ӡ': 'з', 'ӷ': 'г', 'ӻ': 'г', 'ӽ': 'х', 'ӿ': 'х' };
+  for (const k of Object.keys(CYR_APPROX)) if (k.toUpperCase() !== k) CYR_APPROX[k.toUpperCase()] = CYR_APPROX[k];
+  CYR_APPROX['Ӏ'] = 'і';
+  const cyrCells = ch => { const v = CYR[ch] || CYR[ch.normalize('NFD')[0]]; if (v) return v; const a = CYR_APPROX[ch]; return a === undefined ? null : Array.from(a).map(x => CYR[x]).join(''); };
+  const BUILTIN_SCRIPT = { cyrillic: { name: 'ロシア語の点字（エディタに入っている表）', cells: run => { let o = ''; for (const ch of run.normalize('NFC')) { const v = cyrCells(ch); if (v !== null) o += v; else if (/[ \u3000]/.test(ch)) o += '⠀'; else if (ch === '-') o += '⠤'; else if (ch === ',') o += '⠂'; else if (ch === '.') o += '⠲'; else return null; } return o; } } };
   // 外国語の文書の1行
   function foreignLine(text) {
     let cells = null;
     try { cells = XL && XL.forward && XL.doc ? XL.forward(text, XL.doc) : null; } catch (e) { cells = null; }
     if (cells == null) return { cells: '', unknown: text.trim() ? [text] : [], bad: text.trim() ? [0] : [], units: [{ text, cells: '' }], notReady: true };
-    cells = cells.replace(/[  ]/g, '⠀');
+    cells = cells.replace(/[ \u00a0]/g, '⠀');
     return { cells, unknown: [], bad: [], units: [{ text, cells }] };
   }
 
@@ -189,15 +278,55 @@
     }).join('\n');
   }
 
+  // prepareSumiji のあとの文を仮名にする。記号・絵文字の説明（\ue0d0…\ue0d1）は点訳者挿入符 ⦅ ⦆ にして、校正箇所の一覧に出す
+  function symbolsToKana(p, tokenize, opts) {
+    const o = Object.assign({}, opts, { tokenize });
+    if (p.indexOf(SYM_OPEN) < 0) return tokensToKana(tokenize(p), o);
+    const pieces = [];
+    let rest = p, m;
+    while ((m = SYM_PART_RE.exec(rest))) {
+      if (m.index > 0) pieces.push({ text: rest.slice(0, m.index) });
+      pieces.push({ src: m[1], kind: m[2], val: m[3] });
+      rest = rest.slice(m.index + m[0].length);
+    }
+    if (rest) pieces.push({ text: rest });
+    // 同じ絵文字が続くとき（🎉🎉🎉）は1つにまとめて数を書く
+    for (let k = pieces.length - 1; k > 0; k--) {
+      const a = pieces[k - 1], b = pieces[k];
+      if (a.kind === 'd' && b.kind === 'd' && a.val === b.val) { a.src += b.src; a.n = (a.n || 1) + (b.n || 1); pieces.splice(k, 1); }
+    }
+    let kana = '';
+    const unresolved = [], checks = [];
+    for (const pc of pieces) {
+      if (pc.text !== undefined) {
+        if (!pc.text.trim()) { if (kana && !/ $/.test(kana)) kana += ' '; continue; }
+        const r = tokensToKana(tokenize(pc.text), o);
+        if (kana && r.kana && !/ $/.test(kana) && !/^[。、，．？！?!」』）)〕］】”〉》]/.test(r.kana) && !/[「『（(〔［【“〈《]$/.test(kana)) kana += ' ';
+        kana += r.kana;
+        unresolved.push(...r.unresolved); checks.push(...r.checks);
+        continue;
+      }
+      if (pc.kind === 'X') { checks.push({ surface: pc.src, kana: '', options: [], note: pc.val }); continue; }
+      const d = '⦅' + pc.val + (pc.n > 1 ? ' ' + pc.n + 'コ' : '') + '⦆';
+      if (kana && !/ $/.test(kana) && !/[「『（(〔［【“〈《]$/.test(kana)) kana += ' ';
+      kana += d;
+      checks.push({ surface: pc.src, kana: d, options: [d, ''], note: '絵文字・記号の名前を点訳者挿入符で書きました。飾りなら消してください' });
+    }
+    return { kana: kana.replace(/ +$/, ''), unresolved, checks };
+  }
+
   function sumijiToKana(text, tokenize, opts, noLabel) {
     // PDF からコピーした文字の「部首」の字（⾒・⽂ など）や互換漢字は、ふつうの漢字にする（意⾒書 → 意見書）
     text = String(text || '').replace(/[\u2E80-\u2FDF\uF900-\uFAFF]/g, c => c.normalize('NFKC'));
+    // 見えない字・異体字セレクタ・いろいろな空白・踊り字・変体仮名・まれな異体字などを整える
+    // 墨字にエンジンの印と同じ字（⟪ ⟫ ⟦ ⟧ など）があれば、同じ働きのかっこにしておく
+    if (!noLabel) text = normalizeChars(text).replace(/[⟪⟫⟬⟭⟦⟧⟮⟯]/g, c => ({ '⟪': '《', '⟫': '》', '⟬': '（', '⟭': '）', '⟦': '［', '⟧': '］', '⟮': '（', '⟯': '）' })[c]);
     const lb = noLabel ? null : lineLabel(text);
     if (lb) {
       const r = sumijiToKana(lb.rest, tokenize, opts, true);
       return { kana: lb.kana + lb.sep + r.kana, unresolved: r.unresolved, checks: r.checks, foreign: r.foreign };
     }
-    // 発音記号（[dʒæ̀pəníːz] など）は読まずに ⟦ ⟧ で囲んで残し、点字にするときに発音記号の点字にする
+    // 発音記号（[dʒæ\u0300pəníːz] など）は読まずに ⟦ ⟧ で囲んで残し、点字にするときに発音記号の点字にする
     const segs = [];
     let last = 0, m;
     IPA_RE.lastIndex = 0;
@@ -205,10 +334,31 @@
       const inner = m[1] || m[2] || m[3] || m[4];
       if (!isIpaText(inner)) continue;
       if (m.index > last) segs.push({ text: text.slice(last, m.index) });
-      segs.push({ ipa: inner.normalize('NFC').trim() });
+      segs.push({ ipa: inner.normalize('NFC').trim(), slash: !!(m[3] || m[4]) });
       last = m.index + m[0].length;
     }
     if (last < text.length) segs.push({ text: text.slice(last) });
+    // 括弧のない発音記号（「ʃ の音」「ŋ は鼻音」）：IPA に特有の字を含む語
+    for (let k = segs.length - 1; k >= 0; k--) {
+      if (!segs[k].text || !IPA_STRONG.test(segs[k].text)) continue;
+      const t = segs[k].text, parts = [];
+      let p0 = 0, mm;
+      BARE_IPA_RE.lastIndex = 0;
+      while ((mm = BARE_IPA_RE.exec(t))) {
+        let w = mm[0], st = mm.index;
+        // 後ろに続く長音符・強勢・声調の記号も含める
+        let e = st + w.length;
+        while (e < t.length && /[ːˑˈˌ˥-˩ʰʷʲˠˤⁿˡ'ʼ]/.test(t[e])) e++;
+        w = t.slice(st, e);
+        if (!IPA_STRONG.test(w) || /^[A-Z][a-z]+$/.test(w)) { BARE_IPA_RE.lastIndex = e; continue; }
+        if (st > p0) parts.push({ text: t.slice(p0, st) });
+        parts.push({ ipa: w.normalize('NFC') });
+        p0 = e; BARE_IPA_RE.lastIndex = e;
+      }
+      if (!parts.length) continue;
+      if (p0 < t.length) parts.push({ text: t.slice(p0) });
+      segs.splice(k, 1, ...parts);
+    }
     // URL・メールアドレスは読まずに ⟬ ⟭ で囲んで残す（点字ではアドレス囲み符号の中に情報処理用点字で書く）
     for (let k = segs.length - 1; k >= 0; k--) {
       if (!segs[k].text) continue;
@@ -244,7 +394,16 @@
     const unresolved = [], checks = [], foreign = [];
     for (const sg of segs) {
       if (sg.text) foreign.push(...foreignParts(sg.text)); // 発音記号の中は除く
-      if (sg.ipa) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + sg.ipa + '⟧'; continue; }
+      if (sg.ipa) {
+        const ir = ipaToBraille(sg.ipa, sg.slash ? '/' : '[');
+        kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟦' + (sg.slash && ir.full ? IPA_SLASH : '') + sg.ipa + '⟧';
+        if (ir.defined && ir.defined.length) {
+          const marks = [...new Set(ir.defined.filter(x => /\p{M}/u.test(x)))].map(x => '◌' + x + '＝' + (IPAB_TD[x] || '⠨⠴'));
+          checks.push({ surface: sg.ipa, kana: '⟦' + sg.ipa + '⟧', options: [], note: 'IPA Braille の表にない記号を、文書ごとに決める記号で書きました（' + [...(ir.tds || []), ...marks].join('、') + '）。文書の初めに断り書きを入れてください' });
+        }
+        if (ir.full) checks.push({ surface: sg.ipa, kana: '⟦' + sg.ipa + '⟧', options: [], note: '国際音声記号の点字（IPA Braille）で書きました。英語の発音記号の表にない記号が入っているためです' });
+        continue;
+      }
       if (sg.url) { kana += (kana && !/ $/.test(kana) ? ' ' : '') + '⟬' + sg.url + '⟭'; continue; }
       // 単位（10m²）は数に続け、数式は前後を1マスあける
       if (sg.math) {
@@ -254,7 +413,7 @@
       }
       if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
       const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
-      const res = parts.map(p => tokensToKana(tokenize(p), Object.assign({}, opts, { tokenize })));
+      const res = parts.map(p => symbolsToKana(p, tokenize, opts));
       const k = res.map(r => r.kana).join('  ');
       if (kana && k && !/^[。、，．？！?!」』）)〕］】”]/.test(k) && !/ $/.test(kana)) kana += ' ';
       kana += k;
@@ -272,7 +431,7 @@
     '○': 'マル', '◯': 'マル', '◎': 'ニジューマル', '●': 'クロマル', '△': 'サンカク', '▲': 'クロサンカク',
     '▽': 'ギャクサンカク', '▼': 'クロギャクサンカク', '□': 'シカク', '■': 'クロシカク', '◇': 'ヒシガタ', '◆': 'クロヒシガタ',
     '☆': 'シロボシ', '★': 'クロボシ', '✓': 'チェック', '✔': 'チェック', '☑': 'チェック', '☐': 'シカク', '✕': 'バツ', '✖': 'バツ',
-    '♪': '', '♫': '', '♬': '', '♩': '', '¦': ' ', '|': ' ', '｜': ' ', '\\': ' ', '＼': ' ', '^': '', '_': '', '`': '', '＾': '', '＿': '',
+    '¦': ' ', '|': ' ', '｜': ' ', '\\': ' ', '＼': ' ', '^': '', '_': '', '`': '', '＾': '', '＿': '',
     '〒': 'ユービン バンゴー ', '☎': 'デンワ ', '☏': 'デンワ ', '№': 'No.', '〃': 'ドージョー', '仝': 'ドージョー', '〆': 'シメ',
     '±': ' プラスマイナス ', '∓': ' マイナスプラス ', '≦': ' ショーナリ イコール ', '≤': ' ショーナリ イコール ', '≧': ' ダイナリ イコール ', '≥': ' ダイナリ イコール ',
     '≠': ' ノット イコール ', '≒': ' ニアリー イコール ', '≈': ' ニアリー イコール ', '∞': 'ムゲンダイ', '√': 'ルート', '∴': 'ユエニ', '∵': 'ナゼナラバ',
@@ -283,6 +442,14 @@
     'ι': 'イオタ', 'κ': 'カッパ', 'λ': 'ラムダ', 'μ': 'ミュー', 'ν': 'ニュー', 'ξ': 'クシー', 'ο': 'オミクロン', 'π': 'パイ',
     'ρ': 'ロー', 'σ': 'シグマ', 'ς': 'シグマ', 'τ': 'タウ', 'υ': 'ユプシロン', 'φ': 'ファイ', 'χ': 'カイ', 'ψ': 'プサイ', 'ω': 'オメガ',
     'Α': 'アルファ', 'Β': 'ベータ', 'Γ': 'ガンマ', 'Δ': 'デルタ', 'Θ': 'シータ', 'Λ': 'ラムダ', 'Π': 'パイ', 'Σ': 'シグマ', 'Φ': 'ファイ', 'Ψ': 'プサイ', 'Ω': 'オメガ',
+    'Ε': 'イプシロン', 'Ζ': 'ゼータ', 'Η': 'イータ', 'Ι': 'イオタ', 'Κ': 'カッパ', 'Μ': 'ミュー', 'Ν': 'ニュー', 'Ξ': 'クシー', 'Ο': 'オミクロン', 'Ρ': 'ロー', 'Τ': 'タウ', 'Υ': 'ユプシロン', 'Χ': 'カイ',
+    // ギリシャ文字の別の形・古い字・コプト文字
+    'ϐ': 'ベータ', 'ϑ': 'シータ', 'ϒ': 'ユプシロン', 'ϕ': 'ファイ', 'ϖ': 'パイ', 'ϰ': 'カッパ', 'ϱ': 'ロー', 'ϵ': 'イプシロン', 'ϴ': 'シータ', 'ϲ': 'シグマ', 'Ϲ': 'シグマ',
+    'ϳ': 'ヨット', 'Ϳ': 'ヨット', 'Ϝ': 'ディガンマ', 'ϝ': 'ディガンマ', 'Ϙ': 'コッパ', 'ϙ': 'コッパ', 'Ϟ': 'コッパ', 'ϟ': 'コッパ', 'Ϛ': 'スティグマ', 'ϛ': 'スティグマ',
+    'Ϡ': 'サンピ', 'ϡ': 'サンピ', 'Ͱ': 'ヘータ', 'ͱ': 'ヘータ', 'Ͳ': 'サンピ', 'ͳ': 'サンピ', 'Ͷ': 'ディガンマ', 'ͷ': 'ディガンマ', 'Ϸ': 'ショー', 'ϸ': 'ショー', 'Ϻ': 'サン', 'ϻ': 'サン',
+    'Ϗ': 'カイ', 'ϗ': 'カイ', 'ͻ': 'シグマ', 'ͼ': 'シグマ', 'ͽ': 'シグマ', 'Ͻ': 'シグマ', 'Ͼ': 'シグマ', 'Ͽ': 'シグマ', '϶': 'ハンテンシタ イプシロン', 'ϼ': 'ロー',
+    'Ϣ': 'シャイ', 'ϣ': 'シャイ', 'Ϥ': 'ファイ', 'ϥ': 'ファイ', 'Ϧ': 'ハイ', 'ϧ': 'ハイ', 'Ϩ': 'ホリ', 'ϩ': 'ホリ', 'Ϫ': 'ジャンジャ', 'ϫ': 'ジャンジャ', 'Ϭ': 'キマ', 'ϭ': 'キマ', 'Ϯ': 'ティ', 'ϯ': 'ティ',
+    '͵': '', '΄': '', '΅': '', 'ʹ': '′',
     '·': '・', '•': '・', '◦': '・', '‧': '・', '∙': '・', '･': '・', '〝': '“', '〟': '”', '‘': '“', '’': '”', '＂': '"',
     '〘': '〔', '〙': '〕', '〚': '〔', '〛': '〕', '{': '〔', '}': '〕', '｛': '〔', '｝': '〕',
     '⇒': '→', '➡': '→', '⟶': '→', '➔': '→', '➜': '→', '➤': '→', '➢': '→', '▶': '→', '►': '→', '▸': '→', '⇨': '→', '⟹': '→',
@@ -293,15 +460,106 @@
   // 箇条書きの頭の飾り（点訳では省く）
   // 箇条書きの頭の印。記号の印（○●■◆★▶など）は点字の「⠔⠔」＋マスあけにする（BSEの見本の書き方）。
   // 中点・ハイフンの印は省く
-  const MARK_RE = /^[ 　]*[●○◎◆◇■□▪▫★☆✓✔✅☐☑▲△▼▽►▶▷▸➢➤❖◉◯⚫⚪](?![○△□×])[ 　]*/;
-  const BULLET_RE = /^[ 　]*(?:[•◦・]|[-–—*＊][ 　])[ 　]*/;
+  const MARK_RE = /^[ 　]*(?:[●○〇◎◆◇■□▪▫★☆✓✔✅☐☑☒▲△▼▽►▶▷▸▹➢➤➣➥➧➨➩➪➫➬➭➮➯➱❖◉◯⚫⚪◘◙⦿⊙⊚◈◊❍❏❐❑❒⬛⬜◼◻◾◽⯀⯁⬤✦✧✪✫✬✭✮✯✰❂☛☞➔➜➙➛➝➞➟➠➡]|[\u{1f784}-\u{1f7d8}\u{1f539}\u{1f538}\u{1f536}\u{1f537}\u{1f53a}\u{1f53b}\u{1f518}])\ufe0f?(?![○〇◯△□×を]|[年月日時分秒](?:[○〇◯△□]|から|まで|ごろ|頃|以[降内]|[～〜、，。 　]|$))[ 　]*/u;
+  const BULLET_RE = /^[ 　]*(?:[•◦・‣⁃⁌⁍∙⋅]|[-–—*＊][ 　])[ 　]*/;
   const MARK = '⁑'; // 行頭の印（点字では ⠔⠔）
   const WIDE_GAP = '\ue020'; // 全角スペースの区切り（点字では2マスあけ）
   const CIRCLED = [[0x2460, 0x2473, 1], [0x3251, 0x325f, 21], [0x32b1, 0x32bf, 36], [0x2776, 0x277f, 1], [0x2780, 0x2789, 1], [0x278a, 0x2793, 1], [0x24eb, 0x24f4, 11], [0x24f5, 0x24fe, 1]];
-  const circledNumber = cp => { for (const [a, b, n] of CIRCLED) if (cp >= a && cp <= b) return n + cp - a; return 0; };
+  const circledNumber = cp => { if (cp === 0x24ff || cp === 0x24ea || cp === 0x1f10b || cp === 0x1f10c) return 0; if (cp >= 0x3248 && cp <= 0x324f) return (cp - 0x3247) * 10; for (const [a, b, n] of CIRCLED) if (cp >= a && cp <= b) return n + cp - a; return 0; };
   const isPictograph = c => /\p{Extended_Pictographic}/u.test(c) && !READ[c] && !PUNCT[c];
   // 互換文字（㎝・㈱・Ⅳ・²など）を普通の文字にする
   const COMPAT_RE = /[\u00b2\u00b3\u00b9\u00bc-\u00be\u2070-\u209f\u2100-\u214f\u2150-\u218f\u2474-\u24ea\u3200-\u33ff\ufb00-\ufb06]/g;
+
+  // ---------- 記号・絵文字・まれな文字の表（js/symbols-data.js。tools/symbols/build.js で作る）----------
+  // 種類：m 置き換え・r 読み（語として）・o 読み（演算記号・矢印。前後を区切る）・c 通貨（数のあとに読む）
+  //       d 説明（点訳者挿入符 ⦅ ⦆ の中に名前を書く）・x 省く・X 省いて校正一覧へ・l 横線（棒線）・i 発音記号の字（IPA Braille）
+  let SYM = new Map();   // 1字 → [種類, 値]
+  let SYMSEQ = new Map(); // 絵文字の並び（👨\u200d👩\u200d👧・🇯🇵 など）：最初の字 → [[字の配列, 種類, 値], …]（長い順）
+  let SYM_DESC = true;   // 絵文字や記号を名前で書く（点訳者挿入符）。false なら省く
+  let CUR_RE = null;     // 通貨記号＋数（$5 → 5ドル）
+  const curRead = u => READ[u] !== undefined ? READ[u] : (SYM.get(u) || [])[1] || '';
+  function loadSymbols(text) {
+    SYM = new Map(); SYMSEQ = new Map();
+    for (const line of String(text || '').split('\n')) {
+      if (!line) continue;
+      const f = line.split('\t'), cps = Array.from(f[0]);
+      if (cps.length === 1) SYM.set(f[0], [f[1], f[2] === undefined ? '' : f[2]]);
+      else { const a = SYMSEQ.get(cps[0]) || []; a.push([cps, f[1], f[2] || '']); SYMSEQ.set(cps[0], a); }
+    }
+    for (const a of SYMSEQ.values()) a.sort((x, y) => y[0].length - x[0].length);
+    const cur = '¥￥$＄€£￡¢￠₩' + [...SYM].filter(([, v]) => v[0] === 'c').map(([k]) => k).join('');
+    CUR_RE = new RegExp('([' + cur.replace(/[\]\\^$-]/g, '\\$&') + '])[ 　]?([0-9０-９][0-9０-９,，.．]*)(?:[ 　]?([万億兆]))?', 'gu');
+    return SYM.size;
+  }
+  loadSymbols(typeof TENJI_SYMBOLS !== 'undefined' ? TENJI_SYMBOLS : (typeof require === 'function' ? (() => { try { return require('./symbols-data.js'); } catch (e) { return ''; } })() : ''));
+  const setSymbolMode = describe => { SYM_DESC = describe !== false; };
+  // 絵文字の並びを cs[i] から探す（異体字セレクタ・肌の色は飛ばして比べる）
+  const SKIP_IN_SEQ = c => c === '\ufe0f' || c === '\ufe0e' || (c >= '\u{1f3fb}' && c <= '\u{1f3ff}');
+  function symSeqAt(cs, i) {
+    const cands = SYMSEQ.get(cs[i]);
+    if (!cands) return null;
+    for (const [seq, kind, val] of cands) {
+      let j = i, k = 0;
+      while (k < seq.length && j < cs.length) {
+        if (cs[j] === seq[k]) { j++; k++; continue; }
+        if (SKIP_IN_SEQ(cs[j])) { j++; continue; }
+        break;
+      }
+      if (k === seq.length) { while (j < cs.length && SKIP_IN_SEQ(cs[j])) j++; return { len: j - i, kind, val, text: cs.slice(i, j).join('') }; }
+    }
+    return null;
+  }
+  // 説明（点訳者挿入符）の印：\ue0d0 元の文字 \ue0d2 種類 \ue0d2 値 \ue0d1。仮名にするときに ⦅ ⦆ と校正一覧の項目にする
+  const SYM_OPEN = '\ue0d0', SYM_SEP = '\ue0d2', SYM_CLOSE = '\ue0d1';
+  const SYM_PART_RE = /\ue0d0([^\ue0d2\ue0d1]*)\ue0d2([^\ue0d2\ue0d1]*)\ue0d2([^\ue0d1]*)\ue0d1/;
+
+  // ---------- 文字の正規化（見えない字・異体字セレクタ・いろいろな空白・踊り字・変体仮名・異体字など）----------
+  const INVISIBLE_RE = /[\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b\u200c\u200e\u200f\u202a-\u202e\u2060-\u2064\u2066-\u206f\u3164\ufe00-\ufe0d\ufeff\uffa0\u{1bca0}-\u{1bca3}\u{1d173}-\u{1d17a}\u{e0001}\u{e0100}-\u{e01ef}]/gu;
+  const NFKC_RE = /[︐-︙︰-﹏﹐-﹫\u{1d400}-\u{1d7ff}\u{1fbf0}-\u{1fbf9}\u{1f100}-\u{1f10c}\u{1f110}-\u{1f16c}\u{1f190}\u{1f200}-\u{1f2ff}⑴-ⓩ㈀-㈞㉠-㉾]/gu;
+  const CHOSEONG = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ'; // ᄀ〜ᄒ（組み合わせ用の初声）→ 単独の字母
+  const VOICED = {}, UNVOICED = {};
+  for (const k in DAKU_SRC) { VOICED[DAKU_SRC[k]] = k; UNVOICED[k] = DAKU_SRC[k]; }
+  const voiceOf = (c, v) => {
+    const kata = c.replace(/[ぁ-ゖ]/g, x => String.fromCharCode(x.charCodeAt(0) + 0x60));
+    const r = (v ? VOICED : UNVOICED)[kata] || kata;
+    return /[ぁ-ゖ]/.test(c) ? r.replace(/[ァ-ヶ]/g, x => String.fromCharCode(x.charCodeAt(0) - 0x60)) : r;
+  };
+  function normalizeChars(s) {
+    s = String(s || '');
+    if (/[^\u0000-\u024f\u3000-\u30ff\u4e00-\u9fff\uff00-\uffef]/.test(s)) s = s.normalize('NFC');
+    if (!/[^ -~、-〄〆-〰ぁ-ゖァ-ヶー一-鿿！-～]/.test(s)) return s; // ふつうの字だけなら何もしない
+    s = s.replace(INVISIBLE_RE, '').replace(/[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g, '')
+      .replace(/[\u00a0\u1680\u2000-\u200a\u202f\u205f\u2028\u2029]/g, ' ')
+      .replace(/ゟ/g, 'より').replace(/ヿ/g, 'コト').replace(/\u{1f51f}/gu, '（10）')
+      .replace(/([0-9#*])\ufe0f?\u20e3/g, (m, d) => d === '#' ? '＃' : d === '*' ? '＊' : '（' + d + '）') // 囲み数字の絵文字（1\ufe0f\u20e3）
+      // 踊り字（こゝろ → こころ、いすゞ → いすず、いよ〳〵 → いよいよ、しみ〴〵 → しみじみ）
+      .replace(/([ぁ-ゖァ-ヺ])([ゝゞヽヾ])/g, (m, a, r) => a + voiceOf(a, r === 'ゞ' || r === 'ヾ'))
+      .replace(/([ぁ-ゖァ-ヺ一-鿿々]{2})(?:〳〵|〱)/g, '$1$1')
+      .replace(/([ぁ-ゖァ-ヺ一-鿿々])([ぁ-ゖァ-ヺ一-鿿々])(?:〴〵|〲)/g, (m, a, b) => a + b + voiceOf(a, true) + b)
+      .replace(/[〳〱]〵?/g, '〳').replace(/[〴〲]〵?/g, '〴').replace(/(.)〳/g, '$1$1').replace(/(.)〴/g, (m, a) => a + voiceOf(a, true)) // 1字だけのくの字点
+      .replace(/[ヷヸヹヺ]/g, c => ({ 'ヷ': 'ヴァ', 'ヸ': 'ヴィ', 'ヹ': 'ヴェ', 'ヺ': 'ヴォ' })[c])
+      // 電報の時刻（㍘ 〜 ㍰ は 0時 〜 24時）
+      .replace(/[㍘-㍰]/g, c => (c.charCodeAt(0) - 0x3358) + '時')
+      .replace(NFKC_RE, c => /\p{Extended_Pictographic}/u.test(c) ? c : c.normalize('NFKC').replace(/[\u1100-\u1112](?![\u1161-\u11a7])/g, j => CHOSEONG[j.charCodeAt(0) - 0x1100]));
+    // 表の「置き換え」（矢印 → →、変体仮名 → 仮名、まれな異体字 → ふつうの漢字 など）
+    if (SYM.size) {
+      let out = '';
+      for (const c of s) { const v = SYM.get(c); out += v && v[0] === 'm' ? v[1] : c; }
+      s = out;
+    }
+    return s.replace(/([ぁ-ゖァ-ヺ])々/g, '$1$1').replace(/〵/g, ''); // 仮名のあとの 々（あ々 → ああ）、残ったくの字点の下半分
+  }
+  // 記号1字（または絵文字の並び）を、仮名にする前の文の中での形にする
+  function symText(kind, val, src) {
+    switch (kind) {
+      case 'm': case 'r': case 'c': return val;
+      case 'o': return ' ' + val + ' ';
+      case 'l': return '―';
+      case 'd': return SYM_DESC ? SYM_OPEN + src + SYM_SEP + 'd' + SYM_SEP + val + SYM_CLOSE : '';
+      case 'X': return SYM_OPEN + src + SYM_SEP + 'X' + SYM_SEP + val + SYM_CLOSE;
+      default: return ''; // x
+    }
+  }
 
   // 墨字の1行を、形態素解析の前に整える（記号の読み替え・飾りの除去）
   function prepareSumiji(line) {
@@ -323,6 +581,28 @@
       return H > 24 ? m : H + '時' + (M ? M + '分' : '');
     });
     s = s.replace(/[☎☏](?![ 　]*[0-9０-９])/g, '電話');
+    // 天気の言い方（曇り一時雨 → クモリ イチジ アメ、晴後曇 → ハレノチ クモリ。絵文字の名前 🌥 曇り一時晴れ にも出る）
+    s = s.replace(/(?:晴れ?|曇り?|雨|雪|雷雨|みぞれ|霧)(?:[ 　]?(?:一時|時々|ときどき|のち|後)[ 　]?(?:晴れ?|曇り?|雨|雪|雷雨|みぞれ|霧))+/g, run =>
+      run.replace(/晴れ?/g, '晴れ').replace(/曇り?/g, '曇り').replace(/一時|時々|ときどき|のち|後/g, c => ' ' + ({ '一時': 'イチジ', '時々': 'トキドキ', 'ときどき': 'トキドキ' }[c] || 'ノチ') + ' '));
+    // 曜日の1字（公式の点字データ：（モク）13719・（スイ）12524 … （キ）2・（ミズ）0）
+    // 曜日の付いた「1/4（木）」は「1月4日（木）」（公式：1ガツ ヨッカ（モク））
+    const toHalfDigits = x => x.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0)), WD = WEEKDAY;
+    const WDP = '[ 　]?[（(][ 　]?[月火水木金土日祝休](?:[ 　]?[・･、～〜][ 　]?[月火水木金土日祝休])*[ 　]?[）)]';
+    s = s.replace(new RegExp('(?<![0-9０-９.,，．/／:：])([0-9０-９]{1,2})[/／]([0-9０-９]{1,2})(?![0-9０-９/／])(?=' + WDP + ')', 'g'), (m, mo, d) => {
+      const M = +toHalfDigits(mo), D = +toHalfDigits(d);
+      return M >= 1 && M <= 12 && D >= 1 && D <= 31 ? M + '月' + D + '日' : m;
+    }).replace(new RegExp('(?<=日' + WDP + '[ 　]?[～〜][ 　]?)([0-9０-９]{1,2})(?![0-9０-９])(?=' + WDP + ')', 'g'), (m, d) => +toHalfDigits(d) <= 31 ? d + '日' : m)
+      .replace(/([0-9０-９日～〜][ 　]?)?[（(][ 　]?([月火水木金土日祝休祭](?:[ 　]?[・･、～〜][ 　]?[月火水木金土日祝休祭])*)[ 　]?[）)]/g, (m, pre, body, off, str) => {
+        // 日付のあと・曜日の並び・「（月）～（金）」の形のときだけ曜日と見る（飲み物（水）は読みのまま）
+        if (!pre && !/[・･、～〜]/.test(body) && !/^[祝休]$/.test(body) && !new RegExp('^[ 　]?[～〜][ 　]?' + WDP).test(str.slice(off + m.length))) return m;
+        return (pre || '') + '（' + body.replace(/[ 　]/g, '').replace(/[月火水木金土日祝休祭]/g, c => '\ue066' + c).replace(/・/g, '・ ') + '）';
+      })
+      // かっこのない曜日の並び（土・日・祝 → ド・ニチ・シュク、月～金 → ゲツ～キン、土・日曜日 → ド・ニチヨービ）
+      .replace(/(?<=^|[^一-鿿々ァ-ヺ0-9０-９]|週)[月火水木金土日](?:[・･～〜][ 　]?[月火水木金土日祝])+(?:曜日?)?/g, (run, off, str) => {
+        const parts = run.split(/([・･～〜][ 　]?)/), last = parts.length - 1;
+        const nextKanji = /^[一-鿿々]/.test(str.slice(off + run.length));
+        return parts.map((x, k) => k % 2 ? x : (k === last && (/曜/.test(x) || nextKanji)) ? x : WD[x] ? '\ue066' + x : x).join('');
+      });
     s = s.replace(/障(?:がい|碍)/g, '障害').replace(/聾(唖|話|学校|者|児|教育)/g, (m, x) => 'ろう' + ({ '唖': 'あ', '話': 'わ' }[x] || x)).replace(/聾/g, 'ろう')
       .replace(/(?<![0-9０-９.,．，])[1１]人(?![目称前分組])/g, '一人').replace(/(?<![0-9０-９.,．，])[2２]人(?![目称前分組])/g, '二人');
     // 空欄（　）・（＿＿）→ 空欄符号（全角スペースの2マスあけより先に）
@@ -341,14 +621,20 @@
       .replace(/月([〇一二三四五六七八九十]{1,3})日/g, (m, k) => { const n = kn(k); return n >= 1 && n <= 31 ? '月' + n + '日' : m; })
       // 「経過後三月以内」「六月を経過」のような期間の月も数字に（3ゲツ イナイ）
       .replace(/(?<![年第0-9０-９〇一二三四五六七八九十])([一二三四五六七八九十]{1,3})月(?=以内|以上|未満|を経過|を超え|ごと|当たり|間)/g, (m, k) => kn(k) + '月');
+    s = s.replace(/[〇一二三四五六七八九]{2,}/g, m => /[一二三四五六七八九]/.test(m) ? m.replace(/〇/g, '0') : m); // 漢数字の中の 〇（一九〇四、〇五）。〇〇市 は伏せ字
     // 語と語の間の全角スペース（「第1　趣旨」「資料1　（福）…」）は2マスあけ
     s = s.replace(/([^ 　])　+(?=[^ 　])/g, '$1' + WIDE_GAP);
     // 丸数字 → （1）
-    s = s.replace(/[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf\u2776-\u2793\u24eb-\u24fe]/g, c => '（' + circledNumber(c.codePointAt(0)) + '）');
+    s = s.replace(/[\u2460-\u2473\u24ea\u3251-\u325f\u32b1-\u32bf\u2776-\u2793\u24eb-\u24ff\u3248-\u324f]/g, c => '（' + circledNumber(c.codePointAt(0)) + '）');
     s = s.replace(/℃|℉/g, m => READ[m]); // NFKC で °C にならないよう先に読む
-    s = s.replace(COMPAT_RE, c => c.normalize('NFKC'));
+    s = s.replace(COMPAT_RE, c => { const v = SYM.get(c); return v && v[0] !== 'm' ? c : c.normalize('NFKC'); });
     // 通貨記号は数のあとに読む（¥1,000 → 1,000エン）
-    s = s.replace(/([¥￥$＄€£￡¢￠₩])[ 　]?([0-9０-９][0-9０-９,，.．]*)(?:[ 　]?([万億兆]))?/g, (m, u, n, b) => n + (b || '') + READ[u]);
+    CUR_RE.lastIndex = 0;
+    s = s.replace(CUR_RE, (m, u, n, b) => n + (b || '') + curRead(u));
+    // 角度・時間の分と秒（35°30′15″ → 35ド 30フン 15ビョー）、Ω（100Ω → 100オーム）、µ の付いた単位（10µm → 10マイクロメートル）
+    s = s.replace(/([0-9０-９])[′']{2}|([0-9０-９])″/g, (m, a, b) => (a || b) + 'ビョー').replace(/([0-9０-９])′/g, '$1フン')
+      .replace(/([0-9０-９])[ 　]?[ΩΩ]/g, '$1オーム').replace(/([0-9０-９])[ 　]?Å/g, '$1オングストローム')
+      .replace(/[µμ](?=(?:m|g|l|L|s|Sv|F|A|V|W|mol|Pa)(?![A-Za-z]))(m|g|l|L|s|Sv|F|A|V|W|mol|Pa)/g, (m, u) => 'マイクロ' + ({ m: 'メートル', g: 'グラム', l: 'リットル', L: 'リットル', s: 'ビョー', Sv: 'シーベルト', F: 'ファラド', A: 'アンペア', V: 'ボルト', W: 'ワット', mol: 'モル', Pa: 'パスカル' })[u]);
     // 数式：数字にはさまれた演算記号は記号のまま、ほかは読む
     const D = '[0-9０-９）)]', N = '(?=[ 　]?[0-9０-９(（])';
     const MATH = { '＝': '\ue001', '+': '\ue002', '×': '\ue003', '÷': '\ue004', '−': '\ue005' };
@@ -358,8 +644,8 @@
       .replace(new RegExp(`(${D})[ 　]?÷[ 　]?${N}`, 'g'), '$1\ue004')
       .replace(new RegExp(`(${D})[ 　]?[−ー－][ 　]?(?=[0-9０-９(（][^0-9０-９]*[\ue001=＝])`, 'g'), '$1\ue005');
     s = s.replace(/([0-9０-９])[ 　]?−[ 　]?(?=[0-9０-９])/g, '$1-'); // 2020−2026 のような範囲
-    s = s.replace(/[=＝]/g, ' イコール ').replace(/[+＋]/g, 'プラス').replace(/÷/g, 'ワル').replace(/−/g, 'マイナス')
-      .replace(/(?<=[○◯])×|×(?=[印式])/g, 'バツ').replace(/×/g, ' カケル '); // ○×・×印はバツ、語と語のあいだ（縦×横）はカケル
+    s = s.replace(/[=＝]/g, ' イコール ').replace(/[+＋]/g, ' プラス ').replace(/÷/g, 'ワル').replace(/−/g, 'マイナス')
+      .replace(/(?<=[○◯〇])×|×(?=[印式])/g, 'バツ').replace(/×/g, ' カケル '); // ○×・×印はバツ、語と語のあいだ（縦×横）はカケル
     for (const k in MATH) s = s.split(MATH[k]).join(k);
     // 不等号：対になっていれば山カッコ、数の比較なら読み、それ以外は矢印として扱う
     const paired = /[<＜][^<＜>＞]+[>＞]/.test(s) && !/\d[ 　]*[<＜>＞][ 　]*\d/.test(s);
@@ -376,19 +662,39 @@
     // 伏せ字：○○市・△△さん・□年□月のような、語の代わりの印。○をつける・○×式は読む
     // 伏せ字は「○○市」「△△さん」「××年」のように印が2つ以上続くときと、○年○月・○様のように数や名前の代わりになっているときだけ。
     // ×が1つのとき（縦×横、a×b）はかけ算の記号（⠡）
-    s = s.replace(/[○◯△□×✕]{2,}|[○◯△□](?=[年月日時分秒市町村区県都道府さん様氏君号番回人個円歳])/g,
-      m => Array.from(m).map(c => ({ '○': '\ue063○', '◯': '\ue063○', '△': '\ue063△', '□': '\ue063□', '×': '╳', '✕': '╳' })[c]).join(''));
+    s = s.replace(/[○◯〇△□×✕]{2,}|[○◯〇△□](?=[年月日時分秒市町村区県都道府さん様氏君号番回人個円歳])|(?<=日[ 　]?[（(])[○◯〇△□](?=[）)])/g,
+      m => Array.from(m).map(c => ({ '○': '\ue063○', '◯': '\ue063○', '〇': '\ue063○', '△': '\ue063△', '□': '\ue063□', '×': '╳', '✕': '╳' })[c]).join(''));
     // 英単語の中のアポストロフィ（don't）
     s = s.replace(/([A-Za-z])[’'](?=[A-Za-z])/g, '$1\u02bc');
     s = s.replace(/([A-Za-z]) *[&＆] *(?=[A-Za-z])/g, '$1 \ue030 '); // 英語のあいだの & は英語の点字で書く
+    // ギリシャ文字：1字ずつ名前で読む（αβ → アルファ ベータ）。外国語の点字パックがあれば、4字以上の語はギリシャ語の点字にする
+    s = s.replace(/[\u0370-\u03ff\u1f00-\u1fff]+/g, run => {
+      const n = Array.from(run).filter(ch => /\p{L}/u.test(ch)).length;
+      if (n >= 4 && scriptTable('greek')) return run;
+      const names = [];
+      for (const ch of run) { const b = ch.normalize('NFD')[0]; const r = READ[ch] !== undefined ? READ[ch] : READ[b]; if (r) names.push(r); }
+      return names.length > 1 ? ' ' + names.join(' ') + ' ' : names.join('');
+    });
     // 残りの記号を1字ずつ読み替える。絵文字などの飾りは省く
     let out = '', prevMark = '';
-    for (const c of s) {
-      if (c === '\u200d' || c === '\ufe0f' || c === '\ufe0e' || (c >= '\u{1f3fb}' && c <= '\u{1f3ff}')) continue;
+    const cs = Array.from(s);
+    for (let i = 0; i < cs.length; i++) {
+      const c = cs[i];
+      // 絵文字の並び（👨\u200d👩\u200d👧・🇯🇵・❤\ufe0f\u200d🔥 など）
+      const sq = SYMSEQ.size ? symSeqAt(cs, i) : null;
+      if (sq) { out += symText(sq.kind, sq.val, sq.text); i += sq.len - 1; prevMark = ''; continue; }
+      if (c === '\u200d' || c === '\ufe0f' || c === '\ufe0e' || (c >= '\u{1f3fb}' && c <= '\u{1f3ff}') || (c >= '\u{e0020}' && c <= '\u{e007f}')) continue;
+      if (c === '〇' && prevMark !== '\ue063') { prevMark = c; out += 'マル'; continue; } // 数でない 〇 は ○ と同じ
       if (READ[c] !== undefined && (!PUNCT[c] || (c === '○' || c === '△' || c === '□') && prevMark !== '\ue063')) { prevMark = c; out += READ[c]; continue; }
       prevMark = c;
       if (c === '\ue063') continue;
-      if (isPictograph(c)) continue;
+      if (!PUNCT[c]) {
+        const sy = SYM.get(c);
+        if (sy && sy[0] !== 'i') { out += symText(sy[0], sy[1], c); continue; }
+        // 結合文字（字に付けるアクセントなど）：英字の後ろなら NFC で1字に（できなければアクセントは省く）。ほかは省く
+        if (/\p{M}/u.test(c)) { if (/[A-Za-z\u00c0-\u024f\u1e00-\u1eff]\p{M}*$/u.test(out)) out += c; continue; }
+        if (isPictograph(c)) { out += symText('d', 'エモジ', c); continue; } // 名前のわからない絵文字
+      }
       out += c;
     }
     return out.replace(/[ 　]{2,}/g, ' ').replace(/^ | $/g, '').replace(/\ue030/g, '&').replace(/\ue062/g, '（＿）');
@@ -411,7 +717,7 @@
   const isKana = c => /[ァ-ヺー]/.test(c);
   const isDigit = c => c >= '0' && c <= '9';
   // アクセント記号つきのラテン文字（é ü ñ ō など）。点字ではアクセント符（4の点 ⠈）を文字の前に付ける
-  const ACC_RE = /[À-ÖØ-öø-ɏ]/;
+  const ACC_RE = /[À-ÖØ-öø-ɏ\u1e00-\u1eff]/;
   const accBase = c => { const d = c.normalize('NFD'); return /^[A-Za-z]/.test(d) && d.length > 1 ? d[0] : null; };
   const isLatin = c => /[A-Za-z]/.test(c) || (ACC_RE.test(c) && !!accBase(c));
   const isSpace = c => c === ' ' || c === '　' || c === '⠀';
@@ -427,23 +733,77 @@
   const U_ROW = new Set('ウクスツヌフムユルグズヅブプュゥヴ'.split(''));
 
   // ---------- かな → 点字 ----------
-  // ---------- 英語の発音記号（万国音標文字） ----------
-  // 日本点字表記法 2018年版・文部科学省「点字学習指導の手引」の表による。
-  // 発音記号符 ⠰ … ⠆ で囲む。英字と同じ形の記号は英字の点字（外字符は付けない）。
-  // 第1ストレス符 ⠸（4 5 6の点）・第2ストレス符 ⠘（4 5の点）は、その母音の前に置く。長音符 ː は ⠒
+  // ---------- 発音記号 ----------
+  // 書き方は2つ。
+  // 1. 英語の発音記号（英和辞典・英語の教科書の記号だけのとき）：日本点字表記法 2018年版・文部科学省「点字学習指導の手引」の表による。
+  //    発音記号符 ⠰ … ⠆ で囲む。英字と同じ形の記号は英字の点字（外字符は付けない）。
+  //    第1ストレス符 ⠸（4 5 6の点）・第2ストレス符 ⠘（4 5の点）は、その母音の前に置く。長音符 ː は ⠒
+  // 2. 国際音声記号（英語の発音記号の表にない記号が入っているとき）：IPA Braille（国際英語点字協議会 ICEB, 2025年 第2版。CC0）。
+  //    [ ] は ⠘⠷ … ⠘⠾、/ / は ⠘⠌ … ⠘⠌ で囲む。補助記号は字の後ろに、下 → 同じ高さ → 上 の順に書く
+  //    （⠠ 下・⠐ 同じ高さ・⠈ 上 が頭に付く）。ˈ ⠸⠃・ˌ ⠸⠆ は書いてある位置に置く。
   const IPA_OPEN = '⠰', IPA_CLOSE = '⠆', STRESS1 = '⠸', STRESS2 = '⠘';
   const IPA = {
     a: '⠁', b: '⠃', c: '⠉', d: '⠙', e: '⠑', f: '⠋', g: '⠛', h: '⠓', i: '⠊', j: '⠚', k: '⠅', l: '⠇', m: '⠍',
     n: '⠝', o: '⠕', p: '⠏', q: '⠟', r: '⠗', s: '⠎', t: '⠞', u: '⠥', v: '⠧', w: '⠺', x: '⠭', y: '⠽', z: '⠵',
     'ɑ': '⠡', 'æ': '⠩', 'ʌ': '⠬', 'ɛ': '⠜', 'ɔ': '⠣', 'ə': '⠢', 'ɪ': '⠌', 'ᴜ': '⠷', 'ʊ': '⠷',
     'ŋ': '⠫', 'θ': '⠹', 'ð': '⠻', 'ʃ': '⠱', 'ʒ': '⠮', 'ː': '⠒', ':': '⠒',
-    // 表にない記号は、近い記号で書く（辞書によって書き方が違うもの）
-    'ɡ': '⠛', 'ɒ': '⠡', 'ɜ': '⠢', 'ɚ': '⠢⠗', 'ɝ': '⠢⠗', 'ɐ': '⠬', 'ɹ': '⠗', 'ɫ': '⠇', 'ʤ': '⠙⠮', 'ʧ': '⠞⠱', 'ʍ': '⠓⠺',
+    // 英語の発音記号の表にない記号（英和辞典に出てくるもの）は、IPA Braille の形で書く
+    'ɡ': '⠛', 'ɒ': '⠖⠡', 'ɜ': '⠖⠜', 'ɚ': '⠢⠐⠗', 'ɝ': '⠖⠜⠐⠗', 'ɐ': '⠖⠁', 'ʤ': '⠙⠮', 'ʧ': '⠞⠱',
     '(': '⠶', ')': '⠶', '-': '⠤', ' ': '⠀'
   };
   const IPA_VOWEL = /[aeiouyɑæʌɛɔəɪʊᴜɒɜɚɝɐ]/;
-  const IPA_MARK = /[ɑæʌɛɔəɪʊᴜŋθðʃʒˈˌːɒɜɚɝɹɡʤʧʍɐ\u0300\u0301áéíóúàèìòùǽ]/;
-  function ipaToBraille(text) {
+  // IPA Braille（ICEB 2025）の表。子音・母音・修飾記号など
+  const IPAB = {
+    p: '⠏', b: '⠃', t: '⠞', d: '⠙', 'ʈ': '⠲⠞', 'ɖ': '⠲⠙', c: '⠉', 'ɟ': '⠔⠚', k: '⠅', 'ɡ': '⠛', g: '⠛', q: '⠟', 'ɢ': '⠔⠛', 'ʔ': '⠆',
+    m: '⠍', 'ɱ': '⠖⠍', n: '⠝', 'ɳ': '⠲⠝', 'ɲ': '⠿', 'ŋ': '⠫', 'ɴ': '⠔⠝', 'ʙ': '⠔⠃', r: '⠗', 'ʀ': '⠔⠗', 'ⱱ': '⠖⠧', 'ɾ': '⠖⠗', 'ɽ': '⠲⠗',
+    'ɸ': '⠨⠋', 'β': '⠨⠃', f: '⠋', v: '⠧', 'θ': '⠨⠹', 'ð': '⠻', s: '⠎', z: '⠵', 'ʃ': '⠱', 'ʒ': '⠮', 'ʂ': '⠲⠎', 'ʐ': '⠲⠵',
+    'ç': '⠖⠉', 'ʝ': '⠦⠚', x: '⠭', 'ɣ': '⠨⠛', 'χ': '⠨⠯', 'ʁ': '⠔⠼', 'ħ': '⠖⠓', 'ʕ': '⠖⠆', h: '⠓', 'ɦ': '⠦⠓',
+    'ɬ': '⠦⠇', 'ɮ': '⠇⠐⠮', 'ʋ': '⠦⠧', 'ɹ': '⠼', 'ɻ': '⠲⠼', j: '⠚', 'ɰ': '⠦⠍', l: '⠇', 'ɭ': '⠲⠇', 'ʎ': '⠦⠽', 'ʟ': '⠔⠇',
+    'ɓ': '⠦⠃', 'ɗ': '⠦⠙', 'ʄ': '⠦⠔⠚', 'ɠ': '⠦⠛', 'ʛ': '⠦⠔⠛', 'ʘ': '⠯⠏', 'ǀ': '⠯⠹', 'ǃ': '⠯⠞', 'ǂ': '⠯⠱', 'ǁ': '⠯⠇',
+    'ʍ': '⠖⠺', w: '⠺', 'ɥ': '⠲⠓', 'ʜ': '⠔⠓', 'ʡ': '⠦⠆', 'ʢ': '⠔⠆', 'ɧ': '⠦⠫', 'ɺ': '⠦⠼', 'ɕ': '⠦⠉', 'ʑ': '⠦⠵', 'ɫ': '⠖⠇',
+    i: '⠊', e: '⠑', 'ɛ': '⠜', a: '⠁', 'ɑ': '⠡', 'ɔ': '⠣', o: '⠕', u: '⠥', y: '⠽', 'ø': '⠳', 'œ': '⠪', 'ɶ': '⠔⠪', 'ɒ': '⠖⠡',
+    'ʌ': '⠬', 'ɤ': '⠖⠕', 'ɯ': '⠖⠥', 'ɨ': '⠴⠊', 'ʉ': '⠴⠥', 'ɪ': '⠌', 'ʏ': '⠔⠽', 'ʊ': '⠷', 'ə': '⠢', 'ɵ': '⠴⠕', 'ɐ': '⠖⠁',
+    'æ': '⠩', 'ɜ': '⠖⠜', 'ɚ': '⠢⠐⠗', 'ɝ': '⠖⠜⠐⠗', 'ɞ': '⠦⠜', 'ɘ': '⠖⠑', 'ᴜ': '⠷',
+    // 字の後ろに付く修飾記号・長さ・区切り・強勢・声調・抑揚
+    'ʼ': '⠐⠄', 'ˀ': '⠈⠆', 'ˁ': '⠈⠖⠆', 'ʰ': '⠈⠓', '˞': '⠐⠗', 'ʷ': '⠈⠺', 'ʲ': '⠈⠚', 'ˠ': '⠈⠨⠛', 'ˤ': '⠈⠖⠆', 'ⁿ': '⠈⠝', 'ˡ': '⠈⠇',
+    'ː': '⠒', ':': '⠒', 'ˑ': '⠐⠂', '.': '⠄', '|': '⠸⠳', '‖': '⠸⠿', '‿': '⠸⠇', ',': '⠂', '-': '⠤', '→': '⠸⠕', ' ': '⠀',
+    'ˈ': '⠸⠃', "'": '⠸⠃', 'ˌ': '⠸⠆', '˥': '⠸⠈⠉', '˦': '⠸⠉', '˧': '⠸⠒', '˨': '⠸⠤', '˩': '⠸⠠⠤',
+    '↓': '⠸⠮', '↑': '⠸⠫', '↗': '⠸⠙', '↘': '⠸⠴', 'ꜜ': '⠸⠮', 'ꜛ': '⠸⠫',
+    // 字をつないだ形の破擦音（もとの IPA の記号。つなぎは ⠐）
+    'ʦ': '⠞⠐⠎', 'ʣ': '⠙⠐⠵', 'ʧ': '⠞⠐⠱', 'ʤ': '⠙⠐⠮', 'ʨ': '⠞⠐⠦⠉', 'ʥ': '⠙⠐⠦⠵'
+  };
+  // 補助記号（字の後ろに書く。頭の点が位置：⠠ 下・⠐ 同じ高さ・⠈ 上）
+  const IPAB_MARK = {
+    '\u0325': '⠠⠫', '\u030a': '⠈⠫', '\u032c': '⠠⠦', '\u0324': '⠠⠒', '\u0330': '⠠⠻', '\u033c': '⠠⠯', '\u032a': '⠠⠹', '\u033a': '⠠⠖⠹',
+    '\u033b': '⠠⠶', '\u0339': '⠠⠕', '\u031c': '⠠⠪', '\u031f': '⠠⠬', '\u0320': '⠠⠤', '\u0308': '⠈⠒', '\u033d': '⠈⠭', '\u0318': '⠠⠱',
+    '\u0319': '⠠⠎', '\u0303': '⠈⠻', '\u031a': '⠈⠙', '\u0334': '⠐⠻', '\u031d': '⠠⠜', '\u031e': '⠠⠣', '\u0329': '⠠⠆', '\u032f': '⠠⠾',
+    '\u0306': '⠈⠷', '\u030b': '⠈⠠⠌', '\u0301': '⠈⠌', '\u0304': '⠈⠉', '\u0300': '⠈⠡', '\u030f': '⠈⠠⠡', '\u030c': '⠈⠦', '\u0302': '⠈⠩',
+    '\u1dc4': '⠈⠊', '\u1dc5': '⠈⠔', '\u1dc8': '⠈⠲', '\u0361': '⠐', '\u035c': '⠐', '\u0322': '⠐⠗'
+  };
+  // 声調の棒の組み合わせ（上がり・下がり）
+  const IPAB_TONE = { '˩˥': '⠸⠌', '˥˩': '⠸⠡', '˧˥': '⠸⠊', '˩˧': '⠸⠔', '˨˧': '⠸⠔', '˨˥˨': '⠸⠲' };
+  // 表にない補助記号は、文書ごとに決める記号（⠨⠂ など）で書き、校正箇所の一覧に何の記号かを出す
+  const IPAB_TD = { '\u0323': '⠨⠂', '\u0307': '⠨⠆', '\u0331': '⠨⠒', '\u0332': '⠨⠒', '\u0327': '⠨⠲', '\u0328': '⠨⠢', '\u0311': '⠨⠖', '\u032e': '⠨⠖', '\u0313': '⠨⠶', '\u0326': '⠨⠶' };
+  const markLevel = m => {
+    if (m === '\u0361' || m === '\u035c') return 9; // 字と字のつなぎは最後（次の字の前）
+    const b = IPAB_MARK[m];
+    if (b) return { '⠠': 1, '⠐': 2, '⠈': 3 }[b[0]] || 3;
+    return /[\u0316-\u0333\u0339-\u033c\u0345\u0347-\u034e\u0353-\u0356\u0359\u035a\u1dc2\u1dca\u1dcf\u1dfd\u1dff]/.test(m) ? 1 : /[\u0334-\u0338]/.test(m) ? 2 : 3;
+  };
+  // 英語の発音記号だけで書いてあるか（そうでなければ国際音声記号として書く）
+  const IPA_EN = /^[a-zɑæʌɛɔəɪʊᴜŋθðʃʒːɡɒɜɚɝɐʤʧˈˌ'\u0300\u0301 ().:\-]*$/;
+  // IPA に特有の字（[ ] / / の中にこれがあれば発音記号。括弧がなくても、これを含む語は発音記号として書く）
+  const IPA_STRONG = /[ɐ-ʯʰ-ʸˀˁˈˌˎˏː-˗˞-˿ᴀ-ᵡᵫ-ᶿŋɸꜛ-ꜟꞈⱱ]/; // 下付きの文字（ᵢ ᵣ ᵤ ᵥ ᵦ…）は数式の添え字なので除く
+  const IPA_MARK = /[ɐ-ʯʰ-ʸˀˁˈˌː-˗˞-˿ᴀ-ᶿŋɸꜛ-ꜟꞈⱱæðθβχøœçħ\u0300\u0301\u0303\u0325\u032a\u0329\u032f\u0361áéíóúàèìòùǽ]/;
+  const IPA_CHARS = /^[a-zA-ZÀ-ɏɐ-˿\u0300-\u036fᴀ-ᶿ\u1dc0-\u1dffⱠ-Ɀ꜀-ꟿꬰ-꭯βθχ().ˑ' :,;|‖‿↗↘↑↓→\-⁰-₟0-9]+$/;
+  const ipaGen = c => { const v = SYM && SYM.get(c); return v && v[0] === 'i' ? v[1] : null; }; // 音声学の字の拡張（記号の表の種類 i）
+  function ipaToBraille(text, bracket) {
+    const t = String(text).normalize('NFC');
+    if (IPA_EN.test(t.normalize('NFD').toLowerCase())) return ipaMext(t);
+    return ipaFull(t, bracket);
+  }
+  // 1. 英語の発音記号（文部科学省の書き方）
+  function ipaMext(text) {
     const chars = Array.from(text.normalize('NFD'));
     let out = IPA_OPEN, pending = '';
     const unknown = [];
@@ -452,7 +812,7 @@
       if (c === 'ˈ' || c === "'") { pending = STRESS1; continue; } // 音節の頭のストレス記号は、次の母音の前に移す
       if (c === 'ˌ') { pending = STRESS2; continue; }
       if (/[\u0300-\u036f.ˑ]/.test(c)) continue; // アクセント記号は母音の前に出したので飛ばす。音節の区切りの点も書かない
-      // 母音の上のアクセント記号（í ＝ 第1、æ̀ ＝ 第2）
+      // 母音の上のアクセント記号（í ＝ 第1、æ\u0300 ＝ 第2）
       let mark = '';
       for (let k = i + 1; k < chars.length && /[\u0300-\u036f]/.test(chars[k]); k++) {
         if (chars[k] === '\u0301') mark = STRESS1;
@@ -462,11 +822,84 @@
       if (IPA_VOWEL.test(c) && (mark || pending)) { out += mark || pending; pending = ''; }
       out += IPA[c];
     }
-    return { cells: out.replace(/⠀+$/, '') + IPA_CLOSE, unknown };
+    return { cells: out.replace(/⠀+$/, '') + IPA_CLOSE, unknown, defined: [] };
+  }
+  // 2. 国際音声記号（IPA Braille）
+  // 字の後ろに書く修飾文字（˔ ˕ ˖ ˗ など）は、同じ働きの補助記号と同じに書く
+  const IPA_SPACING = { 'ˎ': 'U0316', 'ˏ': 'U0317', '˔': 'U031d', '˕': 'U031e', '˖': 'U031f', '˗': 'U0320', '˒': 'U0339', '˓': 'U031c', 'ˬ': 'U032c', '˳': 'U0325', '˷': 'U0330', '˜': 'U0303', '˘': 'U0306', '˚': 'U030a', '˙': 'U0307', 'ˉ': 'U0304', 'ˊ': 'U0301', 'ˋ': 'U0300', 'ˆ': 'U0302', 'ˇ': 'U030c', '˝': 'U030b' };
+  for (const k in IPA_SPACING) IPA_SPACING[k] = String.fromCharCode(parseInt(IPA_SPACING[k].slice(1), 16));
+  const TD_LETTERS = ['⠨⠂', '⠨⠆', '⠨⠒', '⠨⠲', '⠨⠢', '⠨⠖', '⠨⠶', '⠨⠦', '⠨⠔', '⠨⠴']; // IPA Braille の文書ごとに決める記号（1〜10）
+  function ipaFull(text, bracket) {
+    const chars = Array.from(text);
+    const open = bracket === '/' ? '⠘⠌' : '⠘⠷', close = bracket === '/' ? '⠘⠌' : '⠘⠾';
+    let out = open;
+    const unknown = [], defined = [], tdMap = new Map();
+    const sym = c => {
+      if (IPAB[c] !== undefined) return IPAB[c];
+      if (IPA_SPACING[c]) { const m = IPA_SPACING[c]; return IPAB_MARK[m] || '⠈' + (IPAB_TD[m] || '⠨⠴'); }
+      const g = ipaGen(c);
+      if (g) return g;
+      if (/[A-Z]/.test(c) && IPAB[c.toLowerCase()]) return '⠰⠠' + IPAB[c.toLowerCase()]; // 大文字は一時的に日本の点字で（大文字符）
+      // 上付き・下付きの字（ᵊ ₐ など）：⠈（上）・⠠（下）＋字
+      const k = c.normalize('NFKC');
+      if (k !== c && k.length === 1 && IPAB[k] !== undefined && /[ʰ-˿ᴬ-ᵪᶛ-ᶿⁱⁿₐ-ₜ]/.test(c)) return (/[ᵢ-ᵪₐ-ₜ]/.test(c) ? '⠠' : '⠈') + IPAB[k];
+      return null;
+    };
+    for (let i = 0; i < chars.length;) {
+      const c = chars[i];
+      // 声調の棒（˩˥ など、続けて書いたもの）
+      if (/[˥-˩]/.test(c)) {
+        let j = i; while (j < chars.length && /[˥-˩]/.test(chars[j])) j++;
+        const seq = chars.slice(i, j).join('');
+        out += IPAB_TONE[seq] || Array.from(seq).map(x => IPAB[x]).join('');
+        i = j; continue;
+      }
+      // 数字（声調の数字など）：一時的に日本の点字で（⠰ のあとに数符）
+      if (/[0-9⁰¹²³⁴-⁹₀-₉]/.test(c)) {
+        let j = i, d = '';
+        while (j < chars.length && /[0-9⁰¹²³⁴-⁹₀-₉]/.test(chars[j])) d += chars[j++].normalize('NFKC');
+        out += '⠰' + SIGN.NUM + Array.from(d).map(x => DIGIT[x]).join('');
+        i = j; continue;
+      }
+      if (c === '(' || c === ')') { out += '⠰⠶'; i++; continue; } // 丸カッコ（音が落ちることがある所）は一時的に日本の点字で
+      if (c === ';') { out += '⠰⠆'; i++; continue; }
+      let marks = [];
+      let base = sym(c);
+      if (base === null) { // é などは、字と補助記号に分ける
+        const d = Array.from(c.normalize('NFD'));
+        if (d.length > 1 && sym(d[0]) !== null) { base = sym(d[0]); marks = d.slice(1); }
+      }
+      let j = i + 1;
+      while (j < chars.length && /\p{M}/u.test(chars[j])) { marks.push(...Array.from(chars[j].normalize('NFD'))); j++; }
+      // 長音符の後ろに書いてある補助記号（rː\u0329\u0302）は、前の字のもの。長音符はそのあとに書く
+      let post = '';
+      if (/[ːˑ]/.test(chars[j] || '') && /\p{M}/u.test(chars[j + 1] || '')) {
+        post = IPAB[chars[j]]; j++;
+        while (j < chars.length && /\p{M}/u.test(chars[j])) { marks.push(...Array.from(chars[j].normalize('NFD'))); j++; }
+      }
+      if (base === null && /[\p{L}\p{Sk}]/u.test(c)) { // 表にない音声学の字：文書ごとに決める記号（⠨⠂ など）で書いて、校正一覧で知らせる
+        if (!tdMap.has(c)) tdMap.set(c, TD_LETTERS[Math.min(tdMap.size, TD_LETTERS.length - 1)]);
+        base = (/\p{Lm}|\p{Sk}/u.test(c) ? '⠈' : '') + tdMap.get(c);
+        defined.push(c);
+      }
+      if (base === null) { unknown.push(c); out += SIGN.UNKNOWN; } else out += base;
+      marks = marks.map((m, k) => ({ m, k, lv: markLevel(m) })).sort((a, b) => a.lv - b.lv || a.k - b.k);
+      for (const { m, lv } of marks) {
+        if (IPAB_MARK[m]) { out += IPAB_MARK[m]; continue; }
+        out += (lv === 1 ? '⠠' : lv === 2 ? '⠐' : '⠈') + (IPAB_TD[m] || '⠨⠴');
+        defined.push(m);
+      }
+      out += post;
+      i = j;
+    }
+    return { cells: out.replace(/⠀+$/, '') + close, unknown, defined, tds: [...tdMap].map(([c, b]) => b + '＝' + c), full: true };
   }
   // 墨字の [ ] や / / の中の発音記号を見つける（英字だけの [ ] は発音記号とみなさない）
   const IPA_RE = /\[([^\[\]\n]{1,80})\]|［([^［］\n]{1,80})］|\/([^\/\n]{1,80})\/|／([^／\n]{1,80})／/g;
-  const isIpaText = t => IPA_MARK.test(t.normalize('NFC')) && /^[a-zA-Zɑæʌɛɔəɪʊᴜŋθðʃʒˈˌːɒɜɚɝɹɡʤʧʍɐɫ\u0300-\u036f\u00c0-\u024f().ˑ' :-]+$/.test(t.normalize('NFC'));
+  const isIpaText = t => { const n = t.normalize('NFC'); return IPA_MARK.test(n) && IPA_CHARS.test(n) && !/^\s|\s$/.test(n); };
+  // 括弧のない発音記号（「ʃ の音」）：IPA に特有の字を含む語
+  const BARE_IPA_RE = /[A-Za-zÀ-ɏɐ-˿\u0300-\u036fᴀ-ᶿ\u1dc0-\u1dffⱠ-Ɀ꜀-ꟿꬰ-꭯]+/g;
+  const IPA_SLASH = '\ue0f2'; // ⟦ ⟧ の中の頭にあれば / / で囲んであった発音記号（国際音声記号のとき ⠘⠌ … ⠘⠌）
 
   // ---------- 英語の語句（2語以上）：外国語引用符 ⠦ … ⠴ で囲み、中は英語の点字で書く ----------
   // 1語だけのときは、今までどおり外字符 ⠰ を前に付ける
@@ -482,10 +915,10 @@
     '÷': '⠐⠌', '<': '⠈⠣', '>': '⠈⠜', '£': '⠈⠇', '€': '⠈⠑', '¥': '⠈⠽', '°': '⠘⠚', '~': '⠈⠔', '_': '⠨⠤', '\\': '⠸⠡', '|': '⠸⠳', '•': '⠸⠲', '©': '⠘⠉', '®': '⠘⠗', '™': '⠘⠞', '§': '⠘⠎', '¶': '⠘⠏',
     '±': '⠸⠖', '´': '⠘⠌', '¨': '⠘⠒', '¯': '⠈⠤', '♭': '⠼⠣', '♮': '⠼⠡', '♯': '⠼⠩', '½': '⠼⠁⠌⠃', '¼': '⠼⠁⠌⠙', '¾': '⠼⠉⠌⠙' };
   // 修飾符（アクセント記号）：結合文字 → 点字
-  const EN_MOD = { '́': '⠘⠌', '̀': '⠘⠡', '̂': '⠘⠩', '̈': '⠘⠒', '̧': '⠘⠯', '̃': '⠘⠻', '̊': '⠘⠫', '̄': '⠈⠤', '̆': '⠈⠬', '̌': '⠘⠬' };
+  const EN_MOD = { '\u0301': '⠘⠌', '\u0300': '⠘⠡', '\u0302': '⠘⠩', '\u0308': '⠘⠒', '\u0327': '⠘⠯', '\u0303': '⠘⠻', '\u030a': '⠘⠫', '\u0304': '⠈⠤', '\u0306': '⠈⠬', '\u030c': '⠘⠬' };
   // 合字・特別な文字
   const EN_SPECIAL = { 'œ': '⠕⠘⠖⠑', 'æ': '⠁⠘⠖⠑', 'ß': '⠨⠮', 'ø': '⠈⠡⠕', 'ð': '⠼⠫', 'þ': '⠼⠮' };
-  const LAT = 'A-Za-zÀ-ÖØ-öø-ɏ';
+  const LAT = 'A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ';
   const EN_PHRASE_RE = new RegExp(`[${LAT}][${LAT}0-9'’ʼ.\\-]*(?:,? +(?:&|[${LAT}0-9][${LAT}0-9'’ʼ.\\-]*))+[.?!]?`, 'g');
   // 日本語の文中の英単語：外国語引用符で囲む語か、外字符で書く語（略語・単位・ローマ数字）か
   // 公式の点字データ（厚生労働省・自治体の広報など）では、小文字を含む4文字以上の英単語は外国語引用符（2766例 対 81例）、
@@ -841,11 +1274,11 @@
     '±': '⠢⠔', '∓': '⠔⠢', '≦': '⠔⠔⠒⠒', '≤': '⠔⠔⠒⠒', '≧': '⠢⠢⠒⠒', '≥': '⠢⠢⠒⠒' };
   // ---------- 化学式：化学式の指示符 ⠰⠠ から書き、元素記号に大文字符を付けず、右下の数は下がり数字、カッコは ⠣ ⠜（点字学習指導の手引 理科） ----------
   const ELEMENTS = new Set('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce Pt Au Hg Pb Bi Rn Ra U Pu'.split(' '));
-  const CHEM_RE = /(?<![A-Za-z0-9])([0-9]*)((?:\(?(?:[A-Z][a-z]?[0-9₀-₉]*)+\)?[0-9₀-₉]*)+)(?![A-Za-z0-9])/g;
+  const CHEM_RE = /(?<![A-Za-z0-9])([0-9]*)((?:\(?(?:[A-Z][a-z]?[0-9₀-₉]*)+\)?[0-9₀-₉]*)+(?:[¹²³⁴-⁹]?[⁺⁻]+)?)(?![A-Za-z0-9])/g;
   const isChem = body => {
     const els = body.match(/[A-Z][a-z]?/g) || [];
     if (!els.length || !els.every(e => ELEMENTS.has(e))) return false;
-    return /[₀-₉]/.test(body) || (els.length >= 2 && /[A-Za-z)][0-9]/.test(body)); // H₂O・CO2・H2SO4（A4・B5 は化学式にしない）
+    return /[₀-₉⁺⁻]/.test(body) || (els.length >= 2 && /[A-Za-z)][0-9]/.test(body)); // H₂O・CO2・H2SO4・Na⁺（A4・B5 は化学式にしない）
   };
   function chemBraille(raw) {
     // 反応式：＋と→は前後を1マスあける。式の頭は ⠰⠠、係数があれば ⠼2⠠、2つめからの化学式は係数がなければそのまま（⠕⠆）
@@ -856,6 +1289,12 @@
   function chemBraille1(raw, first) {
     const m = /^([0-9]*)(.*)$/.exec(raw);
     let out = m[1] ? numCells(m[1]) + SIGN.CAP : first ? SIGN.FOREIGN + SIGN.CAP : ''; // 係数のあとは ⠠ から（2H₂O → ⠼⠃⠠⠓⠆⠕）
+    // イオンの価数（右上の ＋・－）は ⠄ のあとに ⠢・⠔ を価数の数だけ（Ca²⁺ → ⠉⠁⠄⠢⠢）
+    const ion = /([¹²³⁴-⁹]?)([⁺⁻]+)$/.exec(m[2]);
+    if (ion) {
+      const n = ion[1] ? +SUP[ion[1]] : ion[2].length, sign = ion[2][0] === '⁺' ? '⠢' : '⠔';
+      return chemBraille1(raw.slice(0, raw.length - ion[0].length), first) + '⠄' + (n <= 3 ? sign.repeat(n) : numCells(n) + sign);
+    }
     for (const ch of m[2]) {
       if (/[A-Za-z]/.test(ch)) out += LETTER[ch.toLowerCase()];
       else if (SUB[ch] !== undefined) out += LOW_DIGIT[SUB[ch]];
@@ -866,8 +1305,15 @@
     return out;
   }
   const numCells = n => SIGN.NUM + Array.from(String(n)).map(d => d === '.' ? '⠂' : DIGIT[d]).join('');
+  // 上付き・下付きの英字や符号は ^ と _ の形にしてから読む（xⁿ → x^n、x⁻¹ → x^(-1)、aₙ → a_n）
+  const SUPX = { 'ⁿ': 'n', 'ⁱ': 'i', '⁺': '+', '⁻': '-', '⁼': '=', '⁽': '(', '⁾': ')' };
+  const SUBX = { 'ₐ': 'a', 'ₑ': 'e', 'ₒ': 'o', 'ₓ': 'x', 'ₕ': 'h', 'ₖ': 'k', 'ₗ': 'l', 'ₘ': 'm', 'ₙ': 'n', 'ₚ': 'p', 'ₛ': 's', 'ₜ': 't', 'ᵢ': 'i', 'ⱼ': 'j', 'ᵣ': 'r', 'ᵤ': 'u', 'ᵥ': 'v', '₊': '+', '₋': '-', '₌': '=', '₍': '(', '₎': ')' };
+  const SUPX_RE = /[ⁿⁱ⁺⁻⁼⁽⁾⁰¹²³⁴-⁹]*[ⁿⁱ⁺⁻⁼⁽⁾][ⁿⁱ⁺⁻⁼⁽⁾⁰¹²³⁴-⁹]*/g, SUBX_RE = /[ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ₊₋₌₍₎₀-₉]*[ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ₊₋₌₍₎][ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ₊₋₌₍₎₀-₉]*/g;
+  const supSubToCaret = t => t.replace(SUPX_RE, m => { const x = Array.from(m).map(c => SUPX[c] || SUP[c]).join(''); return '^' + (Array.from(x).length > 1 ? '(' + x + ')' : x); })
+    .replace(SUBX_RE, m => { const x = Array.from(m).map(c => SUBX[c] || SUB[c]).join(''); return '_' + (Array.from(x).length > 1 ? '(' + x + ')' : x); });
   function mathBraille(raw) {
     if (String(raw).startsWith('\ue0f0')) return chemBraille(String(raw).slice(1));
+    raw = supSubToCaret(String(raw));
     const s = Array.from(String(raw).replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')').replace(/⁄/g, '/'));
     let i = 0, last = '';
     const vul = c => '⠷' + numCells(VULGAR[c][0]) + '⠌' + numCells(VULGAR[c][1]) + '⠾';
@@ -931,7 +1377,7 @@
   // 文の中の数式・単位（m² など）を探す。戻り値 [{ start, end, raw, unit }]
   const UNIT_POW_RE = /(?<![A-Za-z])(km|cm|mm|dm|m)([²³])/g;
   const COMPAT_UNIT = { '㎡': 'm²', '㎥': 'm³', '㎠': 'cm²', '㎤': 'cm³', '㎢': 'km²', '㎦': 'km³', '㎟': 'mm²', '㎣': 'mm³' };
-  const FORMULA_RUN_RE = /[0-9A-Za-z.+\-−–×÷=＝<>＜＞()（）\/⁄^_√²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞ ＋－±∓≦≤≧≥]+/g;
+  const FORMULA_RUN_RE = /[0-9A-Za-z.+\-−–×÷=＝<>＜＞()（）\/⁄^_√²³¹⁰⁴-⁹₀-₉ⁿⁱ⁺⁻⁼⁽⁾ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ₊₋₌₍₎½⅓⅔¼¾⅕-⅞ ＋－±∓≦≤≧≥]+/g;
   function findMath(text) {
     const spans = [];
     let m;
@@ -954,7 +1400,7 @@
       const start = m.index + lead, end = start + t.length;
       if (spans.some(sp => sp.start < end && start < sp.end)) continue;
       // 数式のしるし：根号・累乗・添え字・分数の文字・÷、または「数か文字 演算記号 数か文字」（- だけの 2026-11-08・03-1234 は数式にしない）
-      const strong = /[√^²³¹⁰⁴-⁹₀-₉½⅓⅔¼¾⅕-⅞÷]/.test(t);
+      const strong = /[√^²³¹⁰⁴-⁹₀-₉ⁿⁱ⁺⁻⁼⁽⁾ₐₑₒₓₕₖₗₘₙₚₛₜᵢⱼᵣᵤᵥ₊₋₌₍₎½⅓⅔¼¾⅕-⅞÷]/.test(t);
       const binary = /[0-9A-Za-z)²³½⅓⅔¼¾][+×=＝<>＜＞÷＋－±∓≦≤≧≥][-−－]?[0-9A-Za-z(√½⅓⅔¼¾]/.test(t.replace(/[ 　]/g, '').replace(/（/g, '(').replace(/）/g, ')'));
       if (!strong && !binary) continue;
       // 引き算の記号だけでつながったもの（Q４－１－５・1－2－3 番地）は番号なので数式にしない
@@ -1019,12 +1465,12 @@
     const wrapMath = t => { const sp = findMath(t); let o = '', p0 = 0; for (const x of sp) { o += t.slice(p0, x.start) + '⟮' + x.raw + '⟯'; p0 = x.end; } return o + t.slice(p0); };
     line = String(line || '').split(/(⟪[^⟫]*⟫|⟬[^⟭]*⟭?|⟦[^⟧]*⟧|⟮[^⟯]*⟯)/).map((part, k) => k % 2 ? part : (/https?:|www\.|@/.test(part) ? part : wrapMath(part))
       .replace(URL_RE, m => { const t = /[.,;:!?)\]]+$/.exec(m); const tail = t ? t[0] : ''; return '⟬' + m.slice(0, m.length - tail.length) + '⟭' + tail; }) // アドレス（手で書いたときも）
-      .replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + t + '⟧' : m; })
+      .replace(IPA_RE, (m, a, b, c, d) => { const t = a || b || c || d; return isIpaText(t) ? '⟦' + (c || d ? IPA_SLASH : '') + t + '⟧' : m; })
       // 2文字以上の英語の語が2つ以上ある語句は外国語引用符（A B C・FAX 261 は1語ずつ外字符）
-      .replace(EN_PHRASE_RE, m => m.split(/ +/).filter(w => (w.match(/[A-Za-zÀ-ÖØ-öø-ɏ]/g) || []).length >= 2).length >= 2 ? '⟪' + m + '⟫' : m)
+      .replace(EN_PHRASE_RE, m => m.split(/ +/).filter(w => (w.match(/[A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ]/g) || []).length >= 2).length >= 2 ? '⟪' + m + '⟫' : m)
       // 1語でも、英単語なら外国語引用符（略語・単位は外字符のまま）
       .split(/(⟪[^⟫]*⟫)/).map((q, j) => j % 2 ? q : q.replace(EN_WORD_RE, w => enQuoteWord(w) ? '⟪' + w + '⟫' : w)).join('')).join('');
-    const s = Array.from(normalizeInput(toKatakana(line)));
+    const s = Array.from(normalizeInput(toKatakana(normalizeChars(line))));
     let out = '';
     const unknown = [];
     const bad = []; // 変換できなかった文字の、点字列での位置
@@ -1076,7 +1522,8 @@
       if (c === '⟦') { // 発音記号（⟦ ⟧ の中）
         let j = i + 1;
         while (j < s.length && s[j] !== '⟧') j++;
-        const r = ipaToBraille(s.slice(i + 1, j).join(''));
+        const inner = s.slice(i + 1, j).join('');
+        const r = inner[0] === IPA_SLASH ? ipaToBraille(inner.slice(1), '/') : ipaToBraille(inner, '[');
         if (r.unknown.length) { unknown.push(i); bad.push(Array.from(out).length); }
         out += r.cells;
         inNum = false; inLatin = false;
@@ -1084,13 +1531,17 @@
         continue;
       }
       // 日本語の文の中の外国の文字（ハングル・キリル文字など）：外国語の点字パックがあれば、その言語の点字を外国語引用符で囲む
-      const sc = XL ? scriptOf(c) : '';
-      if (sc && scriptTable(sc)) {
+      const sc = scriptOf(c);
+      if (sc && (scriptTable(sc) || BUILTIN_SCRIPT[sc])) {
         let j = i + 1;
-        while (j < s.length && (scriptOf(s[j]) === sc || (/[ \u3000,.'!?\-]/.test(s[j]) && j + 1 < s.length && scriptOf(s[j + 1]) === sc))) j++;
+        while (j < s.length && (scriptOf(s[j]) === sc || /\p{M}/u.test(s[j]) || (/[ \u3000,.'!?\-]/.test(s[j]) && j + 1 < s.length && scriptOf(s[j + 1]) === sc))) j++;
         const run = s.slice(i, j).join('');
         let fc = null;
-        try { fc = XL.forward(run, scriptTable(sc)); } catch (e) { fc = null; }
+        if (sc !== 'greek' || Array.from(run.replace(/[^\p{L}]/gu, '')).length >= 4) { // ギリシャ文字は4字以上の語だけ（1〜3字は文字の名前で読む）
+          if (scriptTable(sc)) { try { fc = XL.forward(run, scriptTable(sc)); } catch (e) { fc = null; } }
+          else if (BUILTIN_SCRIPT[sc]) fc = BUILTIN_SCRIPT[sc].cells(run);
+        }
+        if (fc === '' && BUILTIN_SCRIPT[sc] && !scriptTable(sc)) { units.push({ text: run, cells: '' }); i = j - 1; ui = j; uo = out.length; continue; } // ҂ だけ：省く
         if (fc) {
           fc = '⠦' + fc.replace(/[ \u00a0]/g, '⠀') + '⠴' + (s[j] && isKana(s[j]) ? SIGN.BLANK : '');
           units.push({ text: run, cells: fc });
@@ -1128,8 +1579,10 @@
         inLatin = true; inNum = false;
         const upper = c !== c.toLowerCase();
         const base = /[A-Za-z]/.test(c) ? c : accBase(c);
-        out += (upper && !latinCapAll ? SIGN.CAP : '') + (base !== c ? '⠈' : '') + LETTER[base.toLowerCase()];
-        if (next === '\u02bc') continue;
+        let accMark = base !== c;
+        while (s[i + 1] && /\p{M}/u.test(s[i + 1])) { accMark = true; i++; } // 1字にできないアクセント（q\u0307 など）も、アクセント符を前に
+        out += (upper && !latinCapAll ? SIGN.CAP : '') + (accMark ? '⠈' : '') + LETTER[base.toLowerCase()];
+        if (s[i + 1] === '\u02bc') continue;
         if (next && !isLatin(next) && isKana(next)) out += SIGN.TSUNAGI; // 英字と仮名の間はつなぎ符
         continue;
       }
@@ -1185,8 +1638,26 @@
         const r = kanaToBraille(READ[c]);
         out += r.cells; continue;
       }
-      if (isPictograph(c) || c === '\u200d' || c === '\ufe0f') continue; // 絵文字などの飾りは省く
-      if (/[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf\u2776-\u2793]/.test(c)) { out += kanaToBraille('（' + circledNumber(c.codePointAt(0)) + '）').cells; continue; }
+      if (/[\u0370-\u03ff\u1f00-\u1fff]/.test(c) && READ[c.normalize('NFD')[0]] !== undefined) { out += kanaToBraille(READ[c.normalize('NFD')[0]]).cells; continue; } // ά など
+      // 記号・絵文字の表（かなを直接直して記号を入れたとき）
+      const sq = SYMSEQ.size ? symSeqAt(s, i) : null;
+      const sy = sq ? [sq.kind, sq.val] : SYM.get(c);
+      if (sy && sy[0] !== 'i') {
+        if (sq) i += sq.len - 1;
+        const [kind, val] = sy;
+        if (kind === 'd') { if (SYM_DESC) out += '⠶⠶' + kanaToBraille(val).cells + '⠶⠶'; continue; }
+        if (kind === 'l') { out += '⠒⠒'; continue; }
+        if (kind === 'x' || kind === 'X') continue;
+        out += kanaToBraille(kind === 'o' ? ' ' + val + ' ' : val).cells.replace(/^⠀+|⠀+$/g, m => kind === 'o' ? '⠀' : '');
+        continue;
+      }
+      if (/\p{M}/u.test(c) || c === '\u200d' || (c >= '\u{e0020}' && c <= '\u{e007f}') || (c >= '\u{1f3fb}' && c <= '\u{1f3ff}')) continue; // 前の字に付く記号・絵文字の部品は省く
+      if (isPictograph(c)) { if (SYM_DESC) out += '⠶⠶' + kanaToBraille('エモジ').cells + '⠶⠶'; continue; } // 名前のわからない絵文字
+      if (c === '\u200d' || c === '\ufe0f') continue;
+      if (/[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf\u2776-\u2793\u24eb-\u24ff\u3248-\u324f]/.test(c)) { out += kanaToBraille('（' + circledNumber(c.codePointAt(0)) + '）').cells; continue; }
+      // 発音記号の字（ʃ・ᵊ など、文の中に1字だけ残ったもの）
+      if (IPAB[c] !== undefined || ipaGen(c) || IPA_STRONG.test(c)) { const r = ipaToBraille(c, '['); out += r.cells; if (r.unknown.length) { unknown.push(i); bad.push(Array.from(out).length); } continue; }
+      if (c === '〇') { out += PUNCT['○']; continue; } // 読めなかった 〇 は丸の伏せ字
       const nk = c.normalize('NFKC');
       if (nk !== c && nk.length <= 4) { out += kanaToBraille(nk).cells; continue; }
       unknown.push(i);
@@ -1775,17 +2246,22 @@
   const SEP_PREFIX = new Set(['各', '旧', '新', '毎', '全', '現', '前', '両', '故', '総', '約', '満', '翌']);
   const ATTACH = new Set(['/', '／', '+', '×', '÷', '−', '-', '－', '‐', '\u02bc', '※', '～', '〜', '~']); // 前後を続ける記号（※1 は注記符、波線 ～ は公式 107704：14）
   const isKanji2 = s => /^[一-鿿々]{2}$/.test(s);
-  const isLatinWord = s => /^[A-Za-zÀ-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ0-9.]*$/.test(s);
+  const isLatinWord = s => /^[A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ][A-Za-zÀ-ÖØ-öø-ɏḀ-ỿ0-9.]*$/.test(s);
 
   // 1字の漢字の読みの表（辞書が1字だけでは読めない漢字）
   let KANJI_YOMI = null;
   const kyText = typeof TENJI_KANJI_YOMI !== 'undefined' ? TENJI_KANJI_YOMI : (typeof require === 'function' ? (() => { try { return require('./kanji-yomi.js'); } catch (e) { return ''; } })() : '');
+  // まれな漢字の読み（js/kanji-unihan.js。Unicode の Unihan データベースから。ページでは後から読み込む）
+  let KANJI_UNIHAN = null;
+  const kuText = () => typeof root !== 'undefined' && root.TENJI_KANJI_UNIHAN ? root.TENJI_KANJI_UNIHAN : typeof TENJI_KANJI_UNIHAN !== 'undefined' ? TENJI_KANJI_UNIHAN : (typeof require === 'function' ? (() => { try { return require('./kanji-unihan.js'); } catch (e) { return ''; } })() : '');
+  const parseKy = (text, map) => { for (const x of String(text || '').split(',')) if (x) { const c = Array.from(x)[0]; map.set(c, x.slice(c.length)); } return map; };
   function kanjiYomi(surf) {
-    if (!KANJI_YOMI) { KANJI_YOMI = new Map(); for (const x of String(kyText || '').split(',')) if (x) KANJI_YOMI.set(Array.from(x)[0], x.slice(Array.from(x)[0].length)); }
+    if (!KANJI_YOMI) KANJI_YOMI = parseKy(kyText, new Map());
+    if (!KANJI_UNIHAN) { const t = kuText(); if (t) KANJI_UNIHAN = parseKy(t, new Map()); }
     let out = '';
     for (const ch of surf) {
       if (/[ぁ-ゖァ-ヺー]/.test(ch)) { out += toKatakana(ch); continue; }
-      const r = KANJI_YOMI.get(ch);
+      const r = KANJI_YOMI.get(ch) || (KANJI_UNIHAN && KANJI_UNIHAN.get(ch));
       if (!r) return null;
       out += r;
     }
@@ -1917,11 +2393,57 @@
     return out;
   }
 
+  const WEEKDAY = { '月': 'ゲツ', '火': 'カ', '水': 'スイ', '木': 'モク', '金': 'キン', '土': 'ド', '日': 'ニチ', '祝': 'シュク', '休': 'キュー', '祭': 'サイ' };
+  // 記号と波線などがつながった語（）～ など）は1字ずつに分ける。曜日の印（\ue066）の付いた字は曜日の語にする
+  function splitMarks(tokens) {
+    const out = []; let pending = false;
+    const isMark = c => OPEN_BRACKETS.has(c) || CLOSE_BRACKETS.has(c) || ATTACH.has(c) || PUNCTS.has(c);
+    const symTok = c => /^[ 　]$/.test(c) ? { surface_form: c, pos: '記号', pos_detail_1: '空白', reading: '*' }
+      : { surface_form: c, pos: '記号', pos_detail_1: OPEN_BRACKETS.has(c) ? '括弧開' : CLOSE_BRACKETS.has(c) ? '括弧閉' : '一般', reading: c };
+    for (const t of tokens) {
+      let sf = t.surface_form;
+      if (!pending && !sf.includes('\ue066')) {
+        const cs = Array.from(sf);
+        if (cs.length > 1 && cs.every(isMark) && cs.some(c => ATTACH.has(c))) { for (const c of cs) out.push(symTok(c)); continue; }
+        out.push(t); continue;
+      }
+      while (sf) {
+        if (pending) {
+          pending = false;
+          const ch = Array.from(sf)[0];
+          if (WEEKDAY[ch]) { out.push({ surface_form: ch, pos: '名詞', pos_detail_1: '一般', reading: WEEKDAY[ch], pronunciation: WEEKDAY[ch], wd: true }); sf = sf.slice(ch.length); }
+          continue;
+        }
+        const k = sf.indexOf('\ue066'), part = k < 0 ? sf : sf.slice(0, k);
+        if (part) {
+          if (part === t.surface_form) out.push(t);
+          else if (Array.from(part).every(c => isMark(c) || /[ 　]/.test(c))) for (const c of part) out.push(symTok(c));
+          else out.push({ ...t, surface_form: part, reading: '*', pronunciation: '*' });
+        }
+        if (k < 0) break;
+        pending = true; sf = sf.slice(k + 1);
+      }
+    }
+    return out;
+  }
+  const FUSE_SUFFIX = /^(年|月|日|時|分|秒|号|番|回|人|個|円|歳|週|件|本|枚|台|階|丁目|番地|か月|ヶ月|カ月|ケ月|年度|年生|回目|号室|号線|月号|市|町|村|区|県|都|道|府|郡|さん|様|さま|氏|君|くん|ちゃん|殿|駅|課|係|社|家|寺|川|線|丁)$/;
+  const FUSE_READ = { '年': 'ネン', '月': 'ガツ', '日': 'ニチ', '時': 'ジ', '分': 'フン', '秒': 'ビョー', '号': 'ゴー', '番': 'バン', '回': 'カイ', '人': 'ニン', '個': 'コ', '円': 'エン', '歳': 'サイ', '週': 'シュー', '件': 'ケン',
+    '本': 'ホン', '枚': 'マイ', '台': 'ダイ', '階': 'カイ', '市': 'シ', '町': 'チョー', '村': 'ソン', '区': 'ク', '県': 'ケン', '都': 'ト', '道': 'ドー', '府': 'フ', '郡': 'グン', '駅': 'エキ', '課': 'カ', '係': 'ガカリ', '社': 'シャ', '家': 'ケ', '寺': 'ジ', '川': 'ガワ', '線': 'セン', '丁': 'チョー' };
   function prepareTokens(tokens) {
+    tokens = splitMarks(tokens);
     const res = [];
     for (let i = 0; i < tokens.length; i++) {
       const t = tokens[i];
       const isNum = t.pos === '名詞' && t.pos_detail_1 === '数';
+      // 二重・三重（ニジュー・サンジュー、二重母音）、一重・八重は数字にしない。二重まぶたはフタエ
+      if (isNum && /^[一二三八]$/.test(t.surface_form) && tokens[i + 1] && /^重/.test(tokens[i + 1].surface_form) && (/^[二三]$/.test(t.surface_form) || tokens[i + 1].surface_form === '重')) {
+        const n1 = tokens[i + 1], n2 = tokens[i + 2], d = t.surface_form;
+        const futae = n1.surface_form === '重' && (d === '一' || d === '八' || (d === '二' && n2 && /^(まぶた|瞼|あご|顎)/.test(n2.surface_form)));
+        const tail = n1.pronunciation && n1.pronunciation !== '*' ? n1.pronunciation : n1.reading && n1.reading !== '*' ? n1.reading : 'ジュー';
+        const rd = futae ? { '一': 'ヒトエ', '二': 'フタエ', '八': 'ヤエ' }[d] : (d === '二' ? 'ニ' : 'サン') + tail;
+        res.push({ surface_form: d + n1.surface_form, pos: '名詞', pos_detail_1: '一般', reading: rd, pronunciation: rd });
+        i++; continue;
+      }
       if (isNum && /^[0-9〇零一二三四五六七八九十百千万億兆.,]+$/.test(t.surface_form)) {
         let surf = t.surface_form;
         for (;;) {
@@ -1933,6 +2455,16 @@
           break;
         }
         res.push({ surface_form: surf, pos: '名詞', pos_detail_1: '数', isNumber: true, reading: '*', word_position: t.word_position });
+        continue;
+      }
+      // 伏せ字（○○課 → ○○⠤カ、○月○日 → ○⠤ガツ ○⠤ニチ、○○が → ○○ ガ）：伏せ字は1語として前後を区切り、
+      // すぐあとの接尾語・助数詞はつなぎ符でつなぐ（公式の点字データ：○○⠤カ・○○⠤バン・○○⠤チョー、○○ ガ・○○ ノ）
+      if (/^[○△□]+$/.test(t.surface_form) && (t.pos === '記号' || t.pos === '名詞')) {
+        let surf = t.surface_form;
+        while (tokens[i + 1] && /^[○△□]+$/.test(tokens[i + 1].surface_form)) surf += tokens[++i].surface_form;
+        res.push({ surface_form: surf, pos: '名詞', pos_detail_1: '固有名詞', reading: '*', fuse: true });
+        const n1 = tokens[i + 1];
+        if (n1 && FUSE_SUFFIX.test(n1.surface_form)) { res.push({ ...n1, pos: '名詞', pos_detail_1: '接尾', fuseSuffix: true }); i++; }
         continue;
       }
       // 辞書で分かれてしまう語（対償 → 対＋償）を、決まった読みの1語にまとめる
@@ -1990,6 +2522,13 @@
 
   function tokenKana(t, prev, next, opts) {
     const surf = t.surface_form;
+    if (surf === '々' && prev && prev._kana && /^\p{Script=Han}$/u.test(prev.surface_form)) return { kana: prev._kana };
+    if (t.wd) return { kana: WEEKDAY[surf] };
+    if (t.fuse) return { kana: surf };
+    if (t.fuseSuffix) {
+      const R0 = t.reading && t.reading !== '*' ? t.reading : null;
+      return { kana: '‐' + (FUSE_READ[surf] || (R0 ? longVowel(R0, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R0, false) : surf)) };
+    }
     if (t.isNumber) {
       // 和語の数え方（一つ、二つ…）は仮名で書く
       if (next && next.surface_form === 'つ' && /^[一二三四五六七八九1-9]$/.test(surf)) return { kana: WAGO_TSU[KANJI_DIGIT[surf] || Number(surf)], eatNext: true };
@@ -2014,8 +2553,11 @@
       if (k !== null) return { kana: k };
     }
     if (isLatinWord(surf) || /^[0-9.,]+$/.test(surf) || surf === '&') return { kana: surf };
+    if (scriptOf(Array.from(surf)[0]) && Array.from(surf).every(ch => scriptOf(ch) || /\p{M}/u.test(ch))) return { kana: surf }; // 外国の文字（外国語として校正一覧に出す）
     if (Array.from(surf).every(c => PUNCT[c] || c === '\u02bc')) return { kana: surf }; // 記号（辞書が名詞と見ることもある）
     if (t.pos === '記号' || PUNCTS.has(surf) || OPEN_BRACKETS.has(surf) || CLOSE_BRACKETS.has(surf)) {
+      // 辞書が記号と見た漢字（𩸽 など、拡張領域のまれな漢字）は、1字の読みの表で読む（要確認）
+      if (/^\p{Script=Han}+$/u.test(surf)) { const ky = kanjiYomi(surf); return { kana: ky || surf, unresolved: true }; }
       if (/^[ァ-ヺーぁ-ゖ]+$/.test(surf)) return { kana: toKatakana(surf) };
       if (Array.from(surf).every(c => PUNCT[c] || c === '\u02bc')) return { kana: surf };
       if (t.reading && t.reading !== '*' && !PUNCT[surf] && !/[…‥―─—～〜]/.test(surf)) return { kana: t.reading };
@@ -2041,6 +2583,7 @@
     // サ変名詞のあとの「人」はニン（相続人・代理人・申請人。公式 ソーゾクニン 22：0）、「済」はズミ（納付済）
     if (surf === '人' && t.pos_detail_1 === '接尾' && prev && prev.pos_detail_1 === 'サ変接続') return { kana: 'ニン' };
     if (surf === '済' && prev && prev.pos === '名詞') return { kana: 'ズミ' };
+    if (surf === '歯茎' && ((next && /^(音|破裂|摩擦|鼻音|ふるえ|側面|接近|硬|閉鎖|吸着|弾音|破擦|接近音)/.test(next.surface_form)) || (prev && /^(後部|有声|無声|前部)$/.test(prev.surface_form)))) return { kana: 'シケイ' };
     if (WORD_READ[surf]) return { kana: WORD_READ[surf] };
     // カタカナで書いてある語は、書いてあるとおり（ボウル → ボウル。辞書の発音 ボール にしない）
     if (/^[ァ-ヺ][ァ-ヺー]*$/.test(surf) && t.pos !== '助動詞') return { kana: surf.replace(/ヮ/g, 'ワ') };
@@ -2071,6 +2614,10 @@
     // A4・B5 のように英字にすぐ続く数字は続ける
     if (t.isNumber && /^[A-Za-z]+$/.test(ps) && prev.word_position && t.word_position === prev.word_position + ps.length) return false;
     if (CLOSE_BRACKETS.has(surf) || PUNCTS.has(surf)) return false;
+    if (t.fuseSuffix) return false;
+    if (prev.fuse) return true; // 伏せ字のあとの助詞なども区切る（○○ ガ）
+    if (t.fuse && !OPEN_BRACKETS.has(ps) && !PUNCTS.has(ps) && !ATTACH.has(ps) && prev.pos !== '接頭詞' && !prev.isNumber) return true;
+    if (t.wd && !prev.wd && /^(名詞|接頭詞)$/.test(prev.pos) && !prev.isNumber && !OPEN_BRACKETS.has(ps) && !PUNCTS.has(ps) && !ATTACH.has(ps)) return true;
     if (prev.pos === '連体詞' && p === '名詞' && !/^(よう|ほか|他)$/.test(surf)) return true;
     if (/^(その他|その外)$/.test(surf)) return true;
     // 「ないものの」の ものの は区切る（公式 ナイ モノノ 68：0）
@@ -2170,6 +2717,20 @@
   };
   // 辞書の読みが、点訳のふつうの読みと違う語
   const WORD_READ = { '毎年': 'マイネン', '如何': 'イカン', '上方': 'ジョーホー', '車いす': 'クルマイス', '車椅子': 'クルマイス',
+    // 音声学の用語（国際音声記号の表の名前：両唇 リョーシン・硬口蓋 コーコーガイ・反り舌 ソリジタ・前舌 ゼンゼツ・強勢 キョーセイ）
+    '両唇': 'リョーシン', '両唇音': 'リョーシンオン', '唇歯': 'シンシ', '唇歯音': 'シンシオン', '円唇': 'エンシン', '非円唇': 'ヒエンシン', '唇音': 'シンオン', '唇音化': 'シンオンカ',
+    '硬口蓋': 'コーコーガイ', '硬口蓋音': 'コーコーガイオン', '硬口蓋化': 'コーコーガイカ', '口蓋化': 'コーガイカ', '軟口蓋化': 'ナンコーガイカ', '咽頭化': 'イントーカ',
+    '反り舌': 'ソリジタ', '反り舌音': 'ソリジタオン', '前舌': 'ゼンゼツ', '中舌': 'チューゼツ', '後舌': 'コーゼツ', '舌端': 'ゼッタン', '舌尖': 'ゼッセン', '舌背': 'ゼッパイ', '舌根': 'ゼッコン',
+    '狭母音': 'セマボイン', '広母音': 'ヒロボイン', '半狭母音': 'ハンセマボイン', '半広母音': 'ハンヒロボイン', '二重母音': 'ニジューボイン', '三重母音': 'サンジューボイン',
+    '有声': 'ユーセイ', '有声音': 'ユーセイオン', '無声音': 'ムセイオン', '有声化': 'ユーセイカ', '無声化': 'ムセイカ', '無気音': 'ムキオン',
+    'はじき音': 'ハジキオン', 'ふるえ音': 'フルエオン', '弾音': 'ダンオン', '入破音': 'ニューハオン', '破擦音': 'ハサツオン', '閉鎖音': 'ヘイサオン',
+    '強勢': 'キョーセイ', '第一強勢': 'ダイ1 キョーセイ', '第二強勢': 'ダイ2 キョーセイ',
+    '歯音': 'シオン', '歯間音': 'シカンオン', '歯茎音': 'シケイオン', '後部歯茎': 'コーブ シケイ', '歯茎硬口蓋': 'シケイ コーコーガイ', '歯茎はじき音': 'シケイ ハジキオン',
+    '調音点': 'チョーオンテン', '調音法': 'チョーオンホー', '調音者': 'チョーオンシャ',
+    // 々 で辞書が分けてしまうときの読み（雨時々晴れ → 時＋々）
+    '時々': 'トキドキ', '日々': 'ヒビ', '人々': 'ヒトビト', '我々': 'ワレワレ', '色々': 'イロイロ', '様々': 'サマザマ', '少々': 'ショーショー', '度々': 'タビタビ', '次々': 'ツギツギ',
+    '各々': 'オノオノ', '個々': 'ココ', '徐々': 'ジョジョ', '近々': 'チカヂカ', '早々': 'ソーソー', '年々': 'ネンネン', '月々': 'ツキヅキ', '続々': 'ゾクゾク', '段々': 'ダンダン', '別々': 'ベツベツ',
+    '数々': 'カズカズ', '国々': 'クニグニ', '家々': 'イエイエ', '山々': 'ヤマヤマ', '木々': 'キギ', '島々': 'シマジマ', '品々': 'シナジナ', '点々': 'テンテン', '転々': 'テンテン', '刻々': 'コクコク',
     // 公式の点字データ全体の数で決めた読み（日本 ニホン 3912：ニッポン 376、本市 ホンシ）。毎年は発行元で割れる（厚労省 マイネン、名古屋市 マイトシ）ので候補に出す
     '日本': 'ニホン', '日本年金機構': 'ニッポン ネンキン キコー', '日本郵便': 'ニッポン ユービン', '日本赤十字社': 'ニホン セキジュージシャ', '日本銀行': 'ニッポン ギンコー', '日本放送協会': 'ニッポン ホーソー キョーカイ', '本市': 'ホンシ', '本県': 'ホンケン', '本町': 'ホンチョー', '本区': 'ホンク', '本村': 'ホンソン', '本学': 'ホンガク', '本校': 'ホンコー', '本会': 'ホンカイ', '本件': 'ホンケン', '本書': 'ホンショ', '本法': 'ホンポー', '本省': 'ホンショー', '本庁': 'ホンチョー', '本制度': 'ホンセイド', '本事業': 'ホンジギョー', '各課': 'カク カ', '各月': 'カク ツキ', '款': 'カン', '何人も': 'ナニビトモ', '対償': 'タイショー',
     // 公式の点字データ（厚生労働省）と比べて分かった、辞書の読みが違う・ない語
@@ -2764,7 +3325,8 @@
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
-    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing, loadLexicon, lexGet, lexIds, applyLexicon, setForeign, foreignLine, DOC_MARK
+    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing, loadLexicon, lexGet, lexIds, applyLexicon, setForeign, foreignLine, DOC_MARK,
+    loadSymbols, setSymbolMode, normalizeChars, PUNCT, symbolInfo: c => SYM.get(c) || null
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;

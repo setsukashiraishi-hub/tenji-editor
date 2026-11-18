@@ -18,6 +18,22 @@
 
 `js/kanji-yomi.js`（1字の漢字の読み、約1,840字）は、上の UniDic・SudachiDict・NEologd の1字の見出しから、エディタの辞書が1字だけでは読めない漢字の読みを選んだものです（UniDic：BSD、SudachiDict・NEologd：Apache License 2.0）。
 
+# 記号・絵文字・まれな文字の表（エディタに入っているもの）
+
+| ファイル | もとにしたもの | ライセンス |
+|---|---|---|
+| `js/symbols-data.js`（記号・絵文字の読みと置き換え、約8,800項目） | [Unicode Character Database](https://www.unicode.org/ucd/)（UnicodeData.txt・EquivalentUnifiedIdeograph.txt）、[Unihan](https://www.unicode.org/charts/unihan.html)（漢字の異体字：kJapaneseNewVariant・kZVariant・kSemanticVariant など）、[CLDR](https://cldr.unicode.org/) の日本語の注釈（絵文字・記号の名前。[cldr-json](https://github.com/unicode-org/cldr-json) の annotations / annotationsDerived） | Unicode License v3（© Unicode, Inc.） |
+| `js/kanji-unihan.js`（まれな漢字の読み、約4万6千字） | Unihan データベースの kJapanese | Unicode License v3（© Unicode, Inc.） |
+
+どちらも `tools/symbols/build.js` で作りました（作り方はファイルの頭に書いてあります）。異体字は、Unihan の繁体字・同じ字の別の形をたどって新字体に直せるもの（龟 → 龜 → 亀 のような2段階）も使っています。CLDR の日本語の名前は、エディタの変換エンジンで仮名にしてから、読み誤るものを直して使っています。
+もとのデータ（UnicodeData.txt・Unihan・CLDR の JSON）はリポジトリに入れていません。
+
+国際音声記号の点字は、国際英語点字協議会（ICEB）の [IPA Braille: An Updated Tactile Representation of the International Phonetic Alphabet, Second Edition 2025](https://iceb.org/icebipa.htm)（Robert Englebretson 編、CC0 1.0）の表によります。
+この文書の付録の見本（Cambridge University Press の許諾で載っている文）は、出力を確かめるためだけに使い、リポジトリには入れていません。
+
+外国語の点字パックがないときのキリル文字の点字（ロシア語の点字と、ウクライナ語・ベラルーシ語・ブルガリア語・セルビア語・マケドニア語・ウズベク語・カザフ語・タタール語・バシキール語・サハ語の字）は、liblouis の各言語の表（ru-litbrl・uk・bel・bg・sr-cyrletters・mk-g1・uz-g1・kk・tt・ba・sah）と同じ字と点の対応を、エディタに入れたものです（liblouis の内部用の点 9〜f は除いています）。
+表にない古い字・まれな字（ѳ・ѵ・ҷ など）は、近い字（ф・и・ч など）で書き、そのことを校正箇所の一覧に出します。
+
 日本語の辞書は、エディタに入っている辞書（IPA辞書）と読みが違う語・ない語だけを集め、大きな辞書どうしの読みを照らし合わせたうえで、
 公式の点字データ（約164万行）に出てくる読みで確かめて作りました（点字データそのものはパックにも入れていません）。
 
@@ -42,7 +58,8 @@
 - 自治体の広報の墨字（つくば市「広報つくば」PDF、栗東市「広報りっとう」HTML版、名古屋市会「市会だより」PDF）を、同じ号の点字版と
   文ごとに対応させて比べました（墨字も点字もリポジトリには入れていません）。
 - `js/spacing-data.js`（分かち書きの一覧）は、上の公式の点字データ（約164万行）を仮名に読み戻し、区切る形と続ける形の数を比べて作ったものです。
-- 英語の発音記号の点字は、文部科学省「点字学習指導の手引」（令和5年）の表によります。
+- 英語の発音記号の点字は、文部科学省「点字学習指導の手引」（令和5年）の表によります。英語の発音記号の表にない記号は、上の IPA Braille（ICEB, 2025）によります。
+- 漢文の返り点は「点字では書き下し文に直して書く」（文部科学省「点字学習指導の手引」第6章）ことによります。
 - 数式の点字（数学点字）は、文部科学省「点字学習指導の手引」（令和5年）第8章第3節・第4節、同「点字教科書の編集資料」（小学部算数・中学部数学）の例によります。
 - 英語の点字（UEB）と、日本語の文中の英語（外字符・外国語引用符）は、文部科学省「点字学習指導の手引」（令和5年）第8章第5節と、
   日本点字委員会「日本点字表記法 2018年版 第1編第4章第6節の一部修正」（2023年）によります。
