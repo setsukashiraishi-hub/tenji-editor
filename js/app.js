@@ -2090,7 +2090,8 @@
   // ボタンの操作の案内（読み上げソフト用）。スマホは「ダブルタップで決定」、パソコンの一覧は「エンター2回で決定」
   const hintEl = (id, text) => { const e = document.createElement('span'); e.id = id; e.className = 'sr-only'; e.textContent = text; G.el.appendChild(e); return id; };
   const HINT_TAP = hintEl('gh-tap', 'ダブルタップで決定します');
-  const HINT_LIST = hintEl('gh-list', 'エンター2回で決定します');
+  const HINT_TAP2 = hintEl('gh-tap2', '1回押すと選択、もう一度押すと決定します');
+  const HINT_LIST = hintEl('gh-list', 'エンター1回で選択、2回で決定します');
   const HINT_PRESS = hintEl('gh-press', 'エンターで決定します');
   const tapHint = b => b.setAttribute('aria-describedby', hasKeys ? HINT_PRESS : HINT_TAP);
   // 案内の画面でも使える「終わる」ボタン（スマホなど Esc のない端末用）
@@ -2184,14 +2185,14 @@
     (sc.list || []).forEach((c, i) => {
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'guide-item';
-      b.setAttribute('aria-describedby', hasKeys ? HINT_LIST : HINT_TAP); // 「選択されていません」とは読ませず、決定のしかたを案内する
+      b.setAttribute('aria-describedby', hasKeys ? HINT_LIST : HINT_TAP2); // 「選択されていません」とは読ませず、決定のしかたを案内する
       const t = document.createElement('span'); t.className = 'gi-label'; t.textContent = c.label;
       b.appendChild(t);
       // 拡張子（.bse など）は画面に出すだけで、読み上げソフトにもブラウザの声にも読ませない
       if (c.ext) { const x = document.createElement('span'); x.className = 'gi-ext'; x.setAttribute('aria-hidden', 'true'); x.textContent = `（.${c.ext}）`; b.appendChild(x); }
       if (c.note) { const sep = document.createElement('span'); sep.className = 'sr-only'; sep.textContent = '。'; const n = document.createElement('span'); n.className = 'gi-note'; n.textContent = c.note; b.append(sep, n); }
-      b.addEventListener('click', () => c.run()); // マウス・指は押したら決定
-      b.addEventListener('focus', () => { guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); if (guideVoice && guide.listSpoke) { ttsStop(); ttsSay(c.label + (c.note ? '。' + c.note : '')); } guide.listSpoke = true; });
+      b.addEventListener('click', () => guideListPress(i)); // マウス・指も、1回目で選択、2回目で決定
+      b.addEventListener('focus', () => { if (guide.listArmed !== i) guide.listArmed = -1; [...G.btns.children].forEach(x => x.classList.remove('selected')); [...G.btns.children].forEach(x => x.classList.toggle('cur', x === b)); if (guideVoice && guide.listSpoke) { ttsStop(); ttsSay(c.label + (c.note ? '。' + c.note : '')); } guide.listSpoke = true; });
       G.btns.appendChild(b);
     });
     (sc.choices || []).forEach((c, i) => {
@@ -2201,12 +2202,12 @@
       if (c.key) {
         const k = document.createElement('span');
         k.className = 'key';
-        k.textContent = sc.single ? KEY_NAME[c.key] : `${KEY_NAME[c.key]}（1回で選択、2回で決定）`;
+        k.textContent = `${KEY_NAME[c.key]}（1回で選択、2回で決定）`;
         b.appendChild(k);
       }
       // 切り替えボタンにはしない（「選択されていません」「設定を変更」と読まれるため）。スマホでは「ダブルタップで決定」と案内する
-      if (!hasKeys || !c.key) tapHint(b);
-      b.addEventListener('click', () => guideChoose(i)); // マウス・指は押したら決定
+      if (!hasKeys || !c.key) b.setAttribute('aria-describedby', HINT_TAP2);
+      b.addEventListener('click', () => guidePress(i)); // マウス・指も、1回目で選択（そのボタンだけを読む）、2回目で決定
       G.btns.appendChild(b);
     });
     quitBtn.hidden = !!sc.first;
@@ -2265,12 +2266,29 @@
     const c = sc && sc.choices && sc.choices[i];
     if (c) c.run();
   }
+  // 選択肢は、1回押すとそのボタンだけを読んで選んだ状態にし、選んだ状態でもう一度押すと決定する（キー・マウス・指とも）
   function guideSelect(i) {
     guide.sel = i;
-    [...G.btns.children].forEach((b, k) => b.classList.toggle('selected', k === i)); // 見た目だけ（読み上げは announce で）
-    const c = guide.screen.choices[i];
-    // フォーカスは動かさず（読み上げが途切れないように）、選んだことだけを知らせる
-    announce(`${c.label}を選びました。もう一度${KEY_NAME[c.key]}を押すと決定します`);
+    [...G.btns.children].forEach((b, k) => b.classList.toggle('selected', k === i)); // 見た目
+    guideSayLabel(guide.screen.choices[i].label);
+  }
+  function guidePress(i) {
+    if (guide.sel === i) guideChoose(i); else guideSelect(i);
+  }
+  function guideListPress(i) {
+    const sc = guide.screen;
+    if (!sc || !sc.list || !sc.list[i]) return;
+    if (guide.listArmed === i) { guide.listArmed = -1; sc.list[i].run(); return; }
+    guide.listArmed = i;
+    const items = [...G.btns.children];
+    if (items[i] && document.activeElement !== items[i]) { guide.listSpoke = false; items[i].focus(); }
+    items.forEach((b, k) => b.classList.toggle('selected', k === i));
+    guideSayLabel(sc.list[i].label);
+  }
+  // そのボタンの名前だけを読む（読み上げソフトへの知らせと、音声案内の声。プレビューの読み上げ中は声を止めない）
+  function guideSayLabel(label) {
+    announce(label);
+    if (guideVoice && !(guide.screen && guide.screen.preview)) { ttsStop(); ttsSay(label, null, { trustEnd: true }); }
   }
   document.addEventListener('keydown', ev => {
     if (!guide.on || !guide.screen) return;
@@ -2330,8 +2348,7 @@
         if (ev.repeat) return;
         if (ev.key !== 'Enter') return;
         if (i < 0) { items[0].focus(); return; }
-        if (guide.listArmed === i) { guide.listArmed = -1; sc.list[i].run(); }
-        else { guide.listArmed = i; announce(`${sc.list[i].label}を選びました。もう一度エンターを押すと決定します`); }
+        guideListPress(i);
       }
       return;
     }
@@ -2349,8 +2366,7 @@
     if (i < 0) return;
     ev.preventDefault(); ev.stopPropagation();
     if (ev.repeat || !sc.choices || !sc.choices[i] || sc.choices[i].key !== (i ? 'Space' : 'Enter')) return;
-    if (sc.single || guide.sel === i) guideChoose(i);
-    else guideSelect(i);
+    guidePress(i);
   }, true);
   // Space の keyup でボタンが押されないようにする（決定は自分で数える）
   document.addEventListener('keyup', ev => {
@@ -2412,18 +2428,17 @@
     G.el.hidden = false;
     for (const el of appParts()) el.inert = true;
     guideShow({
-      first: true, single: true,
+      first: true,
       msg: '自動誘導機能を利用しますか？',
-      sub: hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。' : '',
+      sub: hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。1回押すと選択、もう一度押すと決定します。' : 'ボタンは、1回押すと選択、もう一度押すと決定します。',
       choices: [{ label: '利用する', key: 'Enter', run: guideVoiceAsk }, { label: '利用しない', key: 'Space', run: () => finishGuide('skip') }],
     });
   }
   // 音声案内（画面の説明をブラウザの声で読む）を使うか。あとからでも「音声案内」ボタン（Alt＋V）で切り替えられる
   function guideVoiceAsk() {
     guideShow({
-      single: true,
       msg: '音声案内を利用しますか？',
-      sub: (hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。\n' : '') + '画面の説明をブラウザの声で読み上げます。読み上げソフトを使っているときは、利用しないを選ぶと声が重なりません。あとからでも「音声案内」ボタンで切り替えられます。',
+      sub: (hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。1回押すと選択、もう一度押すと決定します。\n' : '') + '画面の説明をブラウザの声で読み上げます。読み上げソフトを使っているときは、利用しないを選ぶと声が重なりません。あとからでも「音声案内」ボタンで切り替えられます。',
       choices: [
         { label: '利用する', key: 'Enter', run: () => { setGuideVoice(true); guideIntro(); } },
         { label: '利用しない', key: 'Space', run: () => { setGuideVoice(false); guideIntro(); } },
@@ -2439,7 +2454,7 @@
   function guideIntro() {
     const sub = hasKeys
       ? 'エスケープを押すと、現在の進捗をエディタに反映して、案内を終了します。\n今後は、一つ目の選択肢はエンター1回で選択、2回で決定、二つ目の選択肢はスペース1回で選択、2回で決定できます。'
-      : '画面のボタンを押して進みます。途中でやめるときは「案内を終わってエディタへ」を押してください。';
+      : '画面のボタンを押して進みます。ボタンは、1回押すと選択、もう一度押すと決定します。途中でやめるときは「案内を終わってエディタへ」を押してください。';
     guideShow({ msg: '案内を開始します。', sub, auto: hasKeys ? 14000 : 6000, next: guideSource });
   }
   function guideSource() {
@@ -2787,7 +2802,7 @@
     }
     for (const fmt of F.EXPORTS) list.push({ label: fmt.label, ext: fmt.ext, note: fmt.note, run: () => guideFigures(fmt) });
     guideShow({ step: '4. ファイルの作成', msg: '出力するファイル形式を選択してください。', back: guide.formatBack || (() => guidePreviewAsk()),
-      sub: hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。' : '形式を押すと決定します。',
+      sub: hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。' : '形式を1回押すと選択、もう一度押すと決定します。',
       list, listLabel: '出力するファイル形式' });
   }
   // 点字の形式で点図があるときは、ZIP（本文と点図）・本文の点字だけ・点図だけ から選ぶ
@@ -2798,7 +2813,7 @@
     const fk = FG.format.value;
     const figName = { edl: 'エーデル（EDL）', svg: 'SVG', 'pdf-dots': '点図のPDF', 'pdf-solid': '立体コピー用のPDF' }[fk] || fk;
     guideShow({ step: '4. ファイルの作成', back, msg: `点図が${figs.length}点あります。どの形で出力しますか？`,
-      sub: (hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。\n' : '') + `点図の形式（${figName}）は、エディタの点図の画面で変えられます。`,
+      sub: (hasKeys ? '上下の矢印キーで選び、エンターを2回押すと決定します。\n' : '1回押すと選択、もう一度押すと決定します。\n') + `点図の形式（${figName}）は、エディタの点図の画面で変えられます。`,
       listLabel: '出力のしかた',
       list: [
         { label: 'ZIPでまとめて出力', note: `本文の点字（${fmt.label}）と点図（${figName}）を1つのZIPに入れる`, run: () => guideBuild({ kind: 'zip', fmt, viaFig: true }) },
