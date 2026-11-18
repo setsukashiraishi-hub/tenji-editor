@@ -1,0 +1,117 @@
+{
+ "version": "2026-11-18",
+ "note": "点訳エディタの辞書・言語パック。ダウンロードするとブラウザ（IndexedDB）に保存されます。",
+ "packs": [
+  {
+   "id": "ja-words",
+   "kind": "lexicon",
+   "title": "日本語：一般の語・複合語の読み",
+   "desc": "専門用語・複合語など、エディタに入っている辞書（IPA辞書）では読みを誤りやすい語。大きな辞書どうしで読みを照らし合わせ、公式の点字データに出てくる読みで確かめました。",
+   "version": "2026-11-18",
+   "entries": 113229,
+   "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
+   "files": [
+    {
+     "name": "ja-words.tsv.gz",
+     "path": "ja/ja-words.tsv.gz",
+     "size": 1090645,
+     "type": "application/gzip",
+     "sha256": "90c2a9c59864ca9f887991dd9263a17ef1c236e09d522d704c37981a4945ed53"
+    }
+   ]
+  },
+  {
+   "id": "ja-people",
+   "kind": "lexicon",
+   "title": "日本語：人名の読み",
+   "desc": "姓・名・歴史上の人物など。字にない「の」が入る名前（源頼朝 ミナモトノ ヨリトモ）も点字の書き方で書きます。",
+   "version": "2026-11-18",
+   "entries": 258772,
+   "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
+   "files": [
+    {
+     "name": "ja-people.tsv.gz",
+     "path": "ja/ja-people.tsv.gz",
+     "size": 2564295,
+     "type": "application/gzip",
+     "sha256": "94a34d9132f5d8a0d6db8ccd9ea43cbf2397f6ed63e7a9f4c28ed0047a08b348"
+    }
+   ]
+  },
+  {
+   "id": "ja-places",
+   "kind": "lexicon",
+   "title": "日本語：地名・住所の読み",
+   "desc": "全国の都道府県・市区町村・町名・駅・寺社・山や川など。日本郵便の郵便番号データの読みも入っています。",
+   "version": "2026-11-18",
+   "entries": 294908,
+   "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
+   "files": [
+    {
+     "name": "ja-places.tsv.gz",
+     "path": "ja/ja-places.tsv.gz",
+     "size": 4382093,
+     "type": "application/gzip",
+     "sha256": "12a0be99e36a5094caaa4948e9a17923b615a1fdd547449644acd395db9b5ecc"
+    }
+   ]
+  },
+  {
+   "id": "ja-names",
+   "kind": "lexicon",
+   "title": "日本語：会社・団体・作品などの読み",
+   "desc": "会社・団体・施設・作品・商品などの固有名詞。",
+   "version": "2026-11-18",
+   "entries": 144380,
+   "license": "UniDic（国立国語研究所、BSD）・SudachiDict（Apache-2.0）・mecab-ipadic-NEologd（Apache-2.0）・日本郵便 郵便番号データ",
+   "files": [
+    {
+     "name": "ja-names.tsv.gz",
+     "path": "ja/ja-names.tsv.gz",
+     "size": 2177006,
+     "type": "application/gzip",
+     "sha256": "0a54fadb17cdf18b0b297b8c66b6e5d7c19866cba0c33768d54295196b520dd0"
+    }
+   ]
+  },
+  {
+   "id": "louis",
+   "kind": "louis",
+   "title": "外国語の点字（約100の言語）",
+   "desc": "英語・韓国語・中国語・フランス語・ドイツ語・スペイン語・ロシア語・エスペラントなどの点字（liblouis 3.39.0）。「文書の言語」でこれらの言語を選べるようになり、日本語の文の中のハングルやキリル文字なども、その言語の点字で外国語引用符の中に書きます。",
+   "version": "2026-11-18",
+   "entries": 175,
+   "license": "liblouis（LGPL-2.1 以降）",
+   "files": [
+    {
+     "name": "louis.js",
+     "path": "louis/louis.js",
+     "size": 67048,
+     "type": "text/javascript",
+     "sha256": "ff78f0c1badb4dcd589c51b7fec625ceaf53cd8d0358156d74645b2533e4ee7b"
+    },
+    {
+     "name": "louis.wasm",
+     "path": "louis/louis.wasm",
+     "size": 163514,
+     "type": "application/wasm",
+     "sha256": "25aeef64877b1e649e5a6c0748860cdfc6130cd36d95d66b51a9f634b8845f64"
+    },
+    {
+     "name": "tables.zip",
+     "path": "louis/tables.zip",
+     "size": 3649129,
+     "type": "application/zip",
+     "sha256": "4b4c3c7102db605653036c8599f7702d7de70e5f5ce626721f126b785d8a1336"
+    },
+    {
+     "name": "catalog.json",
+     "path": "louis/catalog.json",
+     "size": 53459,
+     "type": "application/json",
+     "sha256": "29861a97145e48af9eeefd447c14cf99bf27da55577e9d4e8f1c8005e9d1a80f"
+    }
+   ]
+  }
+ ]
+}
