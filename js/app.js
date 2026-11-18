@@ -871,6 +871,7 @@
         if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
         const b = E.kanaToBraille(row.kana);
         row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
+        if (brEditable) brEdit.value = row.cells || ''; // 下の点字の欄も、かなに合わせてすぐ変える
         refresh();
         clearTimeout(row._speakTimer);
         row._speakTimer = setTimeout(() => {
