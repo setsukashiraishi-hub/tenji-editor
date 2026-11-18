@@ -3108,9 +3108,12 @@
   }
   function updatePackBadge() {
     const n = pk.recs.length;
-    PK.count.textContent = n;
+    const upd = pk.manifest ? pk.recs.filter(r => { const p = pk.manifest.packs.find(x => x.id === r.id); return p && p.version !== r.version; }).length : 0;
+    PK.count.textContent = upd ? '新' : n;
     PK.count.hidden = !n;
-    PK.btn.setAttribute('aria-label', '辞書・言語パック' + (n ? `（${n}つ使用中）` : ''));
+    PK.btn.classList.toggle('has-update', !!upd);
+    PK.btn.setAttribute('aria-label', '辞書・言語パック' + (n ? `（${n}つ使用中${upd ? `、${upd}つに新しい版があります` : ''}）` : ''));
+    PK.btn.title = upd ? `新しい版のパックがあります（${upd}つ）。開いて「新しい版にする」を押すと入れ替わります` : '大きな辞書や外国語の点字をダウンロードして、このブラウザに保存します';
   }
   // 起動のとき：保存してあるパックを全部読み込んでから、点訳を始める
   state.lang = savedLang() in LANG_BUILTIN ? savedLang() : 'ja';
@@ -3127,6 +3130,8 @@
     fillLangs();
     applyForeign();
     updatePackBadge();
+    // ダウンロード済みのパックに新しい版があるか、ネットにつながっていれば確かめる（自動では入れ替えない）
+    if (pk.recs.length) PKS.manifest().then(m => { pk.manifest = m; updatePackBadge(); }).catch(() => { });
   })();
   // パックを入れたり消したりしたら、点訳し直す（手で直した行は残す）
   function afterPackChange() {

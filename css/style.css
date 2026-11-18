@@ -592,3 +592,4 @@ dialog.packs .sheet-body { overflow-y: auto; }
   .pack-btns { grid-column: 1; grid-row: auto; flex-direction: row; flex-wrap: wrap; }
 }
 #doclang { max-width: 13em; }
+#btn-packs.has-update .badge { background: var(--warn); color: #fff; }

@@ -161,27 +161,31 @@
     const m = SP_PARTICLE.exec(w), st = w.slice(0, m.index);
     return st.length >= 2 ? [st, m[1]] : [w, ''];
   }
+  // 語の前のカッコ・記号と、後ろの句読点・閉じカッコは外して表を引く（「ペットボトル、」も区切る）
+  const SP_HEAD = /^[「『（(〔［【⦅｟“〈《⁑]+/, SP_TAIL = /[」』）)〕］】⦆｠”〉》][」』）)〕］】⦆｠”〉》ァ-ヺー、。，．・！？!?…‥]*$|[、。，．・！？!?…‥]+$/;
   function applySpacing(kana) {
     if (!SPACING) return kana;
+    const deep = x => x.split(' ').map(y => SPACING.split[y] && y.length >= 4 ? SPACING.split[y] : y).join(' ');
     return kana.split('\n').map(line => {
       const ws = line.split(' ');
       const out = [];
       for (let i = 0; i < ws.length; i++) {
-        let w = ws[i];
+        const raw = ws[i];
+        const hm = SP_HEAD.exec(raw), head = hm ? hm[0] : '';
+        const rest = raw.slice(head.length);
+        const tm = SP_TAIL.exec(rest), tail = tm ? tm[0] : '';
+        let w = rest.slice(0, rest.length - tail.length);
         if (SP_WORD.test(w)) {
           const [st, pt] = spStem(w);
-          if (SPACING.split[st]) {
-            // 区切った部分をさらに区切る（マイナンバーカード → マイ ナンバー カード）
-            const deep = x => x.split(' ').map(y => SPACING.split[y] && y.length >= 4 ? SPACING.split[y] : y).join(' ');
-            w = deep(deep(SPACING.split[st])) + pt;
-          }
-          // 前の語と続ける
+          // 区切った部分をさらに区切る（マイナンバーカード → マイ ナンバー カード）
+          if (SPACING.split[st]) w = deep(deep(SPACING.split[st])) + pt;
+          // 前の語と続ける（前の語の後ろに句読点がなく、この語の前にカッコがないとき）
           const prev = out[out.length - 1];
-          if (prev !== undefined && SP_WORD.test(prev) && SPACING.join[prev + ' ' + st]) { out[out.length - 1] = prev + w; continue; }
+          if (prev && !prev.tail && !head && SP_WORD.test(prev.core) && SPACING.join[prev.core + ' ' + st]) { prev.core += w; prev.tail = tail; continue; }
         }
-        out.push(w);
+        out.push({ head, core: w, tail });
       }
-      return out.join(' ');
+      return out.map(x => x.head + x.core + x.tail).join(' ');
     }).join('\n');
   }
 
@@ -250,7 +254,7 @@
       }
       if (!sg.text.trim()) { if (kana) kana += ' '; continue; }
       const parts = prepareSumiji(normalizeInput(sg.text)).split(WIDE_GAP);
-      const res = parts.map(p => tokensToKana(tokenize(p), opts));
+      const res = parts.map(p => tokensToKana(tokenize(p), Object.assign({}, opts, { tokenize })));
       const k = res.map(r => r.kana).join('  ');
       if (kana && k && !/^[。、，．？！?!」』）)〕］】”]/.test(k) && !/ $/.test(kana)) kana += ' ';
       kana += k;
@@ -311,6 +315,14 @@
     // PDF の組版で入った字間のあき（障 害者）、古い書き方の「なかつた」、「長又は」（姓の長又と読まない）
     s = s.replace(/〇・([一二三四五六七八九])/g, (m, d) => '0.' + ('一二三四五六七八九'.indexOf(d) + 1)).replace(/障[ 　]+害/g, '障害').replace(/なかつ(?=[てた])/g, 'なかっ').replace(/長又(?=は)/g, '長 又');
     // 読みを辞書に任せると誤る書き方（公式の点字データ：障がい → ショーガイ、聾話 → ローワ、1人 → ヒトリ）
+    // 「問合先」「問合せ」は辞書が「問・合（ゴウ）」と読むので、送り仮名を補う（公式：トイアワセサキ）
+    s = s.replace(/問い?合わ?せ?(?=先|窓口|番号|$|[^せわういえおっ])/g, '問い合わせ').replace(/問い合わせわせ/g, '問い合わせ');
+    // 時刻（9:00、8:30）は「9時」「8時30分」と書く（公式の点字データ：9ジ 30プン 17887・9：00 1）
+    s = s.replace(/(?<![0-9０-９.:：])([0-9０-９]{1,2})[:：]([0-5０-５][0-9０-９])(?![0-9０-９:：])/g, (m, h, mm) => {
+      const H = +h.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0)), M = +mm.replace(/[０-９]/g, c => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+      return H > 24 ? m : H + '時' + (M ? M + '分' : '');
+    });
+    s = s.replace(/[☎☏](?![ 　]*[0-9０-９])/g, '電話');
     s = s.replace(/障(?:がい|碍)/g, '障害').replace(/聾(唖|話|学校|者|児|教育)/g, (m, x) => 'ろう' + ({ '唖': 'あ', '話': 'わ' }[x] || x)).replace(/聾/g, 'ろう')
       .replace(/(?<![0-9０-９.,．，])[1１]人(?![目称前分組])/g, '一人').replace(/(?<![0-9０-９.,．，])[2２]人(?![目称前分組])/g, '二人');
     // 空欄（　）・（＿＿）→ 空欄符号（全角スペースの2マスあけより先に）
@@ -1033,6 +1045,8 @@
         let j = i + 1;
         while (j < s.length && s[j] !== '⟫') j++;
         out += '⠦' + englishBraille(s.slice(i + 1, j).join(''), EN_UEB, EN_G2, true) + '⠴';
+        // 閉じの ⠴ のあとに仮名（助詞など）が続くときは1マスあける（公式の点字データ：あける 986・続ける 17）
+        if (s[j + 1] && isKana(s[j + 1])) out += SIGN.BLANK;
         inNum = false; inLatin = false;
         i = j;
         continue;
@@ -1078,7 +1092,7 @@
         let fc = null;
         try { fc = XL.forward(run, scriptTable(sc)); } catch (e) { fc = null; }
         if (fc) {
-          fc = '⠦' + fc.replace(/[ \u00a0]/g, '⠀') + '⠴';
+          fc = '⠦' + fc.replace(/[ \u00a0]/g, '⠀') + '⠴' + (s[j] && isKana(s[j]) ? SIGN.BLANK : '');
           units.push({ text: run, cells: fc });
           out += fc;
           inNum = false; inLatin = false;
@@ -1699,15 +1713,37 @@
     }
     return String(total + num);
   }
-  // 数の語（例：二十七、３兆２４００万）→ 「27」「3チョー 2400マン」
+  // 公式の点字の数の書き方：位取りのカンマは書かず、1万以上は「マン・オク」で区切り、千の位で端数がなければ「セン」
+  // （3,000円 → 3ゼンエン、28,000円 → 2マン 8センエン、16,520 → 1マン 6520、2,234 → 2234。公式の点字データ：セン・ゼン 4286、,000 0）
+  function bigNumber(d) {
+    if (d.length > 16 || /^0/.test(d)) return d;
+    const g = [];
+    for (let e = d.length; e > 0; e -= 4) g.unshift(d.slice(Math.max(0, e - 4), e));
+    const units = ['', 'マン', 'オク', 'チョー'];
+    const parts = [];
+    g.forEach((x, k) => {
+      const v = +x, u = units[g.length - 1 - k];
+      if (!v) return;
+      if (!u && v >= 1000 && v % 1000 === 0) parts.push((v / 1000) + (v === 3000 ? 'ゼン' : 'セン'));
+      else parts.push(v + u);
+    });
+    return parts.join(' ') || '0';
+  }
+  // 数の語（例：二十七、３兆２４００万、28,000）→ 「27」「3チョー 2400マン」「2マン 8セン」
   function numberToKana(surface) {
+    if (surface === '千') return 'セン';
+    if (surface === '百') return 'ヒャク';
+    if (/^[0-9]{1,3}(?:,[0-9]{3})+$/.test(surface)) return bigNumber(surface.replace(/,/g, ''));
     const groups = surface.match(/[^万億兆]+[万億兆]?|[万億兆]/g) || [];
     const parts = [];
-    for (const g of groups) {
+    for (let k = 0; k < groups.length; k++) {
+      const g = groups[k];
       const unit = BIG_UNIT[g.slice(-1)] ? g.slice(-1) : '';
       const body = unit ? g.slice(0, -1) : g;
-      const n = body ? parseSmallNumber(body) : '1';
+      let n = body ? parseSmallNumber(body.replace(/^([0-9]{1,3}(?:,[0-9]{3})+)$/, x => x.replace(/,/g, ''))) : '1';
       if (n === null) return null;
+      // 「2万4千」の最後の千の位（端数なし）は「4セン」
+      if (!unit && groups.length > 1 && /千$/.test(body) && /^[1-9]000$/.test(n)) n = n[0] + (n[0] === '3' ? 'ゼン' : 'セン');
       parts.push(n + (unit ? BIG_UNIT[unit] : ''));
     }
     return parts.join(' ');
@@ -1735,11 +1771,26 @@
   // ローマ数字・英字のあとの1字の助数詞（Ⅲ章 → III ショー）。辞書が人名などに読むのを防ぐ
   const COUNTER = { '章': 'ショー', '節': 'セツ', '条': 'ジョー', '項': 'コー', '号': 'ゴー', '巻': 'カン', '部': 'ブ', '編': 'ヘン', '話': 'ワ', '回': 'カイ', '位': 'イ', '世': 'セイ', '型': 'ガタ', '版': 'ハン', '組': 'クミ', '期': 'キ', '類': 'ルイ', '式': 'シキ', '段': 'ダン', '級': 'キュー' };
   const SPACED = new Set(['→', '←', '↔', '＝']); // 前後を1マスあける記号
-  const SEP_PREFIX = new Set(['各', '旧', '新', '毎', '全', '現', '前', '両', '故', '総']);
-  const ATTACH = new Set(['/', '／', '+', '×', '÷', '−', '-', '－', '‐', '\u02bc', '※']); // 前後を続ける記号（※1 は注記符）
+  // 1字の接頭語で、あとを区切るもの（約・満は数の前：ヤク 2000ニン 1731：1、マン 1サイ 4479：1。翌：ヨク エイギョービ 35：8）
+  const SEP_PREFIX = new Set(['各', '旧', '新', '毎', '全', '現', '前', '両', '故', '総', '約', '満', '翌']);
+  const ATTACH = new Set(['/', '／', '+', '×', '÷', '−', '-', '－', '‐', '\u02bc', '※', '～', '〜', '~']); // 前後を続ける記号（※1 は注記符、波線 ～ は公式 107704：14）
   const isKanji2 = s => /^[一-鿿々]{2}$/.test(s);
   const isLatinWord = s => /^[A-Za-zÀ-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ0-9.]*$/.test(s);
 
+  // 1字の漢字の読みの表（辞書が1字だけでは読めない漢字）
+  let KANJI_YOMI = null;
+  const kyText = typeof TENJI_KANJI_YOMI !== 'undefined' ? TENJI_KANJI_YOMI : (typeof require === 'function' ? (() => { try { return require('./kanji-yomi.js'); } catch (e) { return ''; } })() : '');
+  function kanjiYomi(surf) {
+    if (!KANJI_YOMI) { KANJI_YOMI = new Map(); for (const x of String(kyText || '').split(',')) if (x) KANJI_YOMI.set(Array.from(x)[0], x.slice(Array.from(x)[0].length)); }
+    let out = '';
+    for (const ch of surf) {
+      if (/[ぁ-ゖァ-ヺー]/.test(ch)) { out += toKatakana(ch); continue; }
+      const r = KANJI_YOMI.get(ch);
+      if (!r) return null;
+      out += r;
+    }
+    return out ? lexPron(out) : null;
+  }
   // kuromoji のトークンを語に整える（数の連続をまとめる）
   // ---------- 追加の辞書（読み）：ダウンロードして使う ----------
   // UniDic（国立国語研究所）・SudachiDict・mecab-ipadic-NEologd・日本郵便の住所と事業所の読みから、
@@ -1915,7 +1966,7 @@
         res.push({ surface_form: cm[2], pos: '名詞', pos_detail_1: '接尾', reading: { '条': 'ジョウ', '項': 'コウ', '号': 'ゴウ', '章': 'ショウ', '節': 'セツ', '款': 'カン' }[cm[2]] });
         continue;
       }
-      for (const n of [3, 2]) {
+      for (const n of [5, 4, 3, 2]) {
         const w = tokens.slice(i, i + n).map(x => x.surface_form).join('');
         if (i + n <= tokens.length && WORD_READ[w]) { res.push({ surface_form: w, pos: '名詞', pos_detail_1: '一般', reading: WORD_READ[w] }); i += n - 1; joined = true; break; }
       }
@@ -1943,6 +1994,9 @@
       // 和語の数え方（一つ、二つ…）は仮名で書く
       if (next && next.surface_form === 'つ' && /^[一二三四五六七八九1-9]$/.test(surf)) return { kana: WAGO_TSU[KANJI_DIGIT[surf] || Number(surf)], eatNext: true };
       if (next && next.surface_form === '人' && (surf === '一' || surf === '二')) return { kana: surf === '一' ? 'ヒトリ' : 'フタリ', eatNext: true };
+      // 「1組」「2組」はヒトクミ・フタクミ（公式：ヒトクミ 1311・1クミ 59）。「1年1組」（学級）は数字のまま
+      if (next && next.surface_form === '組' && /^[一二12]$/.test(surf) && !(prev && /^(年|学年)$/.test(prev.surface_form))) return { kana: /^[一1]$/.test(surf) ? 'ヒトクミ' : 'フタクミ', eatNext: true };
+      if (next && next.surface_form === '口' && /^[一二12]$/.test(surf)) return { kana: /^[一1]$/.test(surf) ? 'ヒトクチ' : 'フタクチ', eatNext: true };
       // 「4月1日」の日：1〜10日・20日は和語（ツイタチ・フツカ…ハツカ）、14日・24日は「14カ」、ほかは「15ニチ」
       if (next && next.surface_form === '日' && prev && prev.surface_form === '月' && /^[0-9]{1,2}$/.test(surf)) {
         const n = +surf;
@@ -1974,7 +2028,7 @@
     // 「3月を経過」「6月以内」のような期間はゲツ
     if (prev && prev.isNumber && surf === '月') return { kana: next && /^(を|以内|以上|未満|間|後|ごと|毎|当たり|当り|あたり|超|経過)$/.test(next.surface_form) ? 'ゲツ' : 'ガツ' };
     // 数字のあとの助数詞は、最後の数字で読みが変わる（30分 → 30プン、3本 → 3ボン）
-    if (prev && prev.isNumber && COUNTER_SOUND[surf] && /[0-9]$/.test(prev.surface_form)) {
+    if (prev && prev.isNumber && !prev._ate && COUNTER_SOUND[surf] && /[0-9]$/.test(prev.surface_form)) {
       const d = +prev.surface_form.slice(-1), tens = /[0-9]0$/.test(prev.surface_form) && prev.surface_form.length > 1;
       return { kana: COUNTER_SOUND[surf](d, tens) };
     }
@@ -1994,12 +2048,18 @@
     // 接続詞・あいさつの「は」はワ（又は → マタワ、こんにちは → コンニチワ）
     if (R && /^(接続詞|感動詞)$/.test(t.pos) && /は$/.test(surf)) return { kana: longVowel(R, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R, false).replace(/ハ$/, 'ワ') };
     if (R) {
-      return { kana: longVowel(R, t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R, t.pos === '動詞') };
+      const P = t.pronunciation && t.pronunciation !== '*' ? t.pronunciation : R;
+      // 辞書の発音に長音がない接尾語（一定量 の 量 リョウ）は、オ段・ウ段のあとのウを長音にする（公式：イッテイリョー）
+      if (P === R && t.pos === '名詞' && t.pos_detail_1 === '接尾' && /^[一-鿿]$/.test(surf)) return { kana: lexPron(R) };
+      return { kana: longVowel(R, P, t.pos === '動詞') };
     }
     // 辞書にない語（カタカナ語の区切りの中点はマスあけにする：ルイ・ブライユ → ルイ ブライユ）
     if (/^[ぁ-ゖァ-ヺー・]+$/.test(surf)) return { kana: toKatakana(surf).replace(/・/g, ' ') };
     if (/^[A-Za-z0-9.,\u02bc]+$/.test(surf)) return { kana: surf };
     if (opts && opts.fallback) { const k = opts.fallback(surf); if (k) return { kana: k, unresolved: true }; }
+    // それでも読めない字は、1字の漢字の読みの表（js/kanji-yomi.js）で読む（泳力 → エイリョク）。要確認に残す
+    const ky = kanjiYomi(surf);
+    if (ky) return { kana: ky, unresolved: true };
     return { kana: surf, unresolved: true };
   }
 
@@ -2011,6 +2071,10 @@
     // A4・B5 のように英字にすぐ続く数字は続ける
     if (t.isNumber && /^[A-Za-z]+$/.test(ps) && prev.word_position && t.word_position === prev.word_position + ps.length) return false;
     if (CLOSE_BRACKETS.has(surf) || PUNCTS.has(surf)) return false;
+    if (prev.pos === '連体詞' && p === '名詞' && !/^(よう|ほか|他)$/.test(surf)) return true;
+    if (/^(その他|その外)$/.test(surf)) return true;
+    // 「ないものの」の ものの は区切る（公式 ナイ モノノ 68：0）
+    if (surf === 'ものの' && p === '助詞') return true;
     if ((surf === '（' || surf === '(') && !PUNCTS.has(ps) && !OPEN_BRACKETS.has(ps) && prev.pos !== '助詞') return false; // 補足のカッコは前の語に続ける（ハイリョ（ホー…）
     if (OPEN_BRACKETS.has(surf)) return true;
     if (ATTACH.has(surf) || ATTACH.has(ps)) return false;
@@ -2027,21 +2091,31 @@
     if (t.basic_form === 'ない' && ((prev.pos === '助詞' && /^(は|も|こそ|さえ|しか)$/.test(ps)) || (prev.pos === '形容詞' && /く$/.test(ps)) || (prev.pos === '助動詞' && /^(たく|らしく)$/.test(ps)))) return true;
     // 「ありがとう ございます」「おめでとう ございます」の ござい は区切る（公式 586：0）
     if (/^ござい/.test(surf) && /(とう|よう)$/.test(ps)) return true;
-    if (p === '助詞' || p === '助動詞') return false; // 英字の後の助詞も続ける（点字ではつなぎ符をはさむ：CDヲ）
+    // 「および・又は・並びに・若しくは・かつ」は辞書が助詞と見ても、1語として区切る（6カゲツジ オヨビ 3サイジ）
+    if (/^(および|及び|並びに|ならびに|又は|または|若しくは|もしくは|かつ|且つ)$/.test(surf)) return true;
+    // 英字の語（外字符の略語など）のあとの助詞・助動詞は1マスあける（公式の点字データ：マスあけ 2637・つなぎ符 1。CD ヲ）
+    if ((p === '助詞' || p === '助動詞') && isLatinWord(ps) && /[A-Za-z]$/.test(ps)) return true;
+    if (p === '助詞' || p === '助動詞') return false;
     // 「1人当たり」「1月当たり」は続ける（公式 ヒトリアタリ 428：2）
     if (/^(当たり|当り|あたり)$/.test(surf) && (prev.isNumber || prev.pos_detail_1 === '接尾' || prev.pos_detail_1 === '助数詞' || /^(一人|二人|人|月|日|年|回|件|世帯)$/.test(ps))) return false;
     if (p === '名詞') {
       // 「等（とう）」と「以上・以下・未満・以内・以外」は区切る（テアテ トー、50サイ ミマン）
       if (surf === '等' || /^(以上|以下|未満|以内|以外|以降|以前|以後)$/.test(surf)) return true;
+      if (ps === '等' && prev.reading === 'トウ') return true;
       // 2字以上の接尾語で、前もあとも3拍以上なら区切る（ショーガイ テイド、ジギョー ネンド）
       if (d1 === '接尾' && /^[一-鿿]{2,}$/.test(surf) && prev.pos === '名詞' && !prev.isNumber && ctx.curMora >= 3 && Math.max(ctx.prevMora, ctx.segMora || 0) >= 3) return true;
+      // 「参加可」「申込可」の可は区切る（公式：サンカ カ 82：0）
+      if (surf === '可' && ((prev.pos === '名詞' && !prev.isNumber && prev.pos_detail_1 !== '接頭') || (prev.pos === '動詞' && /^連用/.test(prev.conjugated_form || '')))) return true;
       if (d1 === '接尾') return false;
       // 「ように」「そうだ」などの「よう・そう」は前に続ける（デキルヨーニ、ソチノヨーニ）
-      if (d1 === '非自立' && t.pos_detail_2 === '助動詞語幹') return false;
+      if ((d1 === '非自立' || d1 === '特殊') && t.pos_detail_2 === '助動詞語幹') return false;
       if (d1 === '非自立') return !(surf === 'の' || surf === 'ん');
       if (prev.pos === '接頭詞') return false;
-      // 「市ホームページ」「県ウェブサイト」：1字の漢字の名詞のあとのカタカナ語は区切る（シ ホーム ページ 1067：1）
-      if (/^[市県区町村都府国道]$/.test(ps) && prev.pos === '名詞' && /^[ァ-ヺー]{2,}$/.test(surf)) return true;
+      // 「市ホームページ」「県ウェブサイト」「市電子申請」「区情報」：1字の市・県・区などのあとの語は区切る
+      // （公式：シ ホーム ページ 1067：1、シ デンシ 818：0、ク ジョーホー 171：3、ケン チジ 573：4。区民・市役所のような1語は辞書が1語にする）
+      if (/^[市県区町村都府国道]$/.test(ps) && prev.pos === '名詞' && (/^[ァ-ヺー]{2,}$/.test(surf) || (/^[一-鿿々]{2,}/.test(surf) && !['接尾', '非自立', '数'].includes(d1)))) return true;
+      // 数字のあとの名詞は続ける（1カイジョー 63：12、2キョーシツ 70：6、3シセツ 355：2）。「第2 小学校」のように「第」の付いた数のあとは区切る
+      if (prev.isNumber && ctx.numBare && !ctx.numDai && /^[0-9][0-9.,]*$/.test(ps) && !['非自立', '代名詞'].includes(d1) && !t.isNumber) return false;
       if (prev.pos === '名詞' && !['接尾', '非自立', '数', '代名詞'].includes(prev.pos_detail_1) && !prev.isNumber && !t.isNumber) {
         if (prev.pos_detail_3 === '姓' && t.pos_detail_3 === '名') return true;
         if (isLatinWord(ps) || isLatinWord(surf)) return false;
@@ -2049,7 +2123,7 @@
         if (/^[一-鿿]$/.test(ps) && prev.pos_detail_1 === '一般' && d1 === 'サ変接続' && /^[一-鿿]{2}$/.test(surf) && !(ctx.segMora > ctx.prevMora)) return true;
         return Math.max(ctx.prevMora, ctx.segMora || 0) >= 3 && ctx.curMora >= 3; // 複合語の切れ続き（ザイエン キカン）
       }
-      if (prev.isNumber && (d1 === '接尾' || d1 === '助数詞' || /^[\u4e00-\u9fff]$/.test(surf) || UNITS.has(surf))) return false;
+      if (prev.isNumber && !prev._ate && (d1 === '接尾' || d1 === '助数詞' || /^[\u4e00-\u9fff]$/.test(surf) || UNITS.has(surf))) return false;
       return true;
     }
     if (p === '動詞') {
@@ -2060,7 +2134,9 @@
       if (t.basic_form === 'する' && prev.pos === '名詞' && prev.pos_detail_1 !== '接尾' && /^[一-鿿]$/.test(ps) && !((ctx.segMora || 0) > (ctx.prevMora || 0))) return false; // 愛する（多様化 シテ は区切る）
       // 「ください」は区切る（オモーシコミ クダサイ 198：0）。「お受けできません」の できる も区切る
       if (/^(くださ|下さ)/.test(surf)) return true;
-      if (/^(できる|する|いたす|致す)$/.test(t.basic_form || '') && prev.pos === '動詞' && ctx.honorific) return true; // オウケ デキル、オススメ シマス
+      if (/^(できる|する|いたす|致す|いただく|頂く|願う|ねがう)$/.test(t.basic_form || '') && prev.pos === '動詞' && ctx.honorific) return true; // オウケ デキル、オススメ シマス、オモチ イタダク（公式 31：0）
+      // 「申し込みできる」：動詞の連用形（名詞のように使う形）のあとの できる は区切る（公式：モーシコミ デキ 97：0）
+      if (/^(できる|いただく|頂く)$/.test(t.basic_form || '') && prev.pos === '動詞' && /^連用/.test(prev.conjugated_form || '') && prev.pos_detail_1 === '自立' && Array.from(ps).length >= 2 && /[一-鿿]/.test(ps)) return true;
       if (['てる', 'でる', 'とく', 'どく', 'ちゃう', 'じゃう', 'ちまう'].includes(t.basic_form)) return false;
       if (t.basic_form === 'なさる' && prev.pos === '動詞') return false;
       // 複合動詞（混み合う・歩き続ける）は続ける
@@ -2088,7 +2164,9 @@
     '匹': d => [1, 6, 8, 0].includes(d) ? 'ピキ' : d === 3 ? 'ビキ' : 'ヒキ',
     '発': d => [1, 6, 8, 0].includes(d) ? 'パツ' : 'ハツ',
     '泊': d => [1, 3, 4, 6, 8, 0].includes(d) ? 'パク' : 'ハク',
-    '歩': d => [1, 6, 8, 0].includes(d) ? 'ポ' : d === 3 ? 'ボ' : 'ホ'
+    '歩': d => [1, 6, 8, 0].includes(d) ? 'ポ' : d === 3 ? 'ボ' : 'ホ',
+    '分間': d => ([1, 3, 4, 6, 8, 0].includes(d) ? 'プン' : 'フン') + 'カン',
+    '階': d => d === 3 ? 'ガイ' : 'カイ'
   };
   // 辞書の読みが、点訳のふつうの読みと違う語
   const WORD_READ = { '毎年': 'マイネン', '如何': 'イカン', '上方': 'ジョーホー', '車いす': 'クルマイス', '車椅子': 'クルマイス',
@@ -2096,10 +2174,16 @@
     '日本': 'ニホン', '日本年金機構': 'ニッポン ネンキン キコー', '日本郵便': 'ニッポン ユービン', '日本赤十字社': 'ニホン セキジュージシャ', '日本銀行': 'ニッポン ギンコー', '日本放送協会': 'ニッポン ホーソー キョーカイ', '本市': 'ホンシ', '本県': 'ホンケン', '本町': 'ホンチョー', '本区': 'ホンク', '本村': 'ホンソン', '本学': 'ホンガク', '本校': 'ホンコー', '本会': 'ホンカイ', '本件': 'ホンケン', '本書': 'ホンショ', '本法': 'ホンポー', '本省': 'ホンショー', '本庁': 'ホンチョー', '本制度': 'ホンセイド', '本事業': 'ホンジギョー', '各課': 'カク カ', '各月': 'カク ツキ', '款': 'カン', '何人も': 'ナニビトモ', '対償': 'タイショー',
     // 公式の点字データ（厚生労働省）と比べて分かった、辞書の読みが違う・ない語
     '令和': 'レイワ', '令': 'レイ', '附則': 'フソク', '事業主': 'ジギョーヌシ', '届出': 'トドケデ', '獣医師': 'ジューイシ', '獣医': 'ジューイ', '被毛': 'ヒモー',
-    '毎年度': 'マイネンド', '各省各庁': 'カクショー カクチョー', '関係会社': 'カンケイガイシャ', '親事業主': 'オヤジギョーヌシ', '安定所': 'アンテイジョ',
+    '毎年度': 'マイネンド', '各省各庁': 'カク ショー カク チョー', '第三者': 'ダイ3シャ', '差し支えない': 'サシツカエ ナイ', '差支えない': 'サシツカエ ナイ', '差し支えなく': 'サシツカエ ナク', '差支えなく': 'サシツカエ ナク', '母犬': 'ボケン', '関係会社': 'カンケイガイシャ', '親事業主': 'オヤジギョーヌシ', '安定所': 'アンテイジョ',
     '前号': 'ゼンゴー', '前項': 'ゼンコー', '前条': 'ゼンジョー', '次条': 'ジジョー', '次項': 'ジコー', '次号': 'ジゴー', '上欄': 'ジョーラン', '下欄': 'カラン',
     '介助犬': 'カイジョケン', '聴導犬': 'チョードーケン', '両眼': 'リョーガン', '市区町村': 'シクチョーソン', '市町村民税': 'シチョーソンミンゼイ', '等': 'トー',
-    'やむを得ない': 'ヤムヲ エナイ', 'やむを得ず': 'ヤムヲ エズ', '止むを得ない': 'ヤムヲ エナイ', '止むを得ず': 'ヤムヲ エズ', '付則': 'フソク', '抄': 'ショー', '申出': 'モーシデ', 'ただし書': 'タダシガキ', '但し書': 'タダシガキ', '但書': 'タダシガキ' };
+    'やむを得ない': 'ヤムヲ エナイ', 'やむを得ず': 'ヤムヲ エズ', '止むを得ない': 'ヤムヲ エナイ', '止むを得ず': 'ヤムヲ エズ', '付則': 'フソク', '抄': 'ショー', '申出': 'モーシデ', 'ただし書': 'タダシガキ', '但し書': 'タダシガキ', '但書': 'タダシガキ',
+    // 広報なごやの墨字と点字（約5900文）を照らし合わせて分かった語（公式の点字データの数：ブンベツ 819・フンベツ 0、ケンシン 5887、タダシク 281・マサシク 3、カク ク 249・カック 0）
+    '分別': 'ブンベツ', '健診': 'ケンシン', '正しく': 'タダシク', '各区': 'カク ク', '各市': 'カク シ', '各町': 'カク チョー', '雑がみ': 'ザツガミ', '雑紙': 'ザツガミ',
+    'フッ化物': 'フッカブツ', 'フッ素': 'フッソ', '何でも': 'ナンデモ', 'この度': 'コノタビ', '此の度': 'コノタビ', '鶏肉': 'トリニク', '重複': 'チョーフク', 'ボウフラ': 'ボーフラ',
+    '原動機付': 'ゲンドーキツキ', '隙': 'スキ', '寝たばこ': 'ネタバコ', '寝タバコ': 'ネタバコ', '持込': 'モチコミ', '持込み': 'モチコミ', '同一': 'ドーイツ', '相談所': 'ソーダンジョ', '避難所': 'ヒナンジョ', '内視鏡': 'ナイシキョー', '便中': 'ベンチュー', '中区': 'ナカク', '次亜塩素酸': 'ジアエンソサン',
+    '戸建': 'コダテ', '戸建て': 'コダテ', '吐物': 'トブツ', '嘔吐物': 'オートブツ', '飼い犬': 'カイイヌ', '飼犬': 'カイイヌ', '飼い猫': 'カイネコ', '飼猫': 'カイネコ', '長ズボン': 'ナガズボン', '長袖': 'ナガソデ', '半袖': 'ハンソデ',
+    '引取': 'ヒキトリ', '引取り': 'ヒキトリ', '幸多き年': 'サチ オオキ トシ', '日中': 'ニッチュー', '白黒': 'シロクロ', '日清': 'ニッシン', '立会人': 'タチアイニン', '立ち会い人': 'タチアイニン', 'X線': 'エックスセン', 'エックス線': 'エックスセン', 'たまり水': 'タマリミズ', '溜まり水': 'タマリミズ', '施工': 'セコー' };
   // 読みが割れる語（候補を出して、点訳者に選んでもらう）
   const AMBIG = {
     '毎年': ['マイネン', 'マイトシ'], '如何': ['イカン', 'イカガ'], '上方': ['ジョーホー', 'カミガタ'],
@@ -2109,7 +2193,7 @@
     '下手': ['ヘタ', 'シモテ', 'シタテ'], '人気': ['ニンキ', 'ヒトケ'], '生物': ['セイブツ', 'ナマモノ'],
     '色紙': ['シキシ', 'イロガミ'], '市場': ['イチバ', 'シジョー'], '大家': ['オーヤ', 'タイカ'],
     '一行': ['イチギョー', 'イッコー'], '風車': ['フーシャ', 'カザグルマ'], '最中': ['サイチュー', 'モナカ'],
-    '何人': ['ナンニン', 'ナニジン'],
+    '何人': ['ナンニン', 'ナニジン'], '私立': ['シリツ', 'ワタクシリツ'], '相談所': ['ソーダンジョ', 'ソーダンショ'],
     '今月末': ['コンゲツマツ', 'コンゲツ スエ'], '一番': ['イチバン', 'イチ バン'], '行方': ['ユクエ', 'ギョーホー', 'イクエ'], '一時': ['イチジ', 'イットキ', 'イチ ジ']
   };
 
@@ -2121,7 +2205,7 @@
       // 公式の点字データでは「の方は・に・が」の 85% 以上がカタ。方向（こちらの方・右の方・〜の方へ）や比べるとき（〜の方が良い）はホー
       const p2s = p2 ? p2.surface_form : '';
       const n2 = tokens[i + 2];
-      const dir = /^(こちら|そちら|あちら|どちら|こっち|そっち|あっち|どっち|前|後|後ろ|右|左|上|下|東|西|南|北|内|外|奥|先|手前|中|横|裏|表|山|海|川|駅|窓|出口|入口)$/.test(p2s) ||
+      const dir = (/^(こちら|そちら|あちら|どちら|こっち|そっち|あっち|どっち|前|後|後ろ|右|左|上|下|東|西|南|北|内|外|奥|先|手前|中|横|裏|表|山|海|川|駅|窓|出口|入口)$/.test(p2s) && !(p2 && p2.pos_detail_1 === '接尾')) ||
         (n1 && n1.surface_form === 'へ') || (n1 && n1.surface_form === 'が' && n2 && /^(よい|良い|いい|良く|よく|多い|少ない|大きい|小さい|早い|遅い|安い|高い|便利|楽|簡単|まし|有利|効果|上|下)/.test(n2.surface_form));
       const person = !dir;
       const kana = person ? 'カタ' : 'ホー';
@@ -2150,12 +2234,51 @@
       if (p1.pos === '動詞' && /^連用/.test(p1.conjugated_form || '')) return { surface: p1.surface_form + '方', kana: 'カタ', options: ['カタ', 'ホー'] };
       return { surface: '方', kana: 'カタ', options: ['カタ', 'ホー'], brk: true };
     }
+    // 「ご都合の悪い方」「お困りの方」：形容詞のあとの「方」も人（カタ）。比べるとき（よい方が）はホー
+    if (surf === '方' && p1 && p1.pos === '形容詞' && (t.pos_detail_1 === '非自立' || t.pos_detail_1 === '接尾')) {
+      const n2 = tokens[i + 2];
+      // 「良い方の目」「大きい方を選ぶ」は比べる言い方なのでホー（公式：ヨイ ホーノ メ）
+      const cmp = (n1 && n1.surface_form === 'の') || (n1 && n1.surface_form === 'が' && n2 && /^(よい|良い|いい|良く|よく|まし|便利|楽|安全|確実|早い|効果)/.test(n2.surface_form)) ||
+        (n1 && /^(を|に|へ)$/.test(n1.surface_form) && /^(大き|小さ|高|低|多|少な|長|短|良|よ|い|早|遅|近|遠|重|軽|広|狭|強|弱|新し|古|安|濃|薄|太|細|明る|暗)い$/.test(p1.surface_form));
+      if (cmp) return { surface: '方', kana: 'ホー', options: ['ホー', 'カタ'], brk: true };
+      return { surface: '方', kana: 'カタ', options: ['カタ', 'ホー'], brk: true };
+    }
+    // 「実施した後に」「終わった後」：動詞・た のあとの「後」はアト（公式 222：105）
+    if (surf === '後' && p1 && (p1.pos === '動詞' || (p1.pos === '助動詞' && /^(た|だ)$/.test(p1.surface_form))) && t.pos === '名詞') return { surface: '後', kana: 'アト', options: ['アト', 'ノチ', 'ゴ'] };
+    // 「申込前」「受付前」：動詞のような名詞のあとの「前」はマエと読んで区切る（公式：モーシコミ マエ 24：0）
+    if (surf === '前' && p1 && p1.pos === '名詞' && /(込|込み|付|付け|続|続き)$/.test(p1.surface_form)) return { surface: p1.surface_form + '前', kana: 'マエ', options: ['マエ', 'ゼン'], brk: true };
     // 「年4回」「年に1度」の年はネン（公式 199：55、194：7）
     if (surf === '年' && t.pos === '名詞' && !(p1 && p1.isNumber) && n1 && (n1.isNumber || (n1.surface_form === 'に' && tokens[i + 2] && tokens[i + 2].isNumber))) return { surface: '年', kana: 'ネン', options: ['ネン', 'トシ'] };
     // 「〜の数」「定める数」：スー（法令・統計の書き方）
     if (surf === '数' && p1 && (/^(の|その|この|当該|同|総)$/.test(p1.surface_form) || p1.pos === '動詞') && t.reading === 'カズ') return { surface: '数', kana: 'スー', options: ['スー', 'カズ'] };
     // 「機関の長」「その長」：チョー
     if (surf === '長' && p1 && /^(の|その|当該|この)$/.test(p1.surface_form) && (!n1 || !/^(い|く|かっ|さ|すぎ)/.test(n1.surface_form))) return { surface: '長', kana: 'チョー', options: ['チョー', 'ナガ'] };
+    return null;
+  }
+
+  // 4字以上の漢字の1語（関東大震災・弘法大師・年末年始・高等学校）は、辞書が知っている2つの語に分けられて、どちらも3拍以上なら区切る
+  // （公式の点字データ：カントー ダイシンサイ 72：0、コートー ガッコー 434：0、メイジ イシン 48：0）。
+  // 前の語はいちばん長いものを選び、そのあとが1語でなければ分けない（図書館｜長）。連濁して1語になった語（株式会社 カブシキガイシャ 837：0）は分けない
+  const COORD = new Set(['都道府県', '市区町村', '小中学校', '東西南北', '春夏秋冬', '老若男女', '冠婚葬祭', '喜怒哀楽', '都道府県庁', '区市町村']);
+  function splitCompound(t, kana, tokenize) {
+    const S = t.surface_form;
+    if (!tokenize || !/^[一-鿿々]{4,}$/.test(S) || / /.test(kana) || COORD.has(S)) return null;
+    const one = x => {
+      const a = tokenize(x);
+      return a.length === 1 && a[0].pos === '名詞' && a[0].word_type === 'KNOWN' && !['接尾', '非自立', '数', '代名詞'].includes(a[0].pos_detail_1) && a[0].reading && a[0].reading !== '*' ? a[0] : null;
+    };
+    const kanaOf = a => longVowel(a.reading, a.pronunciation && a.pronunciation !== '*' ? a.pronunciation : a.reading, false);
+    for (let k = S.length - 2; k >= 2; k--) {
+      const a = one(S.slice(0, k));
+      if (!a) continue;
+      const b = one(S.slice(k));
+      if (!b) return null;
+      const ka = kanaOf(a), kb = kanaOf(b);
+      if (kana !== ka + kb) return null;
+      const mo = (x, kx) => isKanji2(x) ? 3 : moraCount(kx);
+      if (mo(S.slice(0, k), ka) < 3 || mo(S.slice(k), kb) < 3) return null;
+      return ka + ' ' + kb;
+    }
     return null;
   }
 
@@ -2180,6 +2303,10 @@
       const ctxCheck = contextReading(tokens, i);
       if (ctxCheck) { r = { kana: ctxCheck.kana }; checks.push(ctxCheck); if (ctxCheck.attach) ctx.attachHere = true; }
       if (r.unresolved) unresolved.push(surf);
+      if (t.pos === '名詞' && !t.isNumber && r.kana && !ctxCheck && opts && opts.tokenize && !['接尾', '非自立', '数', '代名詞'].includes(t.pos_detail_1)) {
+        const sp = splitCompound(t, r.kana, opts.tokenize);
+        if (sp) r = Object.assign({}, r, { kana: sp });
+      }
       if (AMBIG[surf] && r.kana) checks.push({ surface: surf, kana: r.kana, options: AMBIG[surf] });
       // 追加の辞書で読みが割れる語（地名・人名など）は、ほかの読みを校正の候補に出す
       else if (t.lexAlts && r.kana) checks.push({ surface: surf, kana: r.kana, options: [r.kana, ...t.lexAlts.map(lexPron)].filter((x, k, a) => a.indexOf(x) === k), note: '大きな辞書で読みが割れる語です' });
@@ -2193,13 +2320,18 @@
       ctx.segMora = brk || !out ? ctx.curMora : (ctx.segMora || 0) + ctx.curMora;
       out += r.kana;
       t._kana = r.kana;
+      t._ate = !!r.eatNext; // 助数詞まで読んだ数（1組 → ヒトクミ、1日 → ツイタチ）
       if (r.eatNext) i++;
       // 1字の接頭語（各・旧・新・毎・全など）は、あとに2字以上の語が来れば区切る（カク ゴー、キュー キソク、マイ ジギョー）
       const nt = tokens[i + 1];
-      const sepPrefix = t.pos === '接頭詞' && SEP_PREFIX.has(surf) && nt && nt.pos === '名詞' && (surf === '各' || nt.isNumber || /^[一-鿿々]{2,}/.test(nt.surface_form));
+      const sepPrefix = t.pos === '接頭詞' && SEP_PREFIX.has(surf) && nt && nt.pos === '名詞' && (surf === '各' || nt.isNumber || /^[一-鿿々]{2,}/.test(nt.surface_form)) &&
+        !(nt && /^(年度|年|月|日|週|朝|晩|夕|年間|月分|年分|学期|期|営業日)$/.test(nt.surface_form) && surf !== '各' && !(surf === '翌' && nt.surface_form === '営業日'));
       ctx.attachNext = (t.pos === '接頭詞' && !sepPrefix) || OPEN_BRACKETS.has(surf);
       if (sepPrefix) ctx.forceBreak = true;
       ctx.prevMora = ctx.curMora;
+      // 数字のあとの名詞を続けるかどうか：「第2」のあと、「1日」のように助数詞まで読んだあとは除く
+      ctx.numDai = !!(t.isNumber && prev && prev.surface_form === '第');
+      ctx.numBare = !!(t.isNumber && !r.eatNext);
       prev = t;
     }
     return { kana: applySpacing(normalizeSpacing(out)), unresolved, checks };

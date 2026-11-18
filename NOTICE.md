@@ -16,6 +16,8 @@
 | 日本語の読みの辞書（一般の語・人名・地名・会社や作品など） | [UniDic](https://clrd.ninjal.ac.jp/unidic/)（国立国語研究所）cwj 202512、[SudachiDict](https://github.com/WorksApplications/SudachiDict) 20261015、[mecab-ipadic-NEologd](https://github.com/neologd/mecab-ipadic-neologd)、[日本郵便 郵便番号データ](https://www.post.japanpost.jp/zipcode/download.html) | UniDic：BSD（GPL・LGPL との選択）、SudachiDict：Apache License 2.0（UniDic・NEologd を含む）、NEologd：Apache License 2.0（はてなキーワード・郵便番号データ・日本全国駅名一覧・人名データを含む）、郵便番号データ：日本郵便は著作権を主張していません |
 | 外国語の点字 | [liblouis](https://github.com/liblouis/liblouis) 3.39.0（コミット 011cfb3）を Emscripten で WebAssembly にしたものと、liblouis の点字の表 | GNU Lesser General Public License 2.1 以降。ビルドに使ったソースは `packs/src/liblouis-3.39.0-src.tar.gz`、作り方は `tools/build-liblouis.sh` |
 
+`js/kanji-yomi.js`（1字の漢字の読み、約1,840字）は、上の UniDic・SudachiDict・NEologd の1字の見出しから、エディタの辞書が1字だけでは読めない漢字の読みを選んだものです（UniDic：BSD、SudachiDict・NEologd：Apache License 2.0）。
+
 日本語の辞書は、エディタに入っている辞書（IPA辞書）と読みが違う語・ない語だけを集め、大きな辞書どうしの読みを照らし合わせたうえで、
 公式の点字データ（約164万行）に出てくる読みで確かめて作りました（点字データそのものはパックにも入れていません）。
 
@@ -34,7 +36,9 @@
   点字データそのものは置いていません。出典：厚生労働省ホームページ。
 - 書き方の調査には、だれでもダウンロードできる次の点字データも使いました（調べて分かった規則だけを取り入れ、データそのものは置いていません）。
   厚生労働省「点字ダウンロード」、日本語能力試験「点字ファイルダウンロード」（https://www.jlpt.jp/tenji.html）、
-  名古屋市「広報なごや点字版」・「市会だより点字版」、つくば市「広報つくば・かわら版 点字データ」、文京区の点字データ。
+  名古屋市「広報なごや点字版」・「市会だより点字版」、つくば市「広報つくば・かわら版 点字データ」、文京区の点字データ、
+  千葉県文書館「収蔵資料・刊行物の点字データ」（https://www.pref.chiba.lg.jp/bunshokan/contents/shuuzoushiryou/download.html ）、
+  日本年金機構「障害年金ガイド」点字版、神戸市「障害福祉のあらまし」点字版、鎌倉市「家庭ごみの分け方・出し方」点字版。
 - 自治体の広報の墨字（つくば市「広報つくば」PDF、栗東市「広報りっとう」HTML版、名古屋市会「市会だより」PDF）を、同じ号の点字版と
   文ごとに対応させて比べました（墨字も点字もリポジトリには入れていません）。
 - `js/spacing-data.js`（分かち書きの一覧）は、上の公式の点字データ（約164万行）を仮名に読み戻し、区切る形と続ける形の数を比べて作ったものです。

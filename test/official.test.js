@@ -42,12 +42,17 @@ const words = k => k.replace(/⁑/g, 'ヲヲ').replace(/[（）()「」『』]/g
     ['これは本ではない。', 'コレワ ホンデワ ナイ。'],
     ['美しくない。', 'ウツクシク ナイ。'],
     ['午前10時30分', 'ゴゼン 10ジ 30プン'],
-    ['CDを買う', 'CDヲ カウ'],
+    // アルファベットの後ろの助詞・助動詞は、つなぎ符をはさまずに1マスあける（文部科学省「点字学習指導の手引」令和5年 第6章。公式の点字データでもマスあけ 2637・つなぎ符 1）
+    ['CDを買う', 'CD ヲ カウ'],
+    ['PTAの総会', 'PTA ノ ソーカイ'],
+    ['ISOへの提案', 'ISO エノ テイアン'],
+    ['どうやらUFOらしい', 'ドーヤラ UFO ラシイ'],
   ];
   for (const [s, w] of cases) assert.strictEqual(conv(s), w, s);
   // 点字の形
   assert.strictEqual(E.kanaToBraille('（ア（イ）ウ）').cells, '⠶⠁⠰⠶⠃⠶⠆⠉⠶', 'カッコの中のカッコは ⠰⠶ … ⠶⠆');
-  assert.strictEqual(E.kanaToBraille('CDヲ').cells, '⠰⠠⠠⠉⠙⠤⠔', '英字の後の仮名はつなぎ符');
+  assert.strictEqual(E.kanaToBraille('CDヲ').cells, '⠰⠠⠠⠉⠙⠤⠔', '1語の中の英字の後の仮名はつなぎ符');
+  assert.strictEqual(E.kanaToBraille('PTA ノ').cells, '⠰⠠⠠⠏⠞⠁⠀⠎', '助詞の前はマスあけ');
   assert.strictEqual(E.kanaToBraille('FIELD NOTES').cells, '⠦⠠⠠⠋⠊⠑⠇⠙⠀⠠⠠⠝⠕⠞⠑⠎⠴', '2語以上の英語は外国語引用符');
   assert.strictEqual(E.kanaToBraille('Japanese').cells, '⠦⠠⠚⠁⠏⠁⠝⠑⠎⠑⠴', '1語でも英単語は外国語引用符（文部科学省の手引・公式データ）');
   assert.strictEqual(E.kanaToBraille('NPO').cells, '⠰⠠⠠⠝⠏⠕', '略語は外字符');

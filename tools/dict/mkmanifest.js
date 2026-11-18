@@ -25,7 +25,7 @@ const m = {
     {
       id: 'louis', kind: 'louis', title: '外国語の点字（約' + langs + 'の言語）',
       desc: '英語・韓国語・中国語・フランス語・ドイツ語・スペイン語・ロシア語・エスペラントなどの点字（liblouis ' + cat.liblouis + '）。「文書の言語」でこれらの言語を選べるようになり、日本語の文の中のハングルやキリル文字なども、その言語の点字で外国語引用符の中に書きます。',
-      version: VERSION, entries: cat.tables.length, license: 'liblouis（LGPL-2.1 以降）',
+      version: process.env.LOUIS_VERSION || VERSION, entries: cat.tables.length, license: 'liblouis（LGPL-2.1 以降）',
       files: [file('louis/louis.js', 'text/javascript'), file('louis/louis.wasm', 'application/wasm'), file('louis/tables.zip', 'application/zip'), file('louis/catalog.json', 'application/json')]
     }
   ]
