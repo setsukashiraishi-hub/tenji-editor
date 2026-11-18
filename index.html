@@ -29,6 +29,7 @@
         </div>
       </div>
       <button type="button" id="btn-checklist" class="btn check-btn" aria-haspopup="dialog" title="読み方を判定できなかった箇所などの一覧（F7）">校正箇所の一覧<span class="badge" id="check-count" aria-hidden="true">0</span></button>
+      <button type="button" id="btn-packs" class="btn" aria-haspopup="dialog" title="大きな辞書や外国語の点字をダウンロードして、このブラウザに保存します">辞書・言語パック<span class="badge ok" id="pack-count" aria-hidden="true" hidden>0</span></button>
     </div>
 
     <div class="bar-group">
@@ -40,6 +41,15 @@
           <option value="braille-unicode">点字（Unicode） → 墨字</option>
         </select>
       </label>
+      <label class="field" for="doclang">
+        <span>文書の言語</span>
+        <select id="doclang" aria-describedby="doclang-hint">
+          <option value="ja">日本語</option>
+          <option value="en-ueb1">英語（UEB・略字なし）</option>
+          <option value="en-ueb2">英語（UEB・略字あり）</option>
+        </select>
+      </label>
+      <span id="doclang-hint" class="sr-only">文書全体が外国語のときに選びます。日本語の文の中の英語やハングルなどは、日本語のままで点訳できます。ほかの言語は、辞書・言語パックで外国語の点字をダウンロードすると選べるようになります。</span>
     </div>
 
     <div class="bar-group">
@@ -91,6 +101,20 @@
         <button type="button" class="btn primary" id="batch-go">書き出す（Enter）</button>
         <button type="button" class="btn" id="batch-back">戻る（Esc）</button>
       </div>
+    </div>
+  </dialog>
+
+  <dialog class="sheet packs" id="pack-dlg" aria-labelledby="pack-head" aria-describedby="pack-desc">
+    <div class="sheet-body">
+      <h2 id="pack-head" tabindex="-1">辞書・言語パック</h2>
+      <p id="pack-desc">ダウンロードすると、このブラウザに保存されて、次からはネットにつながっていなくても使えます。日本語の辞書は、人名・地名・専門用語などの漢字の読みを正しくします。外国語の点字は、ハングルやロシア語などを、その言語の点字で書けるようにします。</p>
+      <p class="pack-storage" id="pack-storage"></p>
+      <div class="pack-list" id="pack-list" role="list" aria-label="パックの一覧"></div>
+      <div class="t-actions">
+        <button type="button" class="btn primary" id="pack-all">まだのものをすべてダウンロード</button>
+        <button type="button" class="btn" id="pack-close">閉じる（Esc）</button>
+      </div>
+      <div id="pack-live" class="sr-only" role="status" aria-live="polite"></div>
     </div>
   </dialog>
 
@@ -317,6 +341,7 @@
   <script src="js/figure.js"></script>
   <script src="js/formats.js"></script>
   <script src="js/draw.js"></script>
+  <script src="js/packs.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

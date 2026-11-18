@@ -17,7 +17,7 @@
 
   const els = {
     src: $('src'), rows: $('rows'), mode: $('mode'), cols: $('cols'), lines: $('lines'),
-    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'), eng2: $('eng2'),
+    indent: $('indent'), hira: $('hira'), pagenum: $('pagenum'), genpon: $('genpon'), framefit: $('framefit'), enueb: $('enueb'), eng2: $('eng2'), doclang: $('doclang'),
     fileName: $('file-name'), note: $('file-note'),
     stDict: $('st-dict'), stCount: $('st-count'), stWarn: $('st-warn'), navCheck: $('nav-check'),
     exportBtn: $('btn-export'), exportPop: $('export-pop'), toast: $('toast'), dropHint: $('drop-hint'),
@@ -173,7 +173,24 @@
     return out || null;
   }
 
+  // 外国語の文書（文書の言語が日本語でないとき）：かなの欄は外国語の文のまま。行の頭に E.DOC_MARK を付けて、その言語の点字にする
+  const isForeignDoc = () => !!state.lang && state.lang !== 'ja';
+  const kanaFromEdit = v => isForeignDoc() ? E.DOC_MARK + hideSpaces(v) : E.toKatakana(hideSpaces(v));
+  function kanaFromCells(cells, st) {
+    if (isForeignDoc()) {
+      let t = null;
+      try { t = state.foreignBack ? state.foreignBack(cells) : null; } catch (e) { t = null; }
+      return E.DOC_MARK + (t == null ? '〓' : t.replace(/\u2800/g, ' '));
+    }
+    const k = E.brailleToKana(cells, st);
+    return typeof k === 'string' ? k : k.kana;
+  }
   function convertLine(text) {
+    if (isForeignDoc()) {
+      const kana = E.DOC_MARK + text.replace(/\t/g, ' ').replace(/\s+$/, '');
+      const b = E.kanaToBraille(kana);
+      return { kana, cells: b.cells, unknown: b.unknown, bad: b.bad, unresolved: [], checks: [], foreign: [] };
+    }
     let kana = text, unresolved = [], checks = [], foreign = [];
     if (state.tokenizer) {
       const r = E.sumijiToKana(text, t => state.tokenizer.tokenize(t), { fallback: readByChar });
@@ -246,7 +263,7 @@
         out.push({ src: r.cells, type: decor, fixed: true, cells: r.cells, kana: E.decorText(decor, r.cells), para: false });
         continue;
       }
-      const kana = E.brailleToKana(r.cells, st);
+      const kana = isForeignDoc() ? kanaFromCells(r.cells) : E.brailleToKana(r.cells, st);
       const prevFig = out[out.length - 1] && out[out.length - 1].type === 'figure' && out[out.length - 1].fixed;
       if (E.looksLikeGraphic(r.cells, kana) || (prevFig && DENSE.test(r.cells))) {
         // 点図・模様の行は読まずに図として残す（墨字にも点の形のまま起こす）
@@ -279,7 +296,7 @@
   // ---------- 描画 ----------
   // 発音記号の印 ⟦ ⟧ は、画面では [ ] で見せる（[ ] のまま直しても発音記号の点字になる）
   // 画面と墨字では、内部の印（英語の語句 ⟪ ⟫・アドレス ⟬ ⟭・続きの行 ↪）を見せない
-  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪⟮⟯\ue0f0]/g, '');
+  const displayKana = k => (els.hira.checked ? E.toHiragana(k) : k).replace(/⟦/g, '[').replace(/⟧/g, ']').replace(/[⟪⟫⟬⟭↪⟮⟯\ue0f0\ue0f1]/g, '');
   const cellLen = s => Array.from(s || '').length;
   const TYPE_LABEL = Object.fromEntries(E.ROW_TYPES);
   const needsCheck = r => !r.pagebreak && !r.reviewed &&
@@ -293,7 +310,7 @@
     if (miss.length) out.push('辞書にない語・点字にできない文字：' + miss.join(' '));
     if ((r.unresolved || []).includes('〓')) out.push('読めない点字');
     // 外国語の点字は言語ごとに違う（英語の点字とは別）。その言語の点字で書くか、点訳者が決める
-    for (const f of (r.foreign || [])) out.push(`外国語「${f.text}」：${f.kind}。点字の書き方は言語ごとに違うので、書き方を確認してください`);
+    for (const f of (r.foreign || [])) out.push(f.table ? `外国語「${f.text}」：${f.kind}。外国語の点字パックの「${f.tableName}」の書き方で、外国語引用符の中に書きました。書き方を確認してください` : `外国語「${f.text}」：${f.kind}。点字の書き方は言語ごとに違うので、書き方を確認してください`);
     return out;
   }
 
@@ -645,8 +662,7 @@
     // 点字を直したら、かなは点字から読み直す（かなの欄も合わせる）
     const applyCells = (cells, caret) => {
       row.cells = cells;
-      const k = E.brailleToKana(cells);
-      row.kana = typeof k === 'string' ? k : k.kana;
+      row.kana = kanaFromCells(cells);
       if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
       row.unknown = []; row.bad = []; row.unresolved = []; row.edited = true; row.reviewed = true; row.cellsEdited = true;
       brEdit.value = cells;
@@ -697,7 +713,7 @@
       const pos = edit.selectionStart;
       const v = showSpaces(edit.value);
       if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
-      row.kana = E.toKatakana(hideSpaces(v));
+      row.kana = kanaFromEdit(v);
       if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
       const b = E.kanaToBraille(row.kana);
       row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
@@ -871,7 +887,7 @@
       const pos = edit.selectionStart;
       const v = showSpaces(edit.value);
       if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
-      r.kana = E.toKatakana(hideSpaces(v));
+      r.kana = kanaFromEdit(v);
       r.tkana = r.kana.split(/ {2,}/);
       const b = E.kanaToBraille(r.kana);
       r.cells = b.cells; r.unknown = b.unknown; r.bad = b.bad; r.unresolved = []; r.edited = true; r.reviewed = true;
@@ -2876,7 +2892,7 @@
           const parts = displayKana(w.r.kana).split(/( +)/);
           parts[w.n * 2] = k;
           const r = w.r;
-          r.kana = E.toKatakana(parts.join(''));
+          r.kana = isForeignDoc() ? E.DOC_MARK + parts.join('') : E.toKatakana(parts.join(''));
           if (r.type === 'table') r.tkana = r.kana.split(/ {2,}/);
           const b = E.kanaToBraille(r.kana);
           r.cells = b.cells; r.bad = b.bad; r.unknown = b.unknown; r.edited = true;
@@ -3012,6 +3028,283 @@
     } else els.src.focus();
   }
 
+  // ---------- 辞書・言語パック（ダウンロードして、このブラウザに保存して使う） ----------
+  const PKS = window.TenjiPacks;
+  const PK = { btn: $('btn-packs'), count: $('pack-count'), dlg: $('pack-dlg'), head: $('pack-head'), list: $('pack-list'),
+    storage: $('pack-storage'), all: $('pack-all'), close: $('pack-close'), live: $('pack-live') };
+  const pk = { manifest: null, recs: [], busy: new Map(), loaded: new Map(), err: new Map(), louis: null, delArm: null };
+  const fmtBytes = n => n >= 1e9 ? (n / 1e9).toFixed(1) + 'GB' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'MB' : Math.max(1, Math.round(n / 1e3)) + 'KB';
+  const fmtCount = n => n >= 10000 ? '約' + Math.round(n / 10000) + '万' : String(n);
+  let pkLiveTimer = null;
+  const pkLive = msg => { clearTimeout(pkLiveTimer); PK.live.textContent = ''; pkLiveTimer = setTimeout(() => { PK.live.textContent = msg; }, 60); };
+
+  // 文書の言語：日本語のほか、英語（このエディタの英語の点字）と、外国語の点字パックの言語
+  const LANG_BUILTIN = { 'en-ueb1': '英語（UEB・略字なし）', 'en-ueb2': '英語（UEB・略字あり）' };
+  // 日本語の文の中の外国の文字を書く表（外国語の点字パックにあるとき）
+  const SCRIPT_TABLE = { hangul: 'ko-g2.ctb', cyrillic: 'ru-litbrl.ctb', arabic: 'ar.tbl', hebrew: 'he-IL.utb', thai: 'th-g0.utb', devanagari: 'hi.tbl' };
+  const LANG_KEY = 'tenji-editor-doclang';
+  const savedLang = () => { try { return localStorage.getItem(LANG_KEY) || 'ja'; } catch (e) { return 'ja'; } };
+  const saveLang = v => { try { localStorage.setItem(LANG_KEY, v); } catch (e) { /* 保存できなくても使える */ } };
+  function fillLangs() {
+    const sel = els.doclang;
+    sel.querySelectorAll('optgroup').forEach(g => g.remove());
+    if (pk.louis) {
+      const g = document.createElement('optgroup');
+      g.label = '外国語の点字パック';
+      for (const t of pk.louis.catalog) {
+        const o = document.createElement('option');
+        o.value = t.table;
+        o.textContent = `${t.name}　${t.en}` + (t.back ? '' : '（点字から文字には戻せません）');
+        g.appendChild(o);
+      }
+      sel.appendChild(g);
+    }
+    const want = savedLang();
+    sel.value = [...sel.options].some(o => o.value === want) ? want : 'ja';
+    state.lang = sel.value;
+  }
+  function applyForeign() {
+    const lo = pk.louis;
+    const scripts = {};
+    if (lo) for (const k in SCRIPT_TABLE) if (lo.catalog.some(c => c.table === SCRIPT_TABLE[k])) scripts[k] = SCRIPT_TABLE[k];
+    const lang = state.lang || 'ja';
+    const back = (cells, t) => t === 'en-ueb1' ? E.englishFromBraille(cells, true) : t === 'en-ueb2' ? E.englishFromBraille2(cells) : lo && lo.canBack(t) ? lo.back(cells, t) : null;
+    E.setForeign({
+      doc: lang === 'ja' ? null : lang,
+      forward: (text, t) => t === 'en-ueb1' ? E.englishBraille(text, true, false) : t === 'en-ueb2' ? E.englishBraille(text, true, true) : lo ? lo.forward(text, t) : null,
+      back, scripts,
+      name: t => LANG_BUILTIN[t] || (lo ? lo.name(t) : t)
+    });
+    state.foreignBack = lang === 'ja' ? null : cells => back(cells, lang);
+  }
+  const langName = v => v === 'ja' ? '日本語' : (LANG_BUILTIN[v] || (pk.louis ? pk.louis.name(v) : v));
+  els.doclang.addEventListener('change', () => {
+    state.lang = els.doclang.value;
+    saveLang(state.lang);
+    applyForeign();
+    state.rows = [];
+    convertAll();
+    const notBack = state.lang !== 'ja' && !LANG_BUILTIN[state.lang] && pk.louis && !pk.louis.canBack(state.lang);
+    announce(`文書の言語を${langName(state.lang)}にしました` + (notBack ? '。この言語は、点字から文字に戻す変換ができません' : ''));
+  });
+
+  // 保存してあるパックを読み込んで使う
+  async function activatePack(rec) {
+    if (rec.kind === 'lexicon') {
+      const text = await PKS.readText(rec.id, rec.files[0]);
+      if (!text) throw new Error('保存したファイルが見つかりません。削除して、もう一度ダウンロードしてください');
+      pk.loaded.set(rec.id, E.loadLexicon(text, rec.id));
+    } else if (rec.kind === 'louis') {
+      pk.louis = await PKS.louis();
+      pk.loaded.set(rec.id, pk.louis.catalog.length);
+      fillLangs();
+    }
+    pk.err.delete(rec.id);
+  }
+  function deactivatePack(id, kind) {
+    if (kind === 'lexicon') E.loadLexicon(null, id);
+    if (kind === 'louis') { pk.louis = null; fillLangs(); }
+    pk.loaded.delete(id);
+  }
+  function updatePackBadge() {
+    const n = pk.recs.length;
+    PK.count.textContent = n;
+    PK.count.hidden = !n;
+    PK.btn.setAttribute('aria-label', '辞書・言語パック' + (n ? `（${n}つ使用中）` : ''));
+  }
+  // 起動のとき：保存してあるパックを全部読み込んでから、点訳を始める
+  state.lang = savedLang() in LANG_BUILTIN ? savedLang() : 'ja';
+  els.doclang.value = state.lang;
+  applyForeign();
+  const packsReady = (async () => {
+    if (!PKS) return;
+    try {
+      pk.recs = await PKS.installed();
+      for (const r of pk.recs) {
+        try { await activatePack(r); } catch (e) { pk.err.set(r.id, e.message || String(e)); }
+      }
+    } catch (e) { /* 保存場所が使えないときは、パックなしで動く */ }
+    fillLangs();
+    applyForeign();
+    updatePackBadge();
+  })();
+  // パックを入れたり消したりしたら、点訳し直す（手で直した行は残す）
+  function afterPackChange() {
+    applyForeign();
+    if (guide.on) return;
+    if (state.mode === 'sumiji') state.rows = state.rows.filter(r => r.edited);
+    convertAll();
+  }
+
+  async function updateStorage() {
+    const est = PKS ? await PKS.estimate() : null;
+    const per = PKS ? await PKS.persisted() : false;
+    const used = pk.recs.reduce((a, r) => a + (r.bytes || 0), 0);
+    PK.storage.textContent = `ダウンロードしたパック：${pk.recs.length}つ（${fmtBytes(used)}）` +
+      (est && est.quota ? `。このブラウザで使える残りの容量：約${fmtBytes(Math.max(0, est.quota - est.usage))}` : '') +
+      (pk.recs.length ? (per ? '。ブラウザが自動で消さないように設定されています' : '。ブラウザの容量が足りなくなると、消されることがあります（そのときはもう一度ダウンロードしてください）') : '');
+  }
+  function packStatus(p) {
+    const rec = pk.recs.find(r => r.id === p.id), busy = pk.busy.get(p.id);
+    if (busy) return { text: `ダウンロード中… ${busy.pct}%`, cls: '' };
+    if (pk.err.has(p.id)) return { text: 'エラー：' + pk.err.get(p.id), cls: 'err' };
+    if (!rec) return { text: 'まだダウンロードしていません', cls: '' };
+    const using = pk.loaded.has(p.id) ? '・使用中' : '';
+    if (p.version && rec.version !== p.version) return { text: `新しい版があります（今は ${rec.version} 版${using}）`, cls: '' };
+    return { text: `ダウンロード済み（${rec.version} 版）${using}`, cls: '' };
+  }
+  function packItem(p) {
+    const rec = pk.recs.find(r => r.id === p.id), busy = pk.busy.get(p.id);
+    const sec = document.createElement('section');
+    sec.className = 'pack' + (rec ? ' installed' : '');
+    sec.setAttribute('role', 'listitem');
+    sec.id = 'pk-' + p.id;
+    const h = document.createElement('h3'); h.id = 'pk-h-' + p.id; h.textContent = p.title;
+    sec.setAttribute('aria-labelledby', h.id);
+    const d = document.createElement('p'); d.className = 'pack-text'; d.textContent = p.desc || '';
+    const meta = document.createElement('p'); meta.className = 'pack-meta';
+    const dl = (p.files || []).reduce((a, f) => a + f.size, 0);
+    meta.textContent = [p.entries ? fmtCount(p.entries) + (p.kind === 'louis' ? 'の点字の表' : '語') : '', dl ? 'ダウンロード ' + fmtBytes(dl) : '',
+      p.license ? '出典：' + p.license : ''].filter(Boolean).join('　');
+    const st = packStatus(p);
+    const stEl = document.createElement('p'); stEl.className = 'pack-status' + (st.cls ? ' ' + st.cls : ''); stEl.id = 'pk-s-' + p.id; stEl.textContent = st.text;
+    const prog = document.createElement('progress'); prog.max = 100; prog.value = busy ? busy.pct : 0; prog.hidden = !busy;
+    prog.setAttribute('aria-label', p.title + 'のダウンロード');
+    const btns = document.createElement('div'); btns.className = 'pack-btns';
+    const get = document.createElement('button'); get.type = 'button'; get.className = 'btn primary';
+    const upd = rec && p.version && rec.version !== p.version;
+    get.textContent = busy ? '中止' : upd ? '新しい版にする' : rec ? 'ダウンロードし直す' : 'ダウンロード';
+    get.setAttribute('aria-label', `${p.title}を` + (busy ? 'ダウンロードするのを中止' : upd ? '新しい版にする' : rec ? 'ダウンロードし直す' : 'ダウンロード') + (dl && !busy ? `（${fmtBytes(dl)}）` : ''));
+    if (rec && !busy && !upd) get.className = 'btn';
+    get.addEventListener('click', () => { if (pk.busy.has(p.id)) pk.busy.get(p.id).ctrl.abort(); else getPack(p); });
+    btns.appendChild(get);
+    if (rec && !busy) {
+      const del = document.createElement('button'); del.type = 'button'; del.className = 'btn';
+      const armed = pk.delArm === p.id;
+      del.textContent = armed ? 'もう一度押すと削除' : '削除';
+      del.setAttribute('aria-label', armed ? `もう一度押すと、${p.title}を削除します` : `${p.title}を削除`);
+      del.addEventListener('click', () => delPackUI(p));
+      btns.appendChild(del);
+    }
+    sec.append(h, d, meta, stEl, prog, btns);
+    return sec;
+  }
+  function refreshPackItem(p, focusSel) {
+    const old = document.getElementById('pk-' + p.id);
+    if (!old) return;
+    const had = old.contains(document.activeElement) ? [...old.querySelectorAll('button')].indexOf(document.activeElement) : -1;
+    const nu = packItem(p);
+    old.replaceWith(nu);
+    const bs = nu.querySelectorAll('button');
+    if (focusSel !== undefined && bs[focusSel]) bs[focusSel].focus();
+    else if (had >= 0) (bs[Math.min(had, bs.length - 1)] || bs[0]).focus();
+  }
+  async function renderPacks() {
+    PK.list.textContent = '';
+    const wait = document.createElement('p'); wait.className = 'pack-status'; wait.textContent = 'パックの一覧を読み込み中…';
+    PK.list.appendChild(wait);
+    let packs = null;
+    try { pk.manifest = await PKS.manifest(); packs = pk.manifest.packs; } catch (e) {
+      wait.className = 'pack-status err';
+      wait.textContent = (e.message || 'パックの一覧を読めませんでした') + '。ネットにつながっているか確かめてください。ダウンロード済みのパックは、このまま使えます。';
+    }
+    pk.recs = await PKS.installed();
+    if (!packs) packs = pk.recs.map(r => ({ id: r.id, kind: r.kind, title: r.title || r.id, version: r.version, files: [] }));
+    else wait.remove();
+    for (const p of packs) PK.list.appendChild(packItem(p));
+    updateAllBtn();
+    updateStorage();
+  }
+  // 「まだのものをすべてダウンロード」：まだのもの・新しい版があるものの数
+  function updateAllBtn() {
+    const todo = pk.manifest ? pk.manifest.packs.filter(p => !pk.recs.some(r => r.id === p.id && r.version === p.version)) : [];
+    PK.all.hidden = !pk.manifest || !todo.length;
+    const bytes = todo.reduce((a, p) => a + p.files.reduce((b, f) => b + f.size, 0), 0);
+    PK.all.textContent = `まだのものをすべてダウンロード（${todo.length}つ・${fmtBytes(bytes)}）`;
+  }
+  async function getPack(p) {
+    if (pk.busy.has(p.id)) return;
+    const ctrl = new AbortController();
+    pk.busy.set(p.id, { ctrl, pct: 0 });
+    pk.err.delete(p.id);
+    refreshPackItem(p, 0);
+    pkLive(`${p.title}のダウンロードを始めました`);
+    let said = 0;
+    try {
+      await PKS.download(p, (got, total) => {
+        const pct = Math.floor(got * 100 / Math.max(1, total));
+        const b = pk.busy.get(p.id);
+        if (b) b.pct = pct;
+        const pr = document.querySelector('#pk-' + p.id + ' progress'), se = document.getElementById('pk-s-' + p.id);
+        if (pr) pr.value = pct;
+        if (se) se.textContent = `ダウンロード中… ${pct}%`;
+        if (pct >= said + 25 && pct < 100) { said = pct - pct % 25; pkLive(`${p.title}：${said}%`); }
+      }, ctrl.signal);
+      pk.recs = await PKS.installed();
+      const rec = pk.recs.find(r => r.id === p.id);
+      if (pk.loaded.has(p.id)) deactivatePack(p.id, p.kind);
+      pk.busy.get(p.id).pct = 100;
+      const se = document.getElementById('pk-s-' + p.id);
+      if (se) se.textContent = '保存しました。読み込み中…';
+      await activatePack(rec);
+      pkLive(`${p.title}をダウンロードしました。使えるようになりました`);
+      afterPackChange();
+    } catch (e) {
+      pk.err.set(p.id, e && e.name === 'AbortError' ? 'ダウンロードを中止しました' : ((e && e.message) || String(e)));
+      pkLive(`${p.title}：${pk.err.get(p.id)}`);
+    } finally {
+      pk.busy.delete(p.id);
+      pk.recs = await PKS.installed();
+      refreshPackItem(p);
+      updatePackBadge();
+      updateAllBtn();
+      updateStorage();
+    }
+  }
+  async function delPackUI(p) {
+    // 2回押して削除（1回目は確かめるだけ）
+    if (pk.delArm !== p.id) {
+      pk.delArm = p.id;
+      refreshPackItem(p, 1);
+      pkLive(`もう一度押すと、${p.title}を削除します`);
+      clearTimeout(pk.delTimer);
+      pk.delTimer = setTimeout(() => { if (pk.delArm === p.id) { pk.delArm = null; refreshPackItem(p); } }, 6000);
+      return;
+    }
+    pk.delArm = null;
+    try {
+      await PKS.remove(p.id);
+      deactivatePack(p.id, p.kind);
+      pk.err.delete(p.id);
+      pk.recs = await PKS.installed();
+      pkLive(`${p.title}を削除しました`);
+      afterPackChange();
+    } catch (e) { pk.err.set(p.id, (e && e.message) || String(e)); pkLive(`${p.title}：${pk.err.get(p.id)}`); }
+    refreshPackItem(p, 0);
+    updatePackBadge();
+    updateAllBtn();
+    updateStorage();
+  }
+  if (PK.btn) {
+    PK.btn.addEventListener('click', () => {
+      if (!PKS) { toast('このブラウザでは辞書・言語パックを使えません', true); return; }
+      PK.dlg.showModal();
+      PK.head.focus();
+      renderPacks();
+    });
+    PK.close.addEventListener('click', () => PK.dlg.close());
+    PK.dlg.addEventListener('close', () => { pk.delArm = null; PK.btn.focus(); });
+    PK.all.addEventListener('click', async () => {
+      const m = pk.manifest || await PKS.manifest().catch(() => null);
+      if (!m) return;
+      const todo = m.packs.filter(p => !pk.recs.some(r => r.id === p.id && r.version === p.version));
+      if (!todo.length) { pkLive('すべてダウンロード済みです'); return; }
+      for (const p of todo) await getPack(p);
+      pkLive('すべてのダウンロードが終わりました');
+      PK.head.focus();
+    });
+  }
+
   // ---------- 起動 ----------
   loadPrefs();
   if (els.eng2.checked) els.enueb.checked = true;
@@ -3034,7 +3327,7 @@
     els.stDict.textContent = '辞書を読み込み中…';
     els.stDict.className = 'pill';
     state.dictLoading = new Promise(resolve => {
-      window.kuromoji.builder({ dicPath: 'dict/' }).build((err, tokenizer) => {
+      window.kuromoji.builder({ dicPath: 'dict/' }).build((err, tokenizer) => Promise.race([packsReady, new Promise(r => setTimeout(r, 30000))]).then(() => {
         state.dictLoading = null;
         if (err || !tokenizer) {
           els.stDict.textContent = '辞書を読み込めませんでした（漢字は変換されません）';
@@ -3043,7 +3336,8 @@
           return;
         }
         state.tokenizer = tokenizer;
-        els.stDict.textContent = '辞書 準備完了';
+        const nLex = E.lexIds().length;
+        els.stDict.textContent = nLex ? `辞書 準備完了（追加の辞書 ${nLex}つ）` : '辞書 準備完了';
         els.stDict.className = 'pill ok';
         if (!guide.on) {
           announce('辞書の準備ができました');
@@ -3054,7 +3348,7 @@
           }
         }
         resolve(true);
-      });
+      }));
     });
     return state.dictLoading;
   }

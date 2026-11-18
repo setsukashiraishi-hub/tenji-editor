@@ -565,3 +565,30 @@ dialog.draw { width: min(1100px, calc(100vw - 24px)); }
   #dr-canvas { height: auto; width: 100%; }
   dialog.draw { max-height: calc(100vh - 16px); overflow-y: auto; }
 }
+
+/* 辞書・言語パック */
+.badge.ok { background: var(--ok); color: var(--surface); }
+dialog.packs { width: min(760px, calc(100vw - 32px)); }
+dialog.packs .sheet-body { overflow-y: auto; }
+#pack-desc { margin: 0; line-height: 1.7; }
+.pack-storage { margin: 0; font-size: 12px; color: var(--muted); }
+.pack-list { display: grid; gap: 10px; }
+.pack {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: start;
+  padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg);
+}
+.pack.installed { border-left: 4px solid var(--ok); }
+.pack h3 { margin: 0; font-size: 15px; grid-column: 1; }
+.pack .pack-text { grid-column: 1; margin: 0; font-size: 13px; line-height: 1.6; color: var(--ink); }
+.pack .pack-meta { grid-column: 1; margin: 0; font-size: 12px; color: var(--muted); }
+.pack .pack-status { grid-column: 1; margin: 0; font-size: 13px; font-weight: 600; color: var(--muted); }
+.pack.installed .pack-status { color: var(--ok); }
+.pack .pack-status.err { color: var(--warn); }
+.pack progress { grid-column: 1; width: 100%; height: 10px; accent-color: var(--accent); }
+.pack-btns { grid-column: 2; grid-row: 1 / span 5; display: flex; flex-direction: column; gap: 6px; align-self: center; }
+.pack-btns .btn { white-space: nowrap; }
+@media (max-width: 560px) {
+  .pack { grid-template-columns: minmax(0, 1fr); }
+  .pack-btns { grid-column: 1; grid-row: auto; flex-direction: row; flex-wrap: wrap; }
+}
+#doclang { max-width: 13em; }

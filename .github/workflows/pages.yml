@@ -35,6 +35,7 @@ jobs:
       - run: node test/corpus.test.js
       - run: node test/english.test.js
       - run: node test/math.test.js
+      - run: node test/packs.test.js
 
   deploy:
     if: github.event_name != 'pull_request'
@@ -45,10 +46,18 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # 辞書・言語パック（大きいファイル）は dict-packs ブランチに置いてあり、公開するときに packs/ に入れる
+      - name: 辞書・言語パックを取り出す
+        uses: actions/checkout@v4
+        with:
+          ref: dict-packs
+          path: _packs
       - name: 公開するファイルをまとめる
         run: |
           mkdir _site
           cp -r index.html help.html css js vendor dict _site/
+          cp -r _packs/packs _site/packs
+          du -sh _site _site/packs
           touch _site/.nojekyll
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

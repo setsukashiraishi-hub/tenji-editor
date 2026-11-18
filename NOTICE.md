@@ -6,6 +6,19 @@
 | [pdf.js](https://github.com/mozilla/pdf.js) 4.2.67（`vendor/pdfjs/`） | PDF の文字の取り出し | Apache License 2.0（`vendor/pdfjs/LICENSE.txt`） |
 | [JSZip](https://github.com/Stuk/jszip) 3.10.1（`vendor/jszip.min.js`） | Word（.docx）の読み書き | MIT / GPLv3 のデュアルライセンス（`vendor/jszip-LICENSE.md`） |
 
+# 辞書・言語パック（ダウンロードして使うもの）
+
+画面の「辞書・言語パック」からダウンロードするファイルは、このリポジトリの `dict-packs` ブランチにあり、
+公開するときに `packs/` に置かれます（使う人のブラウザの IndexedDB に保存されます）。ライセンスの全文は同じブランチの `packs/licenses/` にあります。
+
+| パック | もとにしたもの | ライセンス |
+|---|---|---|
+| 日本語の読みの辞書（一般の語・人名・地名・会社や作品など） | [UniDic](https://clrd.ninjal.ac.jp/unidic/)（国立国語研究所）cwj 202512、[SudachiDict](https://github.com/WorksApplications/SudachiDict) 20261015、[mecab-ipadic-NEologd](https://github.com/neologd/mecab-ipadic-neologd)、[日本郵便 郵便番号データ](https://www.post.japanpost.jp/zipcode/download.html) | UniDic：BSD（GPL・LGPL との選択）、SudachiDict：Apache License 2.0（UniDic・NEologd を含む）、NEologd：Apache License 2.0（はてなキーワード・郵便番号データ・日本全国駅名一覧・人名データを含む）、郵便番号データ：日本郵便は著作権を主張していません |
+| 外国語の点字 | [liblouis](https://github.com/liblouis/liblouis) 3.39.0（コミット 011cfb3）を Emscripten で WebAssembly にしたものと、liblouis の点字の表 | GNU Lesser General Public License 2.1 以降。ビルドに使ったソースは `packs/src/liblouis-3.39.0-src.tar.gz`、作り方は `tools/build-liblouis.sh` |
+
+日本語の辞書は、エディタに入っている辞書（IPA辞書）と読みが違う語・ない語だけを集め、大きな辞書どうしの読みを照らし合わせたうえで、
+公式の点字データ（約164万行）に出てくる読みで確かめて作りました（点字データそのものはパックにも入れていません）。
+
 # 参考にしたもの
 
 - 特殊音・拗音の点字対応表、BES ファイルの構造（ヘッダ 1029 バイト、1 マス 1 バイト）は

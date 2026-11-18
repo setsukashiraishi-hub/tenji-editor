@@ -2,3 +2,4 @@ node_modules/
 release/
 _site/
 .DS_Store
+packs/

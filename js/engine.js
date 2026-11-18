@@ -103,18 +103,38 @@
   // 墨字の1行 → かな（分かち書き）。全角スペースの区切りは2マスあけにする
   // 日本語・英語以外の外国語（点字の書き方が言語ごとに違うので、点訳者に確かめてもらう）
   const FOREIGN = [
-    [/[A-Za-zÀ-ÖØ-öø-ɏ]*[À-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ]*/g, 'アクセント記号つきの外国語（フランス語・ドイツ語・スペイン語など）'],
-    [/[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]+/g, 'ハングル（韓国・朝鮮語）'],
-    [/[\u0400-\u04FF]+/g, 'キリル文字（ロシア語など）'],
-    [/[\u0600-\u06FF\u0750-\u077F]+/g, 'アラビア文字'],
-    [/[\u0590-\u05FF]+/g, 'ヘブライ文字'],
-    [/[\u0E00-\u0E7F]+/g, 'タイ文字'],
-    [/[\u0900-\u097F]+/g, 'デーヴァナーガリー（ヒンディー語など）']
+    [/[A-Za-zÀ-ÖØ-öø-ɏ]*[À-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ]*/g, 'アクセント記号つきの外国語（フランス語・ドイツ語・スペイン語など）', ''],
+    [/[가-힯ᄀ-ᇿ㄰-㆏]+/g, 'ハングル（韓国・朝鮮語）', 'hangul'],
+    [/[Ѐ-ӿ]+/g, 'キリル文字（ロシア語など）', 'cyrillic'],
+    [/[؀-ۿݐ-ݿ]+/g, 'アラビア文字', 'arabic'],
+    [/[֐-׿]+/g, 'ヘブライ文字', 'hebrew'],
+    [/[฀-๿]+/g, 'タイ文字', 'thai'],
+    [/[ऀ-ॿ]+/g, 'デーヴァナーガリー（ヒンディー語など）', 'devanagari']
   ];
+  // ---------- 外国語の点字（「外国語の点字」パック＝liblouis をダウンロードしたとき）----------
+  // XL = { forward(text, table) → 点字 | null, back(cells, table) → 文字 | null, doc: 文書全体の言語の表, scripts: { hangul: 表, … }, name(表) → 名前 }
+  // 日本語の文の中のハングル・キリル文字などは、その言語の点字で外国語引用符（⠦ … ⠴）の中に書く
+  let XL = null;
+  const setForeign = x => { XL = x || null; };
+  const DOC_MARK = ''; // 行の頭にあれば、この行は文書の言語（外国語）で書く
+  const SCRIPT_RE = { hangul: /[가-힯ᄀ-ᇿ㄰-㆏]/, cyrillic: /[Ѐ-ӿ]/, arabic: /[؀-ۿݐ-ݿ]/, hebrew: /[֐-׿]/, thai: /[฀-๿]/, devanagari: /[ऀ-ॿ]/ };
+  const scriptOf = c => { for (const k in SCRIPT_RE) if (SCRIPT_RE[k].test(c)) return k; return ''; };
+  const scriptTable = k => (XL && XL.forward && XL.scripts && k && XL.scripts[k]) || '';
   function foreignParts(text) {
     const out = [];
-    for (const [re, kind] of FOREIGN) for (const m of text.matchAll(re)) out.push({ text: m[0], kind });
+    for (const [re, kind, script] of FOREIGN) for (const m of text.matchAll(re)) {
+      const t = scriptTable(script);
+      out.push(t ? { text: m[0], kind, table: t, tableName: XL.name ? XL.name(t) : t } : { text: m[0], kind });
+    }
     return out;
+  }
+  // 外国語の文書の1行
+  function foreignLine(text) {
+    let cells = null;
+    try { cells = XL && XL.forward && XL.doc ? XL.forward(text, XL.doc) : null; } catch (e) { cells = null; }
+    if (cells == null) return { cells: '', unknown: text.trim() ? [text] : [], bad: text.trim() ? [0] : [], units: [{ text, cells: '' }], notReady: true };
+    cells = cells.replace(/[  ]/g, '⠀');
+    return { cells, unknown: [], bad: [], units: [{ text, cells }] };
   }
 
   // 行頭の番号・記号（見出しや箇条書きの「ア」「1」「（1）」「第1」）を、点字の書き方にする
@@ -286,6 +306,8 @@
     if (/^[ 　]*[※＊*](?![ 　]?[0-9０-９]{1,2}(?![0-9０-９一-鿿々（(.．,，]))/.test(s)) s = s.replace(/^[ 　]*[※＊*][ 　]*/, MARK + ' ');
     // 漢字の語と語のあいだの中点（小・中学校）は、中点のあとをあける（公式：ショー・ チューガッコー 257：0）
     s = s.replace(/([一-鿿々])・(?=[一-鿿々])/g, (m, a, o, str) => /[〇一二三四五六七八九十百千]/.test(a) && /[〇一二三四五六七八九十]/.test(str[o + 2] || '') ? m : a + '・ ');
+    // PDF の均等割り付けで、1字ずつあいた文（こ の ほ か 、 使 用 者 に よ る）は、あきを詰める（3字以上続くときだけ）
+    s = s.replace(/(?:[一-鿿々〆ヵヶぁ-ゖァ-ヺー、。・，．][ ]){2,}[一-鿿々〆ヵヶぁ-ゖァ-ヺー、。・，．]/g, m => m.replace(/ /g, ''));
     // PDF の組版で入った字間のあき（障 害者）、古い書き方の「なかつた」、「長又は」（姓の長又と読まない）
     s = s.replace(/〇・([一二三四五六七八九])/g, (m, d) => '0.' + ('一二三四五六七八九'.indexOf(d) + 1)).replace(/障[ 　]+害/g, '障害').replace(/なかつ(?=[てた])/g, 'なかっ').replace(/長又(?=は)/g, '長 又');
     // 読みを辞書に任せると誤る書き方（公式の点字データ：障がい → ショーガイ、聾話 → ローワ、1人 → ヒトリ）
@@ -980,6 +1002,8 @@
     // かなを手で直すときに [ ] や / / で発音記号を書いても、発音記号の点字にする
     // （すでに ⟪ ⟫・⟬ ⟭・⟦ ⟧ で囲んだところはそのまま）
     // かなを直接直したときも、数式（y=2x+1）は数学点字にする
+    // 外国語の文書の行（行の頭に DOC_MARK）は、その言語の点字にする
+    if (line && String(line).charCodeAt(0) === 0xe0f1) return foreignLine(String(line).slice(1));
     const wrapMath = t => { const sp = findMath(t); let o = '', p0 = 0; for (const x of sp) { o += t.slice(p0, x.start) + '⟮' + x.raw + '⟯'; p0 = x.end; } return o + t.slice(p0); };
     line = String(line || '').split(/(⟪[^⟫]*⟫|⟬[^⟭]*⟭?|⟦[^⟧]*⟧|⟮[^⟯]*⟯)/).map((part, k) => k % 2 ? part : (/https?:|www\.|@/.test(part) ? part : wrapMath(part))
       .replace(URL_RE, m => { const t = /[.,;:!?)\]]+$/.exec(m); const tail = t ? t[0] : ''; return '⟬' + m.slice(0, m.length - tail.length) + '⟭' + tail; }) // アドレス（手で書いたときも）
@@ -1044,6 +1068,23 @@
         inNum = false; inLatin = false;
         i = j;
         continue;
+      }
+      // 日本語の文の中の外国の文字（ハングル・キリル文字など）：外国語の点字パックがあれば、その言語の点字を外国語引用符で囲む
+      const sc = XL ? scriptOf(c) : '';
+      if (sc && scriptTable(sc)) {
+        let j = i + 1;
+        while (j < s.length && (scriptOf(s[j]) === sc || (/[ \u3000,.'!?\-]/.test(s[j]) && j + 1 < s.length && scriptOf(s[j + 1]) === sc))) j++;
+        const run = s.slice(i, j).join('');
+        let fc = null;
+        try { fc = XL.forward(run, scriptTable(sc)); } catch (e) { fc = null; }
+        if (fc) {
+          fc = '⠦' + fc.replace(/[ \u00a0]/g, '⠀') + '⠴';
+          units.push({ text: run, cells: fc });
+          out += fc;
+          inNum = false; inLatin = false;
+          i = j - 1; ui = j; uo = out.length;
+          continue;
+        }
       }
       if (isSpace(c)) { out += SIGN.BLANK; inNum = false; inLatin = false; continue; }
       if (isDigit(c)) {
@@ -1700,6 +1741,131 @@
   const isLatinWord = s => /^[A-Za-zÀ-ÖØ-öø-ɏ][A-Za-zÀ-ÖØ-öø-ɏ0-9.]*$/.test(s);
 
   // kuromoji のトークンを語に整える（数の連続をまとめる）
+  // ---------- 追加の辞書（読み）：ダウンロードして使う ----------
+  // UniDic（国立国語研究所）・SudachiDict・mecab-ipadic-NEologd・日本郵便の住所と事業所の読みから、
+  // 今の辞書（kuromoji の IPA 辞書）にない語と、今の辞書の組み合わせでは読みが違う語だけを集めたもの。
+  // 1行：見出し \t 読み \t 発音 \t 品詞（N 普通名詞・P 人名・L 地名・O 組織・G 固有名詞）\t ほかの読み \t 種類（u・m・s）\t 点数
+  // 公式の点字データ（約164万行）に出てくる読みで確かめた語は、点数に10を足してある。
+  // 辞書はいくつでも重ねて使える（一般の語・人名・地名…を別々にダウンロードする）。見出しの順に並べておく
+  const LEXES = new Map(); // id → { text, offs }
+  function loadLexicon(text, id = 'main') {
+    if (!text) { LEXES.delete(id); return 0; }
+    const offs = [];
+    let o = 0;
+    while (o < text.length) {
+      const e = text.indexOf('\n', o);
+      if (text.charCodeAt(o) !== 35 && (e < 0 ? text.length : e) > o) offs.push(o); // # で始まる行（説明）と空行は飛ばす
+      if (e < 0) break;
+      o = e + 1;
+    }
+    LEXES.set(id, { text, offs: Int32Array.from(offs) });
+    return offs.length;
+  }
+  const lexIds = () => [...LEXES.keys()];
+  function lexGet1(L, surf) {
+    let lo = 0, hi = L.offs.length - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1, o = L.offs[mid], k = L.text.slice(o, L.text.indexOf('\t', o));
+      if (k === surf) {
+        const e = L.text.indexOf('\n', o);
+        const f = L.text.slice(o, e < 0 ? undefined : e).split('\t');
+        return { surface: f[0], reading: f[1], pron: f[2] || '', pos: f[3] || 'N', alts: f[4] ? f[4].split(',') : [], kind: f[5] || 'm', score: +f[6] || 0 };
+      }
+      if (k < surf) lo = mid + 1; else hi = mid - 1;
+    }
+    return null;
+  }
+  function lexGet(surf) {
+    let best = null;
+    for (const L of LEXES.values()) {
+      const e = lexGet1(L, surf);
+      if (e && (!best || e.score > best.score)) best = e;
+    }
+    return best;
+  }
+  const LEX_KANJI = /[一-鿿々〆ヶ㐀-䶿豈-鶴]/;
+  // 発音のない部分の読み：オ段・ウ段のあとの「ウ」を長音にする（コウ → コー、チュウ → チュー）
+  const lexPron = R => R.replace(/([オコゴソゾトドノホボポモヨロヲョォウクグスズツヅヌフブプムユルュゥヴ])ウ/g, '$1ー');
+  const lexNounOk = t => (t.pos === '名詞' && !['非自立', '代名詞', '数'].includes(t.pos_detail_1) && !t.isNumber) || t.pos === '接頭詞' || t.word_type === 'UNKNOWN';
+  const LEX_POS = { P: ['固有名詞', '人名'], L: ['固有名詞', '地域'], O: ['固有名詞', '組織'], G: ['固有名詞', '一般'], N: ['一般', '*'] };
+  // 今の辞書の区切りに沿って、追加の辞書の語に合うところを探し、読みを直す。
+  // 区切りの前後で読みが合う語はそのまま残し（日本｜赤十字社 の分かち書きを保つ）、読みの違う部分だけを1語にまとめる
+  function applyLexicon(tokens) {
+    if (!LEXES.size || !tokens.length) return tokens;
+    const out = [];
+    for (let i = 0; i < tokens.length;) {
+      let hit = null, hitJ = -1, s = '';
+      const spans = [];
+      for (let j = i; j < tokens.length && j < i + 6; j++) {
+        const t = tokens[j];
+        if (!t.surface_form || /\s/.test(t.surface_form)) break;
+        s += t.surface_form;
+        if (s.length > 16) break;
+        spans.push([j, s]);
+      }
+      for (let k = spans.length - 1; k >= 0; k--) {
+        const [j, surf] = spans[k];
+        if (!LEX_KANJI.test(surf)) continue;
+        const single = j === i;
+        const t0 = tokens[i];
+        const unknown = t0.word_type === 'UNKNOWN' || !t0.reading || t0.reading === '*';
+        if (single && !unknown) {
+          // 1語：今の辞書が知っている2字以上の名詞で、大きな辞書どうしが同じ読みで一致するもの（点数5以上）だけ、読みだけ直す
+          // （者・中 のような1字の語は、前後で読みが変わるので、このエディタの決まりに任せる）
+          if (Array.from(surf).length < 2 || !lexNounOk(t0) || t0.pos_detail_1 === '接尾') continue;
+          const e = lexGet(surf);
+          if (e && e.kind === 's' && e.score >= 5) {
+            out.push({ ...t0, reading: e.reading, pronunciation: e.pron || e.reading, lex: true, lexAlts: e.alts.length ? e.alts : null });
+            hit = 'done'; hitJ = j; break;
+          }
+          continue;
+        }
+        if (!single && (!tokens.slice(i, j + 1).every(lexNounOk) || tokens[i].pos_detail_1 === '接尾' || tokens[j].pos === '接頭詞')) continue;
+        const e = lexGet(surf);
+        if (!e) continue;
+        if (!single && e.pos === 'V') continue;
+        hit = e; hitJ = j; break;
+      }
+      if (!hit) { out.push(tokens[i]); i++; continue; }
+      if (hit === 'done') { i = hitJ + 1; continue; }
+      // 前と後ろで読みが合う語は残す
+      let a = i, b = hitJ, R = hit.reading;
+      const rd = t => (t.reading && t.reading !== '*' ? t.reading : null);
+      const head = [], tail = [];
+      while (a < b && rd(tokens[a]) && R.startsWith(rd(tokens[a])) && R.length > rd(tokens[a]).length) { head.push(tokens[a]); R = R.slice(rd(tokens[a]).length); a++; }
+      while (b > a && rd(tokens[b]) && R.endsWith(rd(tokens[b])) && R.length > rd(tokens[b]).length) { tail.unshift(tokens[b]); R = R.slice(0, R.length - rd(tokens[b]).length); b--; }
+      const whole = a === i && b === hitJ;
+      const mid = tokens.slice(a, b + 1);
+      const midSurf = mid.map(t => t.surface_form).join('');
+      // 字にない「の」が読みに入る固有名詞（相模国 サガミノクニ、藤原宮 フジワラノミヤ）は、
+      // 「の」までを前の語に付けて、あとを区切る（公式：サガミノ クニ、フジワラノ ミヤ）
+      let noBreak = false;
+      // （追納 ツイノウ のように、字の読みが「ノ」で始まるときは除く）
+      if (head.length && /^ノ[^ウー]./.test(R) && !/[の之乃ノ]/.test(midSurf) && !/^ノ/.test(rd(mid[0]) || '') && !/^[野能濃農脳納延登望残喉飲乗伸述宣罵則法暖遁]/.test(midSurf)) {
+        const h = head[head.length - 1], hr = rd(h);
+        head[head.length - 1] = { ...h, reading: hr + 'ノ', pronunciation: (h.pronunciation && h.pronunciation !== '*' ? h.pronunciation : hr) + 'ノ', lex: true };
+        R = R.slice(1); noBreak = true;
+      }
+      const p = LEX_POS[hit.pos] || null;
+      // 一部だけを直すとき（普通名詞）は、今の辞書の品詞（接尾語など）のままにして、分かち書きを変えない（任命権者）
+      const keepPos = !whole && hit.pos === 'N';
+      const merged = {
+        ...mid[0],
+        surface_form: midSurf, basic_form: midSurf,
+        reading: R, pronunciation: whole ? (hit.pron || lexPron(R)) : lexPron(R),
+        pos: p && !keepPos ? '名詞' : mid[0].pos, pos_detail_1: p && !keepPos ? p[0] : mid[0].pos_detail_1, pos_detail_2: p && !keepPos ? p[1] : mid[0].pos_detail_2,
+        word_type: 'KNOWN', lex: true, lexAlts: whole && hit.alts.length ? hit.alts : null, lexBreak: noBreak
+      };
+      if (!p && hit.pos === 'V' && mid.length === 1) Object.assign(merged, { pos: mid[0].pos });
+      // 人名で、字にない「の」が読みの中にある（源頼朝 ミナモトノヨリトモ）ときは、「の」のあとで区切る
+      const pm = whole && hit.pos === 'P' && !/[の之乃ノ]/.test(midSurf) ? /^(.{2,}?ノ)(.{2,})$/.exec(merged.pronunciation) : null;
+      if (pm && moraCount(pm[1]) >= 3 && moraCount(pm[2]) >= 2) Object.assign(merged, { reading: pm[1] + ' ' + pm[2], pronunciation: pm[1] + ' ' + pm[2] });
+      out.push(...head, merged, ...tail);
+      i = hitJ + 1;
+    }
+    return out;
+  }
+
   function prepareTokens(tokens) {
     const res = [];
     for (let i = 0; i < tokens.length; i++) {
@@ -1995,7 +2161,7 @@
 
   // 1行分の kuromoji トークン → 分かち書きした点字仮名
   function tokensToKana(rawTokens, opts) {
-    const tokens = prepareTokens(rawTokens);
+    const tokens = prepareTokens(applyLexicon(rawTokens));
     let out = '';
     const unresolved = [];
     const checks = [];
@@ -2015,11 +2181,13 @@
       if (ctxCheck) { r = { kana: ctxCheck.kana }; checks.push(ctxCheck); if (ctxCheck.attach) ctx.attachHere = true; }
       if (r.unresolved) unresolved.push(surf);
       if (AMBIG[surf] && r.kana) checks.push({ surface: surf, kana: r.kana, options: AMBIG[surf] });
+      // 追加の辞書で読みが割れる語（地名・人名など）は、ほかの読みを校正の候補に出す
+      else if (t.lexAlts && r.kana) checks.push({ surface: surf, kana: r.kana, options: [r.kana, ...t.lexAlts.map(lexPron)].filter((x, k, a) => a.indexOf(x) === k), note: '大きな辞書で読みが割れる語です' });
       else if (t.isNumber && !r.day && tokens[i + 1] && tokens[i + 1].surface_form === '日') checks.push({ surface: surf + '日', kana: r.kana + 'ニチ', options: [r.kana + 'ニチ', r.kana + 'カ'] });
       ctx.curMora = moraOf(t, r.kana);
       ctx.nextIsCase = !!(tokens[i + 1] && tokens[i + 1].pos === '助詞' && /^(を|が|に|の|は|も|で|と)$/.test(tokens[i + 1].surface_form));
       ctx.honorific = !!(prev && tokens[i - 2] && tokens[i - 2].pos === '接頭詞' && /^(お|ご|御)$/.test(tokens[i - 2].surface_form) && prev.pos === '動詞');
-      const brk = !ctx.attachHere && (needsBreak(t, prev, ctx) || ctx.forceBreak || !!(ctxCheck && ctxCheck.brk));
+      const brk = !ctx.attachHere && (needsBreak(t, prev, ctx) || ctx.forceBreak || !!(ctxCheck && ctxCheck.brk) || (!!t.lexBreak && !!prev));
       ctx.forceBreak = false; ctx.attachHere = false;
       if (brk && out && !out.endsWith(' ')) out += ' ';
       ctx.segMora = brk || !out ? ctx.curMora : (ctx.segMora || 0) + ctx.curMora;
@@ -2464,7 +2632,7 @@
     kanaToBraille, brailleToKana, tokensToKana, normalizeSpacing,
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
-    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing
+    englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing, loadLexicon, lexGet, lexIds, applyLexicon, setForeign, foreignLine, DOC_MARK
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.TenjiEngine = api;
