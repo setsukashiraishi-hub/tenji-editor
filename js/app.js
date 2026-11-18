@@ -2131,15 +2131,38 @@
     if (sc.list && sc.list.length) parts.push('選択肢は、' + sc.list.map(c => c.label).join('、') + '。');
     return parts.join('。').replace(/([。？?！!])。/g, '$1');
   }
+  // 最初の2つの画面（自動誘導・音声案内を使うか）は、音声案内をオフにしていても読む（ここで選び直せるように）
   function guideSpeak(sc, done) {
-    if (!guideVoice || !sc || sc.preview || typeof TTS === 'undefined') { done && done(); return; }
+    if ((!guideVoice && !(sc && sc.forceVoice)) || !sc || sc.preview || typeof TTS === 'undefined') { done && done(); return; }
     ttsStop();
     ttsSay(guideSpeakText(sc), done, { trustEnd: true });
+    // ページを開いたばかりで、まだ何も押していないと、ブラウザが声を出させないことがある（Chrome・iPhone など）
+    if (TTS.ok && !TTS.started && !TTS.unlockUsed) setTimeout(() => { if (!TTS.started && !TTS.unlockUsed) { TTS.blocked = true; guideBlockedHint(); } }, 1200);
+  }
+  // 声が出せなかったとき：画面に案内を出し、次に押したキーか画面にふれたときに、今の画面を最初から読む
+  function guideBlockedHint() {
+    if (!guide.on || !guide.screen || G.sub.querySelector('.guide-unlock')) return;
+    const h = document.createElement('span');
+    h.className = 'guide-unlock'; h.setAttribute('aria-hidden', 'true'); // 読み上げソフトは画面を読めるので、目で見る人向け
+    h.textContent = hasKeys ? '声が出ないときは、どれかのキーを1回押すと読み上げを始めます。' : '声が出ないときは、画面に1回ふれると読み上げを始めます。';
+    G.sub.appendChild(h);
   }
   // iPhone などは、最初に画面にふれるまで声が出ないことがある。最初の操作で、今の画面を読み直す
-  const voiceUnlock = () => {
-    document.removeEventListener('pointerdown', voiceUnlock, true); document.removeEventListener('keydown', voiceUnlock, true);
-    if (guide.on && guideVoice && typeof TTS !== 'undefined' && !TTS.started && guide.screen && !guide.screen.preview) guideSpeak(guide.screen);
+  // 声が止められていたときは、その1回の操作は「読み始める」に使い、選択にはしない（何を選ぶか聞いてから押せるように）
+  const voiceUnlock = ev => {
+    if (typeof TTS === 'undefined' || TTS.started || TTS.unlockUsed) { document.removeEventListener('pointerdown', voiceUnlock, true); document.removeEventListener('keydown', voiceUnlock, true); return; }
+    const sc = guide.screen;
+    if (!guide.on || !sc || sc.preview || !(guideVoice || sc.forceVoice) || !TTS.ok) return;
+    if (ev.type === 'keydown' && /^(Shift|Control|Alt|Meta|Tab)$/.test(ev.key)) return;
+    const wasBlocked = TTS.blocked;
+    TTS.blocked = false;
+    TTS.unlockUsed = true; // 「最初の1回で読み始める」はページで1回だけ（声の出ない端末で、毎回押す回数が増えないように）
+    const h = G.sub.querySelector('.guide-unlock'); if (h) h.remove();
+    guideSpeak(sc);
+    if (wasBlocked) {
+      if (ev.type === 'keydown') { ev.preventDefault(); ev.stopImmediatePropagation(); }
+      else guide.swallowUntil = Date.now() + 900; // このあとのクリックを選択にしない
+    }
   };
   document.addEventListener('pointerdown', voiceUnlock, true); document.addEventListener('keydown', voiceUnlock, true);
   // 案内だけの画面を飛ばす：1.5秒のうちに2回（キーか、画面のタップ）
@@ -2232,7 +2255,7 @@
       // スマホなどエンターを2回押しにくい端末のための決定ボタン
       const ok = document.createElement('button');
       ok.type = 'button'; ok.textContent = '決定';
-      ok.addEventListener('click', () => sc.input.done(G.input.value));
+      ok.addEventListener('click', () => { clickSound(); sc.input.done(G.input.value); });
       tapHint(ok);
       G.btns.appendChild(ok);
       // 入力欄に入ると、質問文（説明）から読まれる
@@ -2261,10 +2284,29 @@
       if (sc.auto) guide.timer = setTimeout(sc.next, sc.auto);
     }
   }
+  // 決定したときの「カチッ」という音（音のファイルは使わず、その場で作る）
+  let clickCtx = null;
+  function clickSound() {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      clickCtx = clickCtx || new AC();
+      if (clickCtx.state === 'suspended') clickCtx.resume();
+      const sr = clickCtx.sampleRate, len = Math.floor(sr * 0.025);
+      const buf = clickCtx.createBuffer(1, len, sr), d = buf.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 8);
+      const src = clickCtx.createBufferSource(); src.buffer = buf;
+      const bp = clickCtx.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 3000; bp.Q.value = 1.5;
+      const g = clickCtx.createGain(); g.gain.value = 1.2;
+      src.connect(bp); bp.connect(g); g.connect(clickCtx.destination);
+      src.start();
+      window.__tenjiClicks = (window.__tenjiClicks || 0) + 1; // 鳴らした回数（確かめる用）
+    } catch (e) { /* 音が出せなくても進む */ }
+  }
   function guideChoose(i) {
     const sc = guide.screen;
     const c = sc && sc.choices && sc.choices[i];
-    if (c) c.run();
+    if (c) { clickSound(); c.run(); }
   }
   // 選択肢は、1回押すとそのボタンだけを読んで選んだ状態にし、選んだ状態でもう一度押すと決定する（キー・マウス・指とも）
   function guideSelect(i) {
@@ -2273,12 +2315,14 @@
     guideSayLabel(guide.screen.choices[i].label);
   }
   function guidePress(i) {
+    if (guide.swallowUntil && Date.now() < guide.swallowUntil) { guide.swallowUntil = 0; return; }
     if (guide.sel === i) guideChoose(i); else guideSelect(i);
   }
   function guideListPress(i) {
     const sc = guide.screen;
     if (!sc || !sc.list || !sc.list[i]) return;
-    if (guide.listArmed === i) { guide.listArmed = -1; sc.list[i].run(); return; }
+    if (guide.swallowUntil && Date.now() < guide.swallowUntil) { guide.swallowUntil = 0; return; }
+    if (guide.listArmed === i) { guide.listArmed = -1; clickSound(); sc.list[i].run(); return; }
     guide.listArmed = i;
     const items = [...G.btns.children];
     if (items[i] && document.activeElement !== items[i]) { guide.listSpoke = false; items[i].focus(); }
@@ -2317,7 +2361,7 @@
       if (ev.key === 'Enter' && ev.shiftKey) {
         ev.preventDefault();
         guide.shiftEnter++;
-        if (guide.shiftEnter >= 3) { guide.shiftEnter = 0; guideTranslate(G.memo.value); }
+        if (guide.shiftEnter >= 3) { guide.shiftEnter = 0; clickSound(); guideTranslate(G.memo.value); }
         else announce(`あと${3 - guide.shiftEnter}回で点訳します`);
       } else if (ev.key !== 'Shift') guide.shiftEnter = 0;
       return;
@@ -2357,7 +2401,7 @@
       if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
         if (ev.repeat) return;
-        if (guide.armed) { guide.armed = false; sc.input.done(G.input.value); }
+        if (guide.armed) { guide.armed = false; clickSound(); sc.input.done(G.input.value); }
         else { guide.armed = true; announce('もう一度エンターを押すと決定します'); }
       } else if (ev.key !== 'Shift') guide.armed = false;
       return;
@@ -2428,7 +2472,7 @@
     G.el.hidden = false;
     for (const el of appParts()) el.inert = true;
     guideShow({
-      first: true,
+      first: true, forceVoice: true,
       msg: '自動誘導機能を利用しますか？',
       sub: hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。1回押すと選択、もう一度押すと決定します。' : 'ボタンは、1回押すと選択、もう一度押すと決定します。',
       choices: [{ label: '利用する', key: 'Enter', run: guideVoiceAsk }, { label: '利用しない', key: 'Space', run: () => finishGuide('skip') }],
@@ -2437,6 +2481,7 @@
   // 音声案内（画面の説明をブラウザの声で読む）を使うか。あとからでも「音声案内」ボタン（Alt＋V）で切り替えられる
   function guideVoiceAsk() {
     guideShow({
+      forceVoice: true,
       msg: '音声案内を利用しますか？',
       sub: (hasKeys ? '利用する場合はエンター、利用しない場合はスペースを押してください。1回押すと選択、もう一度押すと決定します。\n' : '') + '画面の説明をブラウザの声で読み上げます。読み上げソフトを使っているときは、利用しないを選ぶと声が重なりません。あとからでも「音声案内」ボタンで切り替えられます。',
       choices: [
@@ -2670,8 +2715,8 @@
       const start = Date.now(), least = opt && opt.trustEnd ? 0 : 450 + mora * 150;
       const after = () => setTimeout(finish, Math.max(150, least - (Date.now() - start)));
       u.onstart = () => { TTS.started = true; };
-      u.onend = after;
-      u.onerror = after;
+      u.onend = () => { TTS.started = true; after(); }; // 最後まで読めた＝声が出せる
+      u.onerror = e => { if (e && e.error === 'not-allowed') TTS.blocked = true; after(); };
       speechSynthesis.speak(u);
     } catch (e) { /* 目安の時間で進む */ }
   }
