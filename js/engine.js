@@ -8,6 +8,8 @@
  */
 (function (root) {
   'use strict';
+  // 設定・辞書・表が変わった回数（画面の側で、行ごとに覚えた変換結果を使ってよいかを見分ける）
+  let CONFIG_VER = 0;
 
   // ---------- 基本の点字表 ----------
   const BASE = {
@@ -148,7 +150,7 @@
   // XL = { forward(text, table) → 点字 | null, back(cells, table) → 文字 | null, doc: 文書全体の言語の表, scripts: { hangul: 表, … }, name(表) → 名前 }
   // 日本語の文の中のハングル・キリル文字などは、その言語の点字で外国語引用符（⠦ … ⠴）の中に書く
   let XL = null;
-  const setForeign = x => { XL = x || null; };
+  const setForeign = x => { XL = x || null; CONFIG_VER++; };
   const DOC_MARK = '\ue0f1'; // 行の頭にあれば、この行は文書の言語（外国語）で書く
   const SCRIPT_RE = {
     hangul: /[\uac00-\ud7af\u1100-\u11ff\u3130-\u318f\ua960-\ua97f\ud7b0-\ud7ff]/u,
@@ -241,7 +243,7 @@
   // split: { 語: '区切った形' }（ホームページ → ホーム ページ）、join: { '語1 語2': 1 }（クルマ イス → クルマイス）
   // 公式の点字（厚生労働省・自治体の広報・日本語能力試験 など 約164万行）で、区切る形と続ける形の数を比べて決めたもの
   let SPACING = null;
-  const loadSpacing = d => { SPACING = d ? { split: Object.assign(Object.create(null), d.split || {}), join: Object.assign(Object.create(null), d.join || {}) } : null; };
+  const loadSpacing = d => { SPACING = d ? { split: Object.assign(Object.create(null), d.split || {}), join: Object.assign(Object.create(null), d.join || {}) } : null; CONFIG_VER++; };
   loadSpacing(typeof TENJI_SPACING !== 'undefined' ? TENJI_SPACING : (typeof require === 'function' ? (() => { try { return require('./spacing-data.js'); } catch (e) { return null; } })() : null));
   const SP_PARTICLE = /(カラ|マデ|ヨリ|デワ|ニワ|トワ|デモ|ニモ|トモ|ノワ|ナド|ヲ|ガ|ニ|ノ|ワ|デ|ト|モ|ヘ|ヤ)$/;
   const SP_WORD = /^[ァ-ヺー]+$/;
@@ -479,6 +481,7 @@
   let CUR_RE = null;     // 通貨記号＋数（$5 → 5ドル）
   const curRead = u => READ[u] !== undefined ? READ[u] : (SYM.get(u) || [])[1] || '';
   function loadSymbols(text) {
+    CONFIG_VER++;
     SYM = new Map(); SYMSEQ = new Map();
     for (const line of String(text || '').split('\n')) {
       if (!line) continue;
@@ -492,7 +495,7 @@
     return SYM.size;
   }
   loadSymbols(typeof TENJI_SYMBOLS !== 'undefined' ? TENJI_SYMBOLS : (typeof require === 'function' ? (() => { try { return require('./symbols-data.js'); } catch (e) { return ''; } })() : ''));
-  const setSymbolMode = describe => { SYM_DESC = describe !== false; };
+  const setSymbolMode = describe => { SYM_DESC = describe !== false; CONFIG_VER++; };
   // 絵文字の並びを cs[i] から探す（異体字セレクタ・肌の色は飛ばして比べる）
   const SKIP_IN_SEQ = c => c === '\ufe0f' || c === '\ufe0e' || (c >= '\u{1f3fb}' && c <= '\u{1f3ff}');
   function symSeqAt(cs, i) {
@@ -1086,7 +1089,7 @@
   // 一般の日本語の文章の中の英語は、日本点字委員会の決まり（2023年）で、アクセント記号の付いた文字は
   // アクセント符 ⠈ を前に置くだけにする（UEB の修飾符は使わない）。英語の教科書の書き方（UEB）にもできる
   let EN_UEB = false, EN_G2 = false;
-  function setEnglishMode(ueb, g2) { EN_UEB = !!ueb || !!g2; EN_G2 = !!g2; }
+  function setEnglishMode(ueb, g2) { EN_UEB = !!ueb || !!g2; EN_G2 = !!g2; CONFIG_VER++; }
   function englishBraille(text, ueb = EN_UEB, g2 = EN_G2 && ueb, quoted = false) {
     text = String(text).normalize('NFC').replace(/[ 　\t]+/g, ' ').trim();
     const words = text.split(' ');
@@ -2276,6 +2279,7 @@
   // 辞書はいくつでも重ねて使える（一般の語・人名・地名…を別々にダウンロードする）。見出しの順に並べておく
   const LEXES = new Map(); // id → { text, offs }
   function loadLexicon(text, id = 'main') {
+    CONFIG_VER++;
     if (!text) { LEXES.delete(id); return 0; }
     const offs = [];
     let o = 0;
@@ -3326,6 +3330,7 @@
     layoutPages, fitBlocks, tableKana, wrapCells, cellsToAscii, asciiToCells, cellBits, bitsCell,
     toKatakana, toHiragana, normalizeInput, numberToKana, moraCount, prepareSumiji, sumijiToKana, headingLines, ipaToBraille, READ,
     englishBraille, englishFromBraille, englishFromBraille2, setEnglishMode, G2F, loadSpacing, applySpacing, loadLexicon, lexGet, lexIds, applyLexicon, setForeign, foreignLine, DOC_MARK,
+    configVersion: () => CONFIG_VER + (kuText() ? ':u' : ''), // まれな漢字の読みの表（あとから読み込む）があるかも含める
     loadSymbols, setSymbolMode, normalizeChars, PUNCT, symbolInfo: c => SYM.get(c) || null
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

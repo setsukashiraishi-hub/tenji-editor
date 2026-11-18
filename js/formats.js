@@ -111,7 +111,13 @@
 
   // ---------- 図（画像）とグラフの共通処理 ----------
   // 画像1つを図にする：線画は本文の点字の中に描き、写真は点図（別ファイル）にする
+  // 読み込みの中止（画面の「中止」）：opt.signal.aborted になったら、次の区切りで止める
+  const abortError = () => { const e = new Error('読み込みを中止しました'); e.name = 'AbortError'; return e; };
+  const checkAbort = opt => { if (opt && opt.signal && opt.signal.aborted) throw abortError(); };
+  // 重い処理のあいだに画面へ順番をゆずる（固まらないように）
+  const yieldUI = () => new Promise(res => setTimeout(res, 0));
   async function makeFigure(blob, no, alt, opt) {
+    checkAbort(opt);
     const info = { lines: null, alt: alt || '', blob, kind: 'drawing', no };
     if (!root.TenjiFigure || typeof Blob === 'undefined' || !blob) return info;
     try {
@@ -566,7 +572,9 @@
     if (w < 8 || h < 8) return null;
     const c = document.createElement('canvas'); c.width = w; c.height = h;
     c.getContext('2d').drawImage(canvas, x, y, w, h, 0, 0, w, h);
-    return canvasBlob(c);
+    const blob = await canvasBlob(c);
+    c.width = 0; c.height = 0;
+    return blob;
   }
 
   // PDF の文字を、行（同じ高さ）と、その中の段（大きくあいたところで区切る）にまとめる
@@ -639,17 +647,24 @@
     if (!SCRIPT_BASE || typeof document === 'undefined') throw new Error('PDFはブラウザ版・デスクトップ版でだけ読み込めます。');
     const pdfjs = await import(new URL('../vendor/pdfjs/pdf.mjs', SCRIPT_BASE).href);
     pdfjs.GlobalWorkerOptions.workerSrc = new URL('../vendor/pdfjs/pdf.worker.mjs', SCRIPT_BASE).href;
-    const doc = await pdfjs.getDocument({
+    // 読み終わったら（中止・エラーでも）PDF のデータを放す（何度読み込んでもメモリがたまらないように）
+    const task = pdfjs.getDocument({
       data: new Uint8Array(buf),
       cMapUrl: new URL('../vendor/pdfjs/cmaps/', SCRIPT_BASE).href,
       cMapPacked: true
-    }).promise;
+    });
+    try { return await readPDFDoc(await task.promise, pdfjs, opt); }
+    finally { try { await task.destroy(); } catch (e) { /* 何もしない */ } }
+  }
+  async function readPDFDoc(doc, pdfjs, opt) {
     const lines = [], types = [], figures = [];
     let figNo = 0, scannedPages = 0, textChars = 0, droppedHF = 0, tableCount = 0, cardCount = 0;
     const MAX_FIGURES = 200;
     const pages = [];
     // 1回目：ページごとに、文字の行（段組みの区切りつき）と画像を取り出す
     for (let p = 1; p <= doc.numPages; p++) {
+      checkAbort(opt);
+      if (opt.onProgress) opt.onProgress({ phase: 'pdf', done: p - 1, total: doc.numPages });
       const page = await doc.getPage(p);
       const tc = await page.getTextContent();
       const view = page.view; // [x0, y0, x1, y1]
@@ -666,21 +681,26 @@
         const scanned = chars < 20;
         if (scanned) { boxes = [{ x0: view[0], y0: view[1], x1: view[2], y1: view[3] }]; scannedPages++; }
         if (boxes.length) {
-          const { canvas, vp } = await renderPdfPage(page, 2);
-          for (const b of boxes) {
-            if (figNo >= MAX_FIGURES) break;
-            const blob = await cropBlob(canvas, vp, b);
-            if (!blob) continue;
-            figNo++;
-            const info = await makeFigure(blob, figNo, scanned ? `${p}ページ全体` : `${p}ページの画像`, opt);
-            if (scanned) info.kind = info.kind === 'drawing' ? 'drawing' : 'photo';
-            figures.push([`図${figNo}`, info]);
-            figs.push({ kind: 'figure', y: b.y1, label: `図${figNo}` }); // 図の上端の位置に入れる（段落の途中で切らない）
-          }
+          const { canvas, vp } = await renderPdfPage(page, scanned ? 1.5 : 2); // ページ全体のスキャンは少し小さく描く（点図には十分。メモリと時間を減らす）
+          try {
+            for (const b of boxes) {
+              if (figNo >= MAX_FIGURES) break;
+              const blob = await cropBlob(canvas, vp, b);
+              if (!blob) continue;
+              figNo++;
+              const info = await makeFigure(blob, figNo, scanned ? `${p}ページ全体` : `${p}ページの画像`, opt);
+              if (scanned) info.kind = info.kind === 'drawing' ? 'drawing' : 'photo';
+              figures.push([`図${figNo}`, info]);
+              figs.push({ kind: 'figure', y: b.y1, label: `図${figNo}` }); // 図の上端の位置に入れる（段落の途中で切らない）
+            }
+          } finally { canvas.width = 0; canvas.height = 0; } // ページの絵のメモリをすぐ放す
         }
       }
+      try { page.cleanup(); } catch (e) { /* 何もしない */ }
       pages.push({ p, rows, figs, top: view[3], bottom: view[1], pageH });
+      if (p % 4 === 0) await yieldUI();
     }
+    if (opt.onProgress) opt.onProgress({ phase: 'pdf', done: doc.numPages, total: doc.numPages });
     // くり返し出てくるヘッダー・フッター（柱・ノンブル）を見つける
     const hfKey = t => t.replace(/[0-9０-９]+/g, '#').replace(/\s+/g, '');
     const edge = (pg, r) => r.y > pg.top - pg.pageH * 0.1 || r.y < pg.bottom + pg.pageH * 0.1;

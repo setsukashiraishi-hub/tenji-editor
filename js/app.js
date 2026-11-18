@@ -200,12 +200,49 @@
     return { kana, cells: b.cells, unknown: b.unknown, bad: b.bad, unresolved, checks, foreign };
   }
 
+  // 1行の変換結果を覚えておき、同じ行はもう一度変換しない（大きな文書で1字直すたびに、全部を変換し直さない）。
+  // 設定・辞書・言語パック・文書の言語が変わったら、覚えたものを捨てる
+  const lineCache = new Map();
+  let lineCacheKey = '';
+  function cachedConvert(text) {
+    const key = [E.configVersion ? E.configVersion() : '', state.tokenizer ? 1 : 0, state.lang || 'ja'].join('|');
+    if (key !== lineCacheKey) { lineCache.clear(); lineCacheKey = key; }
+    let c = lineCache.get(text);
+    if (!c) {
+      c = convertLine(text);
+      if (lineCache.size >= 30000) lineCache.clear();
+      lineCache.set(text, c);
+    }
+    // 行ごとに直したり「確認した」にしたりするので、配列と校正の項目はコピーして渡す
+    return { kana: c.kana, cells: c.cells, unknown: c.unknown.slice(), bad: c.bad.slice(), unresolved: c.unresolved.slice(),
+      checks: c.checks.map(x => ({ ...x, options: Array.isArray(x.options) ? x.options.slice() : x.options })), foreign: (c.foreign || []).map(x => ({ ...x })) };
+  }
   function sumijiToRows(text, oldRows) {
+    const ctx = rowsContext(text, oldRows);
+    return ctx ? ctx.lines.map(ctx.one) : [];
+  }
+  // 大きな文書は少しずつ変換し、そのたびに画面へ順番をゆずる（固まらない・進み具合を出す・中止できる）
+  async function sumijiToRowsAsync(text, oldRows, ld) {
+    const ctx = rowsContext(text, oldRows);
+    if (!ctx) return [];
+    const out = [];
+    let t0 = performance.now();
+    for (let i = 0; i < ctx.lines.length; i++) {
+      out.push(ctx.one(ctx.lines[i]));
+      if (performance.now() - t0 > 30) {
+        if (ld) { if (ld.signal.aborted) throw abortError(); loadProgress('convert', i + 1, ctx.lines.length); }
+        await yieldUI();
+        t0 = performance.now();
+      }
+    }
+    return out;
+  }
+  function rowsContext(text, oldRows) {
     state.figRows = new Map((oldRows || []).filter(r => r.type === 'figure').map(r => [r.src, r]));
     const old = new Map();
     (oldRows || []).forEach(r => { if (r.edited && r.src !== undefined) old.set(r.src, r); });
-    if (!text.trim()) return []; // 何も入っていないときは行を作らない
-    return text.replace(/\r/g, '').split('\n').map(src => {
+    if (!text.trim()) return null; // 何も入っていないときは行を作らない
+    return { lines: text.replace(/\r/g, '').split('\n'), one: src => {
       const type = state.typeMap.get(src) || autoType(src);
       const keep = old.get(src);
       if (keep) { keep.type = type; return keep; } // かなを手で直した行は、原文が同じなら残す
@@ -230,14 +267,14 @@
       }
       if (type === 'table') {
         // 表の行：セルごとに点訳して、セルの間を2マスあける
-        const parts = src.split('\t').map(c => c.trim() ? convertLine(c.trim()) : { kana: '', unresolved: [], checks: [] });
+        const parts = src.split('\t').map(c => c.trim() ? cachedConvert(c.trim()) : { kana: '', unresolved: [], checks: [] });
         const kana = parts.map(p => p.kana).join('  ').replace(/ +$/, '');
         const b = E.kanaToBraille(kana);
         return { ...base, kana, cells: b.cells, unknown: b.unknown, bad: b.bad, tkana: parts.map(p => p.kana),
           unresolved: parts.flatMap(p => p.unresolved), checks: parts.flatMap(p => p.checks), foreign: parts.flatMap(p => p.foreign || []) };
       }
-      return { ...base, ...convertLine(src.replace(FRAME_SIDE_RE, '')) };
-    });
+      return { ...base, ...cachedConvert(src.replace(FRAME_SIDE_RE, '')) };
+    } };
   }
 
   function brailleToRows(rows) {
@@ -279,6 +316,7 @@
   }
 
   function convertAll(noRender) {
+    if (loading) { loading.pending = true; return; } // 読み込みの途中に設定が変わったら、読み終わってから変換し直す
     if (state.mode === 'sumiji') {
       state.rows = sumijiToRows(els.src.value, state.rows);
     } else {
@@ -291,6 +329,79 @@
     // まとめて読み込んだファイルの一覧（要確認の数）も新しくする
     const d = state.docs && state.docs[state.docIndex];
     if (!noRender && d && d.snap) { d.snap.rows = state.rows; updateDocNav(); }
+  }
+
+  async function convertAllAsync(ld, noRender) {
+    if (state.mode !== 'sumiji') {
+      const keep = loading; loading = null; // 点字のファイル（BSE など）はそのまま変換する
+      try { convertAll(noRender); } finally { loading = keep; }
+      return;
+    }
+    state.rows = await sumijiToRowsAsync(els.src.value, state.rows, ld);
+    if (!noRender) render();
+    const d = state.docs && state.docs[state.docIndex];
+    if (!noRender && d && d.snap) { d.snap.rows = state.rows; updateDocNav(); }
+  }
+
+  // ---------- 読み込みの管理：重ねて読み込まない・進み具合を出す・中止できる ----------
+  const LP = { box: $('load-progress'), text: $('load-progress-text'), bar: $('load-progress-bar'), cancel: $('load-cancel') };
+  let loading = null; // { name, signal: { aborted }, pending, lastSay }
+  const abortError = () => { const e = new Error('読み込みを中止しました'); e.name = 'AbortError'; return e; };
+  const yieldUI = () => new Promise(res => setTimeout(res, 0));
+  function loadBegin(name, o = {}) {
+    loading = { name, verb: o.verb || '読み込んで', noCancel: o.cancel === false, signal: { aborted: false }, pending: false, lastSay: Date.now() };
+    LP.text.textContent = `「${name}」を${loading.verb}います…`;
+    LP.bar.value = 0;
+    LP.box.hidden = false;
+    LP.cancel.hidden = loading.noCancel;
+    LP.cancel.disabled = false;
+    const inGuide = typeof G !== 'undefined' && G.el && !G.el.hidden; // 案内の画面では、案内が自分で知らせる
+    if (!inGuide) announce(o.say || `「${name}」を読み込んでいます。大きなファイルは時間がかかります。止めるときは Esc キーか、画面の下の「読み込みを中止」です`);
+    return loading;
+  }
+  // 設定・辞書・パックが変わったときの変換し直し。大きな文書は少しずつ変換する（画面が固まらないように）
+  async function reconvert() {
+    if (loading) { loading.pending = true; return; }
+    if (state.mode !== 'sumiji' || els.src.value.split('\n').length <= EAGER_ROWS) { convertAll(); return; }
+    const ld = loadBegin('点字', { verb: '作り直して', cancel: false, say: '点字を作り直しています。大きな文書なので、少し時間がかかります' });
+    try { await convertAllAsync(ld); announce('点字を作り直しました'); } finally { loadEnd(); }
+  }
+  function loadProgress(phase, done, total) {
+    if (!loading) return;
+    const pct = total ? Math.min(100, Math.floor(100 * done / total)) : 0;
+    const what = phase === 'pdf' ? `PDFを読んでいます ${done}／${total}ページ` : phase === 'convert' ? `点字にしています ${done}／${total}行`
+      : phase === 'file' ? `${done}／${total}件め` : phase === 'dict' ? '辞書の読み込みを待っています' : '読み込んでいます';
+    LP.text.textContent = `「${loading.name}」：${what}`;
+    LP.bar.value = pct;
+    // スクリーンリーダーには、15秒ごとに進み具合を知らせる（毎回読ませると、ほかの読み上げのじゃまになる）
+    if (Date.now() - loading.lastSay > 15000) { loading.lastSay = Date.now(); announce(`${what}、${pct}パーセント`); }
+  }
+  function loadEnd() {
+    const pend = loading && loading.pending;
+    loading = null;
+    LP.box.hidden = true;
+    if (pend) reconvert(); // 読み込みの途中で変わった設定・辞書を反映する（覚えた行は変換し直さない）
+  }
+  function cancelLoad() {
+    if (!loading || loading.noCancel || loading.signal.aborted) return;
+    loading.signal.aborted = true;
+    LP.text.textContent = '中止しています…';
+    LP.cancel.disabled = true;
+    announce('読み込みを中止しています');
+  }
+  LP.cancel.addEventListener('click', cancelLoad);
+  // Esc：読み込みを中止（入力欄やダイアログ・案内が Esc を使うときは、そちらを優先）
+  window.addEventListener('keydown', ev => {
+    if (!loading || ev.key !== 'Escape' || ev.defaultPrevented || document.querySelector('dialog[open]')) return;
+    if (typeof G !== 'undefined' && G.el && !G.el.hidden) return;
+    ev.preventDefault();
+    cancelLoad();
+  });
+  // 読み込み中に、もう一度ファイルを開こうとしたとき
+  function refuseWhileLoading() {
+    if (!loading) return false;
+    toast(`いま「${loading.name}」を${loading.verb}います。終わるまでお待ちください` + (loading.noCancel ? '' : '（止めるときは Esc キーか、画面の下の「読み込みを中止」）'), true);
+    return true;
   }
 
   // ---------- 描画 ----------
@@ -472,7 +583,23 @@
     }
   }
 
+  function paintPlaceholder(el, row) {
+    el.textContent = '';
+    el.dataset.speak = '';
+    el.classList.remove('figure-view');
+    el.classList.add('plain', 'lazy');
+    const fig = row.type === 'figure';
+    const k = document.createElement('div');
+    k.className = 'plain-k';
+    k.textContent = fig ? (row.alt || '図') : showSpaces(displayKana(row.kana || ''));
+    const c = document.createElement('div');
+    c.className = 'plain-c';
+    c.textContent = (fig ? (row.figure && !row.noFigure ? row.figure.join('') : row.cells) : rowCellsForDisplay(row)) || ' ';
+    k.setAttribute('aria-hidden', 'true'); c.setAttribute('aria-hidden', 'true');
+    el.append(k, c);
+  }
   function paintAlign(el, row) {
+    el.classList.remove('lazy');
     el.textContent = '';
     el.dataset.speak = '';
     el.classList.remove('plain', 'figure-view');
@@ -550,7 +677,7 @@
     el.append(k, c);
   }
 
-  function buildRow(row, idx) {
+  function buildRow(row, idx, ri) {
     const li = document.createElement('li');
     if (row.pagebreak) {
       li.className = 'row pagebreak';
@@ -590,178 +717,197 @@
     const setLabel = () => {
       align.setAttribute('aria-label', speakRow(row, idx + 1) + (editable ? (row.type !== 'table' && state.mode === 'sumiji' ? '。Enterでかな、Shift+Enterで点字を直せます' : '。Enterでかなを直せます') : ''));
     };
-    paintAlign(align, row);
-    // 点字のマスや、かなを1文字ずつ読ませない（行の読み上げ文にまとめる）
-    for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
     setLabel();
-
-    const editWrap = document.createElement('div');
-    editWrap.className = 'edit-wrap';
-    editWrap.hidden = true;
-    const edit = document.createElement('input');
-    edit.type = 'text';
-    edit.className = 'kana-edit';
-    edit.id = 'kana-' + idx;
-    edit.setAttribute('aria-label', `${idx + 1}行目のかな（□はマスあけ）`);
-    edit.spellcheck = false;
-    const insBtn = document.createElement('button');
-    insBtn.type = 'button';
-    insBtn.className = 'btn small-btn';
-    insBtn.textContent = '点訳者注 ⦅ ⦆';
-    insBtn.title = '点訳者挿入符（⠠⠶ … ⠶⠄）を入れる。選んだ文字があれば囲む';
-    insBtn.setAttribute('aria-label', '点訳者注の記号を入れる');
-    editWrap.append(edit, insBtn);
-    // 点字を直接直す欄（6点入力）。表の行は列をそろえるため、かなで直す
-    const brWrap = document.createElement('div');
-    brWrap.className = 'edit-wrap braille-edit-wrap';
-    brWrap.hidden = true;
-    const brEdit = document.createElement('input');
-    brEdit.type = 'text';
-    brEdit.className = 'kana-edit braille-edit';
-    brEdit.id = 'cells-' + idx;
-    brEdit.setAttribute('inputmode', 'none');
-    brEdit.setAttribute('aria-label', `${idx + 1}行目の点字。F D S J K L を同時に押して1マス、スペースでマスあけ、BackSpaceで消す`);
-    brEdit.spellcheck = false;
-    brEdit.autocomplete = 'off';
-    const pad = document.createElement('div');
-    pad.className = 'dot-pad';
-    pad.setAttribute('role', 'group');
-    pad.setAttribute('aria-label', '点を選んで入れる');
-    let padBits = 0;
-    const padBtns = [1, 4, 2, 5, 3, 6].map(n => { // 点字のマスと同じ並び（左 1 2 3、右 4 5 6）
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'dot-btn'; b.textContent = n; b.dataset.n = n;
-      b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', n + 'の点');
-      b.addEventListener('mousedown', ev => ev.preventDefault());
-      b.addEventListener('click', () => { padBits ^= 1 << (n - 1); b.setAttribute('aria-pressed', String(!!(padBits & (1 << (n - 1))))); });
-      return b;
-    });
-    const padBtn = (label, aria, fn) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'btn small-btn'; b.textContent = label; b.setAttribute('aria-label', aria);
-      b.addEventListener('mousedown', ev => ev.preventDefault());
-      b.addEventListener('click', fn);
-      return b;
-    };
-    const dots = document.createElement('div'); dots.className = 'dot-grid'; dots.append(...padBtns);
-    const clearPad = () => { padBits = 0; padBtns.forEach(b => b.setAttribute('aria-pressed', 'false')); };
-    pad.append(dots,
-      padBtn('入れる', '選んだ点の1マスを入れる', () => { if (padBits) { putCell(padBits); clearPad(); } brEdit.focus(); }),
-      padBtn('マスあけ', 'マスあけを入れる', () => { putCell(0); brEdit.focus(); }),
-      padBtn('1マス消す', '前の1マスを消す', () => { delCell(); brEdit.focus(); }));
-    brWrap.append(brEdit, pad);
-
     const meta = document.createElement('div');
     meta.className = 'meta';
+    const paint = () => {
+      paintAlign(align, row);
+      // 点字のマスや、かなを1文字ずつ読ませない（行の読み上げ文にまとめる）
+      for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
+    };
     const refresh = () => {
       E.fitBlocks(state.rows, layoutOpt());
-      paintAlign(align, row);
-      for (const ch of align.children) ch.setAttribute('aria-hidden', 'true');
+      li._live = true;
+      paint();
       setLabel();
       fillMeta(meta, row, refresh);
       li.classList.toggle('needs-check', !!needsCheck(row));
       updateSumiji();
       updateStatus();
     };
-    fillMeta(meta, row, refresh);
+    // かなと点字の対・行の設定は、画面の近くに来たときに作り、遠くなったら外す（大きな文書でも軽くするため）
+    let ed = null;
+    li._hydrate = () => { if (li._live) return; li._live = true; paint(); fillMeta(meta, row, refresh); };
+    li._dehydrate = () => {
+      if (!li._live || li.contains(document.activeElement) || (ed && (!ed.editWrap.hidden || !ed.brWrap.hidden))) return;
+      li._live = false;
+      paintPlaceholder(align, row);
+      meta.textContent = '';
+    };
+    paintPlaceholder(align, row);
 
-    const brEditable = editable && row.type !== 'table' && state.mode === 'sumiji';
-    const openEdit = (toBraille) => {
-      if (!editable) return;
-      edit.value = showSpaces(displayKana(row.kana || ''));
-      editWrap.hidden = false;
-      if (brEditable) { brEdit.value = row.cells || ''; brWrap.hidden = false; }
-      (toBraille === true && brEditable ? brEdit : edit).focus();
-    };
-    // 点字を直したら、かなは点字から読み直す（かなの欄も合わせる）
-    const applyCells = (cells, caret) => {
-      row.cells = cells;
-      row.kana = kanaFromCells(cells);
-      if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
-      row.unknown = []; row.bad = []; row.unresolved = []; row.edited = true; row.reviewed = true; row.cellsEdited = true;
-      brEdit.value = cells;
-      if (caret !== undefined) brEdit.setSelectionRange(caret, caret);
-      edit.value = showSpaces(displayKana(row.kana || ''));
-      refresh();
-    };
-    const putCell = bits => {
-      const v = Array.from(brEdit.value);
-      const pre = Array.from(brEdit.value.slice(0, brEdit.selectionStart || 0)).length;
-      const post = Array.from(brEdit.value.slice(0, brEdit.selectionEnd || 0)).length;
-      const c = E.bitsCell(bits);
-      const next = v.slice(0, pre).join('') + c + v.slice(post).join('');
-      applyCells(next, (v.slice(0, pre).join('') + c).length);
-      announce(speakCell(bits));
-    };
-    const delCell = () => {
-      const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
-      if (a === z && a === 0) return;
-      const from = a === z ? a - 1 : a;
-      const gone = brEdit.value.slice(from, z);
-      applyCells(brEdit.value.slice(0, from) + brEdit.value.slice(z), from);
-      announce(gone.length === 1 ? cellDots(gone) + 'を消しました' : `${gone.length}マス消しました`);
-    };
-    attachSixKey(brEdit, putCell);
-    brEdit.addEventListener('keydown', ev => {
-      if (ev.key === 'Backspace') { ev.preventDefault(); delCell(); }
-      else if (ev.key === 'Delete') {
-        ev.preventDefault();
+    // かな・点字を直す欄は、初めて開くときに作る
+    const editor = () => {
+      if (ed) return ed;
+      const editWrap = document.createElement('div');
+      editWrap.className = 'edit-wrap';
+      editWrap.hidden = true;
+      const edit = document.createElement('input');
+      edit.type = 'text';
+      edit.className = 'kana-edit';
+      edit.id = 'kana-' + idx;
+      edit.setAttribute('aria-label', `${idx + 1}行目のかな（□はマスあけ）`);
+      edit.spellcheck = false;
+      const insBtn = document.createElement('button');
+      insBtn.type = 'button';
+      insBtn.className = 'btn small-btn';
+      insBtn.textContent = '点訳者注 ⦅ ⦆';
+      insBtn.title = '点訳者挿入符（⠠⠶ … ⠶⠄）を入れる。選んだ文字があれば囲む';
+      insBtn.setAttribute('aria-label', '点訳者注の記号を入れる');
+      editWrap.append(edit, insBtn);
+      // 点字を直接直す欄（6点入力）。表の行は列をそろえるため、かなで直す
+      const brWrap = document.createElement('div');
+      brWrap.className = 'edit-wrap braille-edit-wrap';
+      brWrap.hidden = true;
+      const brEdit = document.createElement('input');
+      brEdit.type = 'text';
+      brEdit.className = 'kana-edit braille-edit';
+      brEdit.id = 'cells-' + idx;
+      brEdit.setAttribute('inputmode', 'none');
+      brEdit.setAttribute('aria-label', `${idx + 1}行目の点字。F D S J K L を同時に押して1マス、スペースでマスあけ、BackSpaceで消す`);
+      brEdit.spellcheck = false;
+      brEdit.autocomplete = 'off';
+      const pad = document.createElement('div');
+      pad.className = 'dot-pad';
+      pad.setAttribute('role', 'group');
+      pad.setAttribute('aria-label', '点を選んで入れる');
+      let padBits = 0;
+      const padBtns = [1, 4, 2, 5, 3, 6].map(n => { // 点字のマスと同じ並び（左 1 2 3、右 4 5 6）
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'dot-btn'; b.textContent = n; b.dataset.n = n;
+        b.setAttribute('aria-pressed', 'false'); b.setAttribute('aria-label', n + 'の点');
+        b.addEventListener('mousedown', ev => ev.preventDefault());
+        b.addEventListener('click', () => { padBits ^= 1 << (n - 1); b.setAttribute('aria-pressed', String(!!(padBits & (1 << (n - 1))))); });
+        return b;
+      });
+      const padBtn = (label, aria, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'btn small-btn'; b.textContent = label; b.setAttribute('aria-label', aria);
+        b.addEventListener('mousedown', ev => ev.preventDefault());
+        b.addEventListener('click', fn);
+        return b;
+      };
+      const dots = document.createElement('div'); dots.className = 'dot-grid'; dots.append(...padBtns);
+      const clearPad = () => { padBits = 0; padBtns.forEach(b => b.setAttribute('aria-pressed', 'false')); };
+      pad.append(dots,
+        padBtn('入れる', '選んだ点の1マスを入れる', () => { if (padBits) { putCell(padBits); clearPad(); } brEdit.focus(); }),
+        padBtn('マスあけ', 'マスあけを入れる', () => { putCell(0); brEdit.focus(); }),
+        padBtn('1マス消す', '前の1マスを消す', () => { delCell(); brEdit.focus(); }));
+      brWrap.append(brEdit, pad);
+
+      const brEditable = editable && row.type !== 'table' && state.mode === 'sumiji';
+      const openEdit = (toBraille) => {
+        if (!editable) return;
+        edit.value = showSpaces(displayKana(row.kana || ''));
+        editWrap.hidden = false;
+        if (brEditable) { brEdit.value = row.cells || ''; brWrap.hidden = false; }
+        (toBraille === true && brEditable ? brEdit : edit).focus();
+      };
+      // 点字を直したら、かなは点字から読み直す（かなの欄も合わせる）
+      const applyCells = (cells, caret) => {
+        row.cells = cells;
+        row.kana = kanaFromCells(cells);
+        if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
+        row.unknown = []; row.bad = []; row.unresolved = []; row.edited = true; row.reviewed = true; row.cellsEdited = true;
+        brEdit.value = cells;
+        if (caret !== undefined) brEdit.setSelectionRange(caret, caret);
+        edit.value = showSpaces(displayKana(row.kana || ''));
+        refresh();
+      };
+      const putCell = bits => {
+        const v = Array.from(brEdit.value);
+        const pre = Array.from(brEdit.value.slice(0, brEdit.selectionStart || 0)).length;
+        const post = Array.from(brEdit.value.slice(0, brEdit.selectionEnd || 0)).length;
+        const c = E.bitsCell(bits);
+        const next = v.slice(0, pre).join('') + c + v.slice(post).join('');
+        applyCells(next, (v.slice(0, pre).join('') + c).length);
+        announce(speakCell(bits));
+      };
+      const delCell = () => {
         const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
-        if (a === z && a >= brEdit.value.length) return;
-        applyCells(brEdit.value.slice(0, a) + brEdit.value.slice(a === z ? a + 1 : z), a);
-      } else if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); }
-      else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { // 動いた先のマスを読む
-        setTimeout(() => { const c = brEdit.value[brEdit.selectionStart] || ''; if (c) announce(cellDots(c)); }, 0);
-      }
-    });
-    // 点字（Unicode）の貼り付けはそのまま入れる
-    brEdit.addEventListener('paste', ev => {
-      const t = (ev.clipboardData && ev.clipboardData.getData('text')) || '';
-      ev.preventDefault();
-      const cells = Array.from(t.replace(/ /g, '⠀')).filter(ch => ch >= '⠀' && ch <= '⣿').join('');
-      if (!cells) { toast('点字（⠿ のような文字）だけ貼り付けられます。', true); return; }
-      const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
-      applyCells(brEdit.value.slice(0, a) + cells + brEdit.value.slice(z), a + cells.length);
-    });
-    const applyEdit = () => {
-      const pos = edit.selectionStart;
-      const v = showSpaces(edit.value);
-      if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
-      row.kana = kanaFromEdit(v);
-      if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
-      const b = E.kanaToBraille(row.kana);
-      row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
-      refresh();
-      clearTimeout(row._speakTimer);
-      row._speakTimer = setTimeout(() => {
-        announce(`点字 ${cellLen(row.cells)}マス` + (els.srmode.value === 'dots' ? '、' + cellsDots(row.cells) : '') +
-          (b.unknown.length ? `、点字にできない文字があります：${b.unknown.join(' ')}` : ''));
-      }, 700);
+        if (a === z && a === 0) return;
+        const from = a === z ? a - 1 : a;
+        const gone = brEdit.value.slice(from, z);
+        applyCells(brEdit.value.slice(0, from) + brEdit.value.slice(z), from);
+        announce(gone.length === 1 ? cellDots(gone) + 'を消しました' : `${gone.length}マス消しました`);
+      };
+      attachSixKey(brEdit, putCell);
+      brEdit.addEventListener('keydown', ev => {
+        if (ev.key === 'Backspace') { ev.preventDefault(); delCell(); }
+        else if (ev.key === 'Delete') {
+          ev.preventDefault();
+          const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
+          if (a === z && a >= brEdit.value.length) return;
+          applyCells(brEdit.value.slice(0, a) + brEdit.value.slice(a === z ? a + 1 : z), a);
+        } else if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); }
+        else if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { // 動いた先のマスを読む
+          setTimeout(() => { const c = brEdit.value[brEdit.selectionStart] || ''; if (c) announce(cellDots(c)); }, 0);
+        }
+      });
+      // 点字（Unicode）の貼り付けはそのまま入れる
+      brEdit.addEventListener('paste', ev => {
+        const t = (ev.clipboardData && ev.clipboardData.getData('text')) || '';
+        ev.preventDefault();
+        const cells = Array.from(t.replace(/ /g, '⠀')).filter(ch => ch >= '⠀' && ch <= '⣿').join('');
+        if (!cells) { toast('点字（⠿ のような文字）だけ貼り付けられます。', true); return; }
+        const a = brEdit.selectionStart || 0, z = brEdit.selectionEnd || 0;
+        applyCells(brEdit.value.slice(0, a) + cells + brEdit.value.slice(z), a + cells.length);
+      });
+      const applyEdit = () => {
+        const pos = edit.selectionStart;
+        const v = showSpaces(edit.value);
+        if (v !== edit.value) { edit.value = v; edit.setSelectionRange(pos, pos); }
+        row.kana = kanaFromEdit(v);
+        if (row.type === 'table') row.tkana = row.kana.split(/ {2,}/);
+        const b = E.kanaToBraille(row.kana);
+        row.cells = b.cells; row.unknown = b.unknown; row.bad = b.bad; row.unresolved = []; row.edited = true; row.reviewed = true;
+        refresh();
+        clearTimeout(row._speakTimer);
+        row._speakTimer = setTimeout(() => {
+          announce(`点字 ${cellLen(row.cells)}マス` + (els.srmode.value === 'dots' ? '、' + cellsDots(row.cells) : '') +
+            (b.unknown.length ? `、点字にできない文字があります：${b.unknown.join(' ')}` : ''));
+        }, 700);
+      };
+      edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); } });
+      // 欄の外にフォーカスが出たら閉じる（かなの欄・点字の欄・ボタンのあいだは閉じない）
+      const closeIfOutside = () => setTimeout(() => {
+        if (!body.contains(document.activeElement) || document.activeElement === align) { editWrap.hidden = true; brWrap.hidden = true; }
+      }, 0);
+      edit.addEventListener('blur', closeIfOutside);
+      brEdit.addEventListener('blur', closeIfOutside);
+      edit.addEventListener('input', applyEdit);
+      insBtn.addEventListener('mousedown', ev => ev.preventDefault()); // 入力欄のフォーカスを保つ
+      insBtn.addEventListener('click', () => {
+        const a = edit.selectionStart, z = edit.selectionEnd;
+        const v = edit.value;
+        edit.value = v.slice(0, a) + '⦅' + v.slice(a, z) + '⦆' + v.slice(z);
+        const caret = z === a ? a + 1 : z + 2;
+        edit.focus(); edit.setSelectionRange(caret, caret);
+        applyEdit();
+      });
+      body.insertBefore(editWrap, meta);
+      body.insertBefore(brWrap, meta);
+      ed = { editWrap, brWrap, openEdit };
+      return ed;
     };
-    align.addEventListener('click', openEdit);
+    const openEdit = toBraille => { if (!editable) return; li._hydrate(); editor().openEdit(toBraille); };
+    align.addEventListener('click', () => openEdit());
     // Enter：かなを直す、Shift+Enter：点字を直す（6点入力）
     align.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openEdit(ev.shiftKey); } });
-    edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); editWrap.hidden = true; brWrap.hidden = true; align.focus(); } });
-    // 欄の外にフォーカスが出たら閉じる（かなの欄・点字の欄・ボタンのあいだは閉じない）
-    const closeIfOutside = () => setTimeout(() => {
-      if (!body.contains(document.activeElement) || document.activeElement === align) { editWrap.hidden = true; brWrap.hidden = true; }
-    }, 0);
-    edit.addEventListener('blur', closeIfOutside);
-    brEdit.addEventListener('blur', closeIfOutside);
-    edit.addEventListener('input', applyEdit);
-    insBtn.addEventListener('mousedown', ev => ev.preventDefault()); // 入力欄のフォーカスを保つ
-    insBtn.addEventListener('click', () => {
-      const a = edit.selectionStart, z = edit.selectionEnd;
-      const v = edit.value;
-      edit.value = v.slice(0, a) + '⦅' + v.slice(a, z) + '⦆' + v.slice(z);
-      const caret = z === a ? a + 1 : z + 2;
-      edit.focus(); edit.setSelectionRange(caret, caret);
-      applyEdit();
-    });
 
-    body.append(align, editWrap, brWrap, meta);
+    body.append(align, meta);
     li.append(no, body);
-    li.dataset.idx = String(state.rows.indexOf(row));
+    li.dataset.idx = String(ri !== undefined ? ri : state.rows.indexOf(row));
     return li;
   }
 
@@ -786,8 +932,9 @@
     if (needsCheck(r)) parts.push('要確認');
     return parts.join('、') + '。Enterでかなを直せます';
   }
-  function buildTable(grp, fs, fe, n0) {
+  function buildTable(grp, fs, fe, n0, ri) {
     const li = document.createElement('li');
+    let fills = []; // 画面の近くに来たときに、かなと点字の対を入れる関数
     const no = document.createElement('div');
     no.className = 'row-no';
     no.setAttribute('aria-hidden', 'true');
@@ -825,18 +972,20 @@
       el.className = 'align tbl-frame static';
       el.tabIndex = -1;
       el.setAttribute('role', 'img');
-      paintAlign(el, r);
-      for (const ch of el.children) ch.setAttribute('aria-hidden', 'true');
+      lazyFill(el, () => { paintAlign(el, r); for (const ch of el.children) ch.setAttribute('aria-hidden', 'true'); }, () => paintPlaceholder(el, r));
       el.setAttribute('aria-label', speakRow(r, r._n));
       el.dataset.rowidx = String(state.rows.indexOf(r));
       return el;
     };
+    // live（画面の近く）なら中身をすぐ入れ、そうでなければ仮の表示にして、入れる関数を覚えておく
+    const lazyFill = (el, fill, ph) => { fills.push({ fill, ph }); if (li._live) fill(); else ph(); };
     const paint = () => {
       const T = grp[0]._table;
       const opt = layoutOpt();
       li.className = 'row type-table-block' + (grp.some(needsCheck) ? ' needs-check' : '');
       cap.textContent = T ? tableCaption(T, opt.cols) : '表';
       box.textContent = '';
+      fills = [];
       if (fs) box.appendChild(frameLine(fs));
       let shade = 0;
       for (const l of (T ? T.lines : [])) {
@@ -846,13 +995,22 @@
         if (l.row >= 0 && !l.cont && !l.header) shade++;
         el.className = (focusable ? 'align ' : '') + 'tbl-line' + (l.header ? ' tbl-head' : '') + (l.note ? ' tbl-note' : '') +
           (l.cont ? ' tbl-cont' : '') + (l.row >= 0 && !l.header && shade % 2 === 0 ? ' tbl-even' : '');
-        for (const pc of l.pieces) {
-          const sp = !!pc.pad || /^[ 　]+$/.test(pc.k);
-          const u = unitEl(pc.pad ? '' : sp ? SPACE_MARK : displayKana(pc.k), pc.c, { space: sp, decor: !!pc.pad });
-          if (pc.col !== undefined) u.classList.add(pc.col % 2 ? 'col-b' : 'col-a');
-          u.setAttribute('aria-hidden', 'true');
-          el.appendChild(u);
-        }
+        lazyFill(el, () => {
+          el.textContent = '';
+          for (const pc of l.pieces) {
+            const sp = !!pc.pad || /^[ 　]+$/.test(pc.k);
+            const u = unitEl(pc.pad ? '' : sp ? SPACE_MARK : displayKana(pc.k), pc.c, { space: sp, decor: !!pc.pad });
+            if (pc.col !== undefined) u.classList.add(pc.col % 2 ? 'col-b' : 'col-a');
+            u.setAttribute('aria-hidden', 'true');
+            el.appendChild(u);
+          }
+        }, () => {
+          el.textContent = '';
+          const ph = document.createElement('span');
+          ph.className = 'tbl-ph'; ph.setAttribute('aria-hidden', 'true');
+          ph.textContent = l.pieces.map(pc => pc.pad ? '' : displayKana(pc.k)).join('') + '\n' + l.pieces.map(pc => pc.c).join('');
+          el.appendChild(ph);
+        });
         if (l.row >= 0) {
           const r = grp[l.row];
           el.dataset.rowidx = String(state.rows.indexOf(r));
@@ -874,8 +1032,12 @@
         box.appendChild(el);
       }
       if (fe) box.appendChild(frameLine(fe));
-      // 読みの確認が要る行は、表の下で候補を選べるようにする
+      paintMeta();
+    };
+    // 読みの確認が要る行は、表の下で候補を選べるようにする（画面の近くに来たときに作る）
+    const paintMeta = () => {
       metaBox.textContent = '';
+      if (!li._live) return;
       grp.filter(needsCheck).forEach(r => {
         const m = document.createElement('div');
         m.className = 'meta';
@@ -922,10 +1084,18 @@
     edit.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === 'Escape') { ev.preventDefault(); close(); } });
     edit.addEventListener('blur', () => { setTimeout(() => { if (document.activeElement !== edit) editWrap.hidden = true; }, 0); });
 
+    // 中身を入れるときは行の要素を作り直さない（読み上げの位置・フォーカスを動かさない）
+    li._hydrate = () => { if (li._live) return; li._live = true; for (const f of fills) f.fill(); paintMeta(); };
+    li._dehydrate = () => {
+      if (!li._live || li.contains(document.activeElement) || !editWrap.hidden) return;
+      li._live = false;
+      for (const f of fills) f.ph();
+      metaBox.textContent = '';
+    };
     paint();
     body.append(cap, box, editWrap, metaBox);
     li.append(no, body);
-    li.dataset.idx = String(state.rows.indexOf(fs || grp[0]));
+    li.dataset.idx = String(ri !== undefined ? ri : state.rows.indexOf(fs || grp[0]));
     return li;
   }
 
@@ -953,21 +1123,24 @@
       const r = rs[i];
       // 表（と、それを囲む枠）は1枚のカードにまとめて、列を縦にそろえて見せる
       const fs = r.type === 'frame-start' && !r.fixed && rs[i + 1] && rs[i + 1]._table ? r : null;
-      const head = fs ? rs[i + 1] : r;
+      const hi = fs ? i + 1 : i;
+      const head = rs[hi];
       if (head && head._table) {
-        let k = rs.indexOf(head) + 1;
+        let k = hi + 1;
         while (k < rs.length && rs[k]._tableHead === head) k++;
-        const grp = rs.slice(rs.indexOf(head), k);
+        const grp = rs.slice(hi, k);
         const fe = fs && rs[k] && rs[k].type === 'frame-end' && !rs[k].fixed ? rs[k++] : null;
-        frag.appendChild(buildTable(grp, fs, fe, n));
+        frag.appendChild(buildTable(grp, fs, fe, n, i));
         n += grp.length + (fs ? 1 : 0) + (fe ? 1 : 0);
         i = k - 1;
         continue;
       }
-      frag.appendChild(buildRow(r, (r.pagebreak || r.type === 'genpon' || r.type === 'pageno') ? n : n++));
+      frag.appendChild(buildRow(r, (r.pagebreak || r.type === 'genpon' || r.type === 'pageno') ? n : n++, i));
     }
+    stopLazy();
     els.rows.textContent = '';
     els.rows.appendChild(frag);
+    startLazy();
     if (!state.rows.some(r => r.cells || r.figure || (r.type && r.type !== 'body' && r.type !== 'blank'))) {
       const li = document.createElement('li');
       li.className = 'empty-state';
@@ -980,6 +1153,33 @@
     updateSumiji();
     updateStatus();
   }
+
+  // ---------- 大きな文書でも軽く：行の中身は画面の近くに来たときだけ作る ----------
+  // 行の読み上げ（aria-label）と矢印キーでの移動は全部の行にあるまま。かなと点字の対・行の設定・直す欄は、
+  // 画面から 1200px 以内に来たら作り、5000px より遠くなったら外す（何千行あっても、作るのは見えているあたりだけ）
+  const EAGER_ROWS = 400; // これ以下の行数なら、はじめから全部作る
+  let lazyNear = null, lazyFar = null;
+  function stopLazy() {
+    if (lazyNear) lazyNear.disconnect();
+    if (lazyFar) lazyFar.disconnect();
+    lazyNear = lazyFar = null;
+  }
+  function startLazy() {
+    stopLazy();
+    const lis = [...els.rows.children].filter(li => li._hydrate);
+    if (lis.length <= EAGER_ROWS || typeof IntersectionObserver === 'undefined') { lis.forEach(li => li._hydrate()); return; }
+    // 一覧そのものがスクロールするならそれを、そうでなければ（狭い画面ではページ全体がスクロールする）画面を見張る
+    const oy = getComputedStyle(els.rows).overflowY;
+    const root = (oy === 'auto' || oy === 'scroll') && els.rows.scrollHeight > els.rows.clientHeight + 1 ? els.rows : null;
+    lazyNear = new IntersectionObserver(ents => { for (const e of ents) if (e.isIntersecting) e.target._hydrate(); }, { root, rootMargin: '1200px 0px' });
+    lazyFar = new IntersectionObserver(ents => { for (const e of ents) if (!e.isIntersecting) e.target._dehydrate(); }, { root, rootMargin: '5000px 0px' });
+    for (const li of lis) { lazyNear.observe(li); lazyFar.observe(li); }
+  }
+  // 画面の幅が変わってスクロールのしかたが変わったら、見張り直す
+  let lazyResizeTimer = null;
+  window.addEventListener('resize', () => { clearTimeout(lazyResizeTimer); lazyResizeTimer = setTimeout(() => { if (lazyNear) startLazy(); }, 300); });
+  // フォーカスが来た行は、すぐ中身を作る（Tab で行の設定に進めるように）
+  els.rows.addEventListener('focusin', ev => { const li = ev.target.closest && ev.target.closest('#rows > li'); if (li && li._hydrate) li._hydrate(); });
 
   // ---------- 行の移動（矢印キー） ----------
   const rowItems = () => [...els.rows.querySelectorAll('.align')];
@@ -1110,17 +1310,25 @@
 
   // ---------- ファイル ----------
   async function openFile(file) {
-    closeDocs(true);
+    if (refuseWhileLoading()) return;
+    const ld = loadBegin(file.name);
+    const before = snapshot();
+    let changed = false;
     try {
       const buf = await file.arrayBuffer();
-      if (/\.pdf$/i.test(file.name)) toast('PDFを読み込んでいます…');
-      const res = await F.readFile(file.name, buf, layoutOpt());
+      const res = await F.readFile(file.name, buf, { ...layoutOpt(), signal: ld.signal, onProgress: x => loadProgress(x.phase, x.done, x.total) });
+      if (ld.signal.aborted) throw abortError();
+      closeDocs(true);
+      changed = true;
       applyRead(file.name, res);
-      convertAll();
+      await convertAllAsync(ld);
       toast(`${file.name} を読み込みました`);
     } catch (e) {
-      toast(e.message || 'ファイルを読み込めませんでした。', true);
-    }
+      if (e && e.name === 'AbortError') {
+        if (changed) { restore(before); render(); }
+        toast('読み込みを中止しました。' + (changed ? '前の内容に戻しました。' : ''));
+      } else toast(e.message || 'ファイルを読み込めませんでした。', true);
+    } finally { loadEnd(); }
   }
   // 読み込んだ結果を画面（左の欄・設定）に入れる。変換はしない
   function applyRead(name, res) {
@@ -1215,28 +1423,37 @@
     DOC.prev.disabled = i <= 0; DOC.next.disabled = i >= docs.length - 1;
   }
   async function openFiles(files) {
+    if (refuseWhileLoading()) return;
+    if (files.length === 1 && !/\.zip$/i.test(files[0].name)) return openFile(files[0]);
+    const ld = loadBegin(files.length === 1 ? files[0].name : `${files.length}件のファイル`);
+    try { await openFilesBody(files, ld); } finally { loadEnd(); }
+  }
+  async function openFilesBody(files, ld) {
     const list = await expandFiles(files);
     if (!list.length) { toast('読み込めるファイルがありませんでした。', true); return; }
-    if (list.length === 1 && !/\.zip$/i.test(files[0].name)) { openFile(files[0]); return; }
     closeDocs(true);
     state.docs = list.map(x => ({ ...x, snap: null, error: null }));
     state.docIndex = 0;
     updateDocNav();
     toast(`${list.length}件のファイルを、まとめて変換しています…`);
     announce(`${list.length}件のファイルを変換しています`);
+    loadProgress('dict');
     await waitDict();
     // 1つずつ読み込んで変換し、覚えておく（画面には最後に1件目を出す）
     for (let k = 0; k < state.docs.length; k++) {
       const d = state.docs[k];
       DOC.pos.textContent = `変換中 ${k + 1} / ${state.docs.length}`;
+      if (ld.signal.aborted) { d.error = '読み込みを中止しました'; d.load = null; continue; }
+      loadProgress('file', k + 1, state.docs.length);
       try {
         const buf = await d.load();
-        const res = await F.readFile(d.name, buf, layoutOpt());
+        const res = await F.readFile(d.name, buf, { ...layoutOpt(), signal: ld.signal });
         applyRead(d.name, res);
-        convertAll(true);
+        await convertAllAsync(null, true);
         d.snap = snapshot();
-      } catch (e) { d.error = e.message || '読み込めませんでした'; }
+      } catch (e) { d.error = e && e.name === 'AbortError' ? '読み込みを中止しました' : (e.message || '読み込めませんでした'); }
       d.load = null; // 中身は覚えたので、元のデータは放す
+      await yieldUI();
     }
     const ok = state.docs.filter(d => d.snap).length, bad = state.docs.length - ok;
     const checks = state.docs.reduce((a, d) => a + docChecks(d), 0);
@@ -2015,6 +2232,7 @@
       render();
       updateSumiji(); updateStatus();
       const li = els.rows.querySelector(`.row[data-idx="${idx}"]`);
+      if (li && li._hydrate) li._hydrate();
       const btn = li && li.querySelector('.fig-edit-btn');
       if (btn) { btn.focus(); return; }
     }
@@ -2152,10 +2370,10 @@
   // 英語の点字の書き方（一般の文章／英語の教科書 UEB）：点訳し直す
   // 縮約（グレード２）は UEB の書き方の上で使う
   const applyEnglishMode = () => { E.setEnglishMode(els.enueb.checked, els.eng2.checked); };
-  els.enueb.addEventListener('change', () => { if (!els.enueb.checked) els.eng2.checked = false; applyEnglishMode(); savePrefs(); convertAll(); });
-  els.eng2.addEventListener('change', () => { if (els.eng2.checked) els.enueb.checked = true; applyEnglishMode(); savePrefs(); convertAll(); });
+  els.enueb.addEventListener('change', () => { if (!els.enueb.checked) els.eng2.checked = false; applyEnglishMode(); savePrefs(); reconvert(); });
+  els.eng2.addEventListener('change', () => { if (els.eng2.checked) els.enueb.checked = true; applyEnglishMode(); savePrefs(); reconvert(); });
   // 絵文字・記号の名前を点訳者挿入符で書くか（外すと省く）
-  els.symdesc.addEventListener('change', () => { E.setSymbolMode(els.symdesc.checked); savePrefs(); convertAll(); });
+  els.symdesc.addEventListener('change', () => { E.setSymbolMode(els.symdesc.checked); savePrefs(); reconvert(); });
 
   // ドラッグ＆ドロップ
   let dragDepth = 0;
@@ -3108,7 +3326,7 @@
     saveLang(state.lang);
     applyForeign();
     state.rows = [];
-    convertAll();
+    reconvert();
     const notBack = state.lang !== 'ja' && !LANG_BUILTIN[state.lang] && pk.louis && !pk.louis.canBack(state.lang);
     announce(`文書の言語を${langName(state.lang)}にしました` + (notBack ? '。この言語は、点字から文字に戻す変換ができません' : ''));
   });
@@ -3163,7 +3381,7 @@
     applyForeign();
     if (guide.on) return;
     if (state.mode === 'sumiji') state.rows = state.rows.filter(r => r.edited);
-    convertAll();
+    reconvert();
   }
 
   async function updateStorage() {
@@ -3374,7 +3592,7 @@
           announce('辞書の準備ができました');
           if (state.mode === 'sumiji') {
             state.rows = state.rows.filter(r => r.edited);
-            convertAll();
+            reconvert();
             if (els.note.classList.contains('warn')) setNote('');
           }
         }

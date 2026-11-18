@@ -198,6 +198,16 @@ body.braille .pane-out { order: -1; }
 .align.plain { flex-direction: column; flex-wrap: nowrap; row-gap: 2px; }
 .plain-k { font: 14px/1.6 var(--font-ui); white-space: pre-wrap; word-break: break-all; }
 .plain-c { font: 22px/1.4 var(--font-cells); color: var(--cells); white-space: pre-wrap; word-break: break-all; }
+/* 画面から遠い行の仮の表示（近づくと、かなと点字の対で描き直す） */
+/* 画面の外の行は、ブラウザに配置の計算を後回しにさせる（大きな文書で軽くするため。読み上げには影響しない） */
+#rows > li { content-visibility: auto; contain-intrinsic-size: auto 96px; }
+.align.lazy .plain-k { color: var(--muted); }
+.align.lazy .plain-c { color: color-mix(in srgb, var(--cells) 60%, var(--surface)); }
+.tbl-ph { font: 14px/1.6 var(--font-ui); white-space: pre; color: var(--muted); }
+/* 読み込みの進み具合と中止 */
+.load-progress { display: inline-flex; align-items: center; gap: 8px; }
+.load-progress[hidden] { display: none; }
+.load-progress progress { width: 120px; height: 8px; }
 .kana-edit {
   font: 15px/1.6 var(--font-ui); color: var(--ink); background: var(--surface);
   border: 1px solid var(--accent); border-radius: 6px; padding: 4px 8px; width: 100%;
@@ -244,6 +254,12 @@ body.braille .pane-out { order: -1; }
   .panes { grid-template-columns: minmax(0, 1fr); }
   .pane-src textarea#src, textarea#sumiji { min-height: 220px; }
   .pane-out .rows { max-height: none; }
+  /* 読み込みの進み具合は、ページの下に固定して見えるようにする */
+  .load-progress {
+    position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 41;
+    flex-wrap: wrap; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--line);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, .2);
+  }
   .bar-group.end { margin-left: 0; }
   /* スマホ：書き出しメニューは画面の下から出す（ボタンの位置に関係なく、はみ出さない） */
   .menu-pop {
