@@ -2137,15 +2137,7 @@
     ttsStop();
     ttsSay(guideSpeakText(sc), done, { trustEnd: true });
     // ページを開いたばかりで、まだ何も押していないと、ブラウザが声を出させないことがある（Chrome・iPhone など）
-    if (TTS.ok && !TTS.started && !TTS.unlockUsed) setTimeout(() => { if (!TTS.started && !TTS.unlockUsed) { TTS.blocked = true; guideBlockedHint(); } }, 1200);
-  }
-  // 声が出せなかったとき：画面に案内を出し、次に押したキーか画面にふれたときに、今の画面を最初から読む
-  function guideBlockedHint() {
-    if (!guide.on || !guide.screen || G.sub.querySelector('.guide-unlock')) return;
-    const h = document.createElement('span');
-    h.className = 'guide-unlock'; h.setAttribute('aria-hidden', 'true'); // 読み上げソフトは画面を読めるので、目で見る人向け
-    h.textContent = hasKeys ? '声が出ないときは、どれかのキーを1回押すと読み上げを始めます。' : '声が出ないときは、画面に1回ふれると読み上げを始めます。';
-    G.sub.appendChild(h);
+    if (TTS.ok && !TTS.started && !TTS.unlockUsed) setTimeout(() => { if (!TTS.started && !TTS.unlockUsed) { TTS.blocked = true; } }, 1200);
   }
   // iPhone などは、最初に画面にふれるまで声が出ないことがある。最初の操作で、今の画面を読み直す
   // 声が止められていたときは、その1回の操作は「読み始める」に使い、選択にはしない（何を選ぶか聞いてから押せるように）
@@ -2157,7 +2149,6 @@
     const wasBlocked = TTS.blocked;
     TTS.blocked = false;
     TTS.unlockUsed = true; // 「最初の1回で読み始める」はページで1回だけ（声の出ない端末で、毎回押す回数が増えないように）
-    const h = G.sub.querySelector('.guide-unlock'); if (h) h.remove();
     guideSpeak(sc);
     if (wasBlocked) {
       if (ev.type === 'keydown') { ev.preventDefault(); ev.stopImmediatePropagation(); }
