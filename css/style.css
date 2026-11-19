@@ -531,7 +531,7 @@ fieldset:disabled { opacity: .5; }
   color: var(--ink); text-align: left; cursor: pointer; font: 600 17px/1.4 var(--font-ui); }
 .guide-item .gi-ext { font-weight: 400; color: var(--muted); margin-left: 2px; }
 .guide-item .gi-note { display: block; font: 400 13px/1.5 var(--font-ui); color: var(--muted); margin-top: 2px; }
-.guide-btns .guide-item.cur { border-color: var(--accent); background: var(--accent-soft); }
+.guide-btns .guide-item.cur, .guide-btns .guide-choice.cur { border-color: var(--accent); background: var(--accent-soft); }
 .guide-item:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 /* キーの案内はパソコン（マウス・キーボード）のときだけ */
 .no-keys .pc-only, .no-keys .guide-btns button .key { display: none; }
